@@ -4,3 +4,6 @@ __pycache__
 *.pyd
 *.pyw
 *.pyz
+*/node_modules/*
+*.d.ts
+*cdk.out/*
