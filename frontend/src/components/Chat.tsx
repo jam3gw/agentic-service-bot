@@ -5,6 +5,7 @@ import {
     Input,
     Flex,
     Text,
+    Select,
 } from '@chakra-ui/react';
 import { Message } from '../types';
 import config from '../config';
@@ -19,11 +20,19 @@ const api = axios.create({
     }
 });
 
+// Default customer IDs
+const CUSTOMER_IDS = [
+    { id: 'cust_001', name: 'Jane Smith (Basic)' },
+    { id: 'cust_002', name: 'John Doe (Premium)' },
+    { id: 'cust_003', name: 'Alice Johnson (Enterprise)' },
+];
+
 export const Chat = () => {
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [customerId, setCustomerId] = useState(CUSTOMER_IDS[0].id);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     const scrollToBottom = () => {
@@ -52,7 +61,7 @@ export const Chat = () => {
         try {
             const response = await api.post('/chat', {
                 message: input,
-                customerId: 'user_' + Date.now(), // Generate a simple user ID for now
+                customerId: customerId,
             });
 
             const botMessage: Message = {
@@ -71,6 +80,12 @@ export const Chat = () => {
         }
     };
 
+    const handleCustomerChange = (e: ChangeEvent<HTMLSelectElement>) => {
+        setCustomerId(e.target.value);
+        // Clear messages when changing customer
+        setMessages([]);
+    };
+
     return (
         <Box
             height="calc(100vh - 200px)"
@@ -79,6 +94,20 @@ export const Chat = () => {
             display="flex"
             flexDirection="column"
         >
+            <Flex mb={4} justifyContent="flex-end">
+                <Select
+                    value={customerId}
+                    onChange={handleCustomerChange}
+                    width="250px"
+                    bg="white"
+                >
+                    {CUSTOMER_IDS.map(customer => (
+                        <option key={customer.id} value={customer.id}>
+                            {customer.name}
+                        </option>
+                    ))}
+                </Select>
+            </Flex>
             <Flex direction="column" flex="1" w="100%" gap={4}>
                 <Box
                     flex="1"

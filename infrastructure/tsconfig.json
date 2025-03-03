@@ -22,10 +22,12 @@
         "typeRoots": [
             "./node_modules/@types"
         ],
-        "outDir": "dist"
+        "outDir": "build"
     },
     "exclude": [
         "node_modules",
-        "cdk.out"
+        "cdk.out",
+        "dist",
+        "build"
     ]
 }
