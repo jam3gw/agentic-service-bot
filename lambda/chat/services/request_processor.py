@@ -23,7 +23,7 @@ import boto3
 # Local imports using absolute imports
 from models.customer import Customer
 from analyzers.request_analyzer import RequestAnalyzer
-from services.dynamodb_service import get_customer, get_service_level_permissions
+from services.dynamodb_service import get_customer, get_service_level_permissions, store_message
 from services.anthropic_service import generate_response
 
 # Configure logging
@@ -170,37 +170,33 @@ def process_request(customer_id: str, user_input: str) -> str:
     timestamp_ms = int(time.time() * 1000)
     user_conversation_id = f"conv_{customer_id}_user_{timestamp_ms}"
     bot_conversation_id = f"conv_{customer_id}_bot_{timestamp_ms}"
-    timestamp = datetime.utcnow().isoformat()
     
     try:
-        # Store user message with its own unique ID
-        user_item = {
-            'id': f"msg_{timestamp_ms}_user",  # Add a unique ID field
-            'conversationId': user_conversation_id,
-            'timestamp': timestamp,
-            'userId': customer_id,
-            'message': user_input,
-            'sender': 'user',
-            'request_type': request_type,
-            'actions_allowed': all_actions_allowed
-        }
-        logger.info(f"Storing user message in DynamoDB: {user_item}")
-        messages_table.put_item(Item=user_item)
+        # Store user message
+        logger.info(f"Storing user message in DynamoDB for customer {customer_id}")
+        user_stored = store_message(
+            conversation_id=user_conversation_id,
+            customer_id=customer_id,
+            message=user_input,
+            sender='user',
+            request_type=request_type,
+            actions_allowed=all_actions_allowed
+        )
+        if not user_stored:
+            logger.error("Failed to store user message in DynamoDB")
         
-        # Store bot response with its own unique ID
-        bot_timestamp = datetime.utcnow().isoformat()
-        bot_item = {
-            'id': f"msg_{timestamp_ms}_bot",  # Add a unique ID field
-            'conversationId': bot_conversation_id,
-            'timestamp': bot_timestamp,
-            'userId': customer_id,
-            'message': response,
-            'sender': 'bot',
-            'request_type': request_type,
-            'actions_allowed': all_actions_allowed
-        }
-        logger.info(f"Storing bot message in DynamoDB: {bot_item}")
-        messages_table.put_item(Item=bot_item)
+        # Store bot response
+        logger.info(f"Storing bot message in DynamoDB for customer {customer_id}")
+        bot_stored = store_message(
+            conversation_id=bot_conversation_id,
+            customer_id=customer_id,
+            message=response,
+            sender='bot',
+            request_type=request_type,
+            actions_allowed=all_actions_allowed
+        )
+        if not bot_stored:
+            logger.error("Failed to store bot message in DynamoDB")
     except Exception as e:
         logger.error(f"Error storing messages in DynamoDB: {str(e)}")
         # Continue even if message storage fails - don't impact user experience
