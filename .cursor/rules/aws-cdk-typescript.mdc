@@ -1,0 +1,423 @@
+---
+description: AWS CDK TypeScript Best Practices
+globs: ["infrastructure/**/*.ts", "cdk/**/*.ts", "lib/**/*.ts"]
+---
+Rule for enforcing best practices when authoring AWS CDK components in TypeScript.
+
+<rule>
+name: aws_cdk_typescript_best_practices
+description: Enforces best practices for AWS CDK development in TypeScript
+filters:
+  - type: file_extension
+    pattern: "ts"
+  - type: file_content
+    pattern: "import [^;]*cdk[^;]*;"
+
+actions:
+  - type: suggest
+    when:
+      - type: file_content
+        pattern: "new [A-Za-z0-9]+\\([^)]*\\)\\s*;"
+    message: |
+      Consider using the builder pattern with props objects instead of constructor parameters.
+      
+      ```typescript
+      // Instead of:
+      new MyConstruct(this, 'MyId', param1, param2);
+      
+      // Use:
+      new MyConstruct(this, 'MyId', {
+        prop1: value1,
+        prop2: value2,
+      });
+      ```
+
+  - type: suggest
+    when:
+      - type: file_content
+        pattern: "\\s+id:\\s*['\"][^'\"]*['\"]"
+    message: |
+      Use PascalCase for construct IDs to follow AWS CDK conventions.
+      
+      ```typescript
+      // Instead of:
+      new MyConstruct(this, 'my-id', props);
+      
+      // Use:
+      new MyConstruct(this, 'MyId', props);
+      ```
+
+  - type: suggest
+    when:
+      - type: file_content
+        pattern: "\\s*\\w+\\.addDependency\\("
+    message: |
+      Be cautious with explicit dependencies. The CDK automatically manages most dependencies.
+      Only use `addDependency()` when you need to enforce a specific deployment order that
+      the CDK cannot infer from your code.
+
+  - type: suggest
+    when:
+      - type: file_content
+        pattern: "new CfnOutput\\("
+    message: |
+      Use descriptive names for CfnOutputs and consider grouping related outputs.
+      
+      ```typescript
+      // Good practice:
+      new CfnOutput(this, 'ApiEndpoint', {
+        exportName: `${id}-api-endpoint`,
+        value: api.url,
+        description: 'The endpoint URL of the REST API',
+      });
+      ```
+
+  - type: suggest
+    when:
+      - type: file_content
+        pattern: "\\s*\\w+\\.node\\.addDependency\\("
+    message: |
+      Prefer high-level constructs over low-level node manipulation.
+      Use `addDependency()` on the construct itself rather than accessing the node property.
+
+  - type: suggest
+    when:
+      - type: file_content
+        pattern: "Fn::GetAtt|Fn::Join|Fn::Sub|Ref"
+    message: |
+      Avoid using CloudFormation intrinsic functions directly. Use the CDK's higher-level abstractions instead.
+      
+      ```typescript
+      // Instead of:
+      new CfnOutput(this, 'BucketArn', {
+        value: { 'Fn::GetAtt': [bucket.logicalId, 'Arn'] },
+      });
+      
+      // Use:
+      new CfnOutput(this, 'BucketArn', {
+        value: bucket.bucketArn,
+      });
+      ```
+
+  - type: suggest
+    when:
+      - type: file_content
+        pattern: "RemovalPolicy\\.DESTROY"
+    message: |
+      Be cautious with RemovalPolicy.DESTROY on production resources. Consider using RemovalPolicy.RETAIN
+      for critical resources to prevent accidental data loss.
+      
+      ```typescript
+      // For production:
+      bucket.applyRemovalPolicy(RemovalPolicy.RETAIN);
+      
+      // For development:
+      if (stage === 'dev') {
+        bucket.applyRemovalPolicy(RemovalPolicy.DESTROY);
+      } else {
+        bucket.applyRemovalPolicy(RemovalPolicy.RETAIN);
+      }
+      ```
+
+  - type: suggest
+    when:
+      - type: file_content
+        pattern: "new Stack\\(app, ['\"][^'\"]*['\"]\\)"
+    message: |
+      Consider using environment-specific stack names and configurations.
+      
+      ```typescript
+      // Better practice:
+      new MyStack(app, `${appName}-${environment}`, {
+        env: {
+          account: process.env.CDK_DEFAULT_ACCOUNT,
+          region: process.env.CDK_DEFAULT_REGION,
+        },
+        tags: {
+          Environment: environment,
+          Application: appName,
+        },
+      });
+      ```
+
+  - type: suggest
+    when:
+      - type: file_content
+        pattern: "\\s*\\w+\\.addPropertyOverride\\("
+    message: |
+      Avoid using `addPropertyOverride()` when possible. Prefer using the CDK's higher-level constructs
+      and their properties. Only use property overrides as a last resort when the CDK doesn't expose
+      the needed functionality.
+
+  - type: suggest
+    when:
+      - type: file_content
+        pattern: "new CfnResource\\("
+    message: |
+      Avoid using `CfnResource` directly. Prefer using the CDK's higher-level constructs or
+      create a custom construct if needed. If you must use `CfnResource`, consider creating
+      a custom L2 construct to encapsulate it.
+
+message: |
+  # AWS CDK TypeScript Best Practices
+
+  This rule enforces best practices for AWS CDK development in TypeScript. Following these guidelines will help you create maintainable, secure, and efficient infrastructure code.
+
+  ## General Guidelines
+
+  1. **Use Constructs Appropriately**
+     - Use L3 constructs (patterns) for common architecture patterns
+     - Use L2 constructs for most resources
+     - Only use L1 constructs (Cfn*) when necessary
+
+  2. **Stack Organization**
+     - Keep stacks focused on related resources
+     - Use nested stacks for large applications
+     - Consider microstack architecture for complex applications
+
+  3. **Props and Configuration**
+     - Use interfaces for props
+     - Provide sensible defaults
+     - Validate inputs where appropriate
+
+  4. **Context and Environment**
+     - Use context values for environment-specific settings
+     - Avoid hardcoding account IDs and regions
+     - Use environment variables for sensitive values
+
+  ## Code Structure
+
+  1. **Project Structure**
+     ```
+     ├── bin/                 # CDK app entry point
+     ├── lib/                 # Stack definitions
+     │   ├── constructs/      # Custom constructs
+     │   └── stacks/          # Stack implementations
+     ├── test/                # Tests
+     ├── cdk.json             # CDK configuration
+     └── tsconfig.json        # TypeScript configuration
+     ```
+
+  2. **Stack Implementation**
+     ```typescript
+     export class MyStack extends Stack {
+       constructor(scope: Construct, id: string, props?: MyStackProps) {
+         super(scope, id, props);
+         
+         // Group related resources
+         this.createDatabaseResources();
+         this.createComputeResources();
+         this.createNetworkingResources();
+       }
+       
+       private createDatabaseResources(): void {
+         // Database resources implementation
+       }
+       
+       // Other methods...
+     }
+     ```
+
+  3. **Custom Constructs**
+     ```typescript
+     export interface MyConstructProps {
+       readonly param1: string;
+       readonly param2?: number;
+     }
+     
+     export class MyConstruct extends Construct {
+       public readonly resource1: IResource;
+       
+       constructor(scope: Construct, id: string, props: MyConstructProps) {
+         super(scope, id);
+         
+         // Implementation
+       }
+     }
+     ```
+
+  ## Security Best Practices
+
+  1. **IAM Permissions**
+     - Follow the principle of least privilege
+     - Use specific resource ARNs instead of wildcards
+     - Consider using permission boundaries
+
+  2. **Encryption**
+     - Enable encryption at rest for all storage services
+     - Use customer-managed KMS keys for sensitive data
+     - Enable encryption in transit
+
+  3. **Network Security**
+     - Use VPCs for network isolation
+     - Implement security groups with minimal access
+     - Use private subnets for internal resources
+
+  ## Performance and Cost Optimization
+
+  1. **Resource Sizing**
+     - Right-size resources based on expected load
+     - Use auto-scaling where appropriate
+     - Consider provisioned capacity for predictable workloads
+
+  2. **Cost Awareness**
+     - Use the CDK Cost construct to estimate costs
+     - Tag resources for cost allocation
+     - Consider using Spot Instances for non-critical workloads
+
+  ## Testing and Validation
+
+  1. **Unit Testing**
+     - Test stack synthesis
+     - Validate resource properties
+     - Use snapshot testing for infrastructure changes
+
+  2. **Integration Testing**
+     - Deploy to a test environment
+     - Validate infrastructure behavior
+     - Clean up resources after testing
+
+  ## Deployment Best Practices
+
+  1. **CI/CD Integration**
+     - Automate deployments with CI/CD pipelines
+     - Use CDK Pipelines for self-mutating pipelines
+     - Implement approval steps for production deployments
+
+  2. **Rollback Strategy**
+     - Plan for rollbacks
+     - Use feature flags for risky changes
+     - Consider blue/green deployments for critical systems
+
+examples:
+  - input: |
+      import * as cdk from 'aws-cdk-lib';
+      import { Construct } from 'constructs';
+      import * as s3 from 'aws-cdk-lib/aws-s3';
+      
+      export class BadStack extends cdk.Stack {
+        constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+          super(scope, id, props);
+          
+          // Bad: Using lowercase ID
+          const bucket = new s3.Bucket(this, 'my-bucket');
+          
+          // Bad: Using RemovalPolicy.DESTROY without environment check
+          bucket.applyRemovalPolicy(cdk.RemovalPolicy.DESTROY);
+          
+          // Bad: Using CloudFormation intrinsic functions
+          new cdk.CfnOutput(this, 'BucketArn', {
+            value: { 'Fn::GetAtt': [bucket.node.defaultChild.logicalId, 'Arn'] },
+          });
+        }
+      }
+    output: |
+      import * as cdk from 'aws-cdk-lib';
+      import { Construct } from 'constructs';
+      import * as s3 from 'aws-cdk-lib/aws-s3';
+      
+      export class ImprovedStack extends cdk.Stack {
+        constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+          super(scope, id, props);
+          
+          // Good: Using PascalCase ID
+          const bucket = new s3.Bucket(this, 'MyBucket', {
+            // Good: Setting properties via props object
+            encryption: s3.BucketEncryption.S3_MANAGED,
+            blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+            versioned: true,
+          });
+          
+          // Good: Environment-aware removal policy
+          const isProduction = this.node.tryGetContext('environment') === 'prod';
+          bucket.applyRemovalPolicy(isProduction 
+            ? cdk.RemovalPolicy.RETAIN 
+            : cdk.RemovalPolicy.DESTROY);
+          
+          // Good: Using CDK's higher-level abstractions
+          new cdk.CfnOutput(this, 'BucketArn', {
+            description: 'The ARN of the S3 bucket',
+            value: bucket.bucketArn,
+            exportName: `${this.stackName}-bucket-arn`,
+          });
+        }
+      }
+
+  - input: |
+      import * as cdk from 'aws-cdk-lib';
+      import { Construct } from 'constructs';
+      import * as lambda from 'aws-cdk-lib/aws-lambda';
+      import * as iam from 'aws-cdk-lib/aws-iam';
+      
+      export class BadLambdaStack extends cdk.Stack {
+        constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+          super(scope, id, props);
+          
+          // Bad: Overly permissive IAM role
+          const role = new iam.Role(this, 'lambda-role', {
+            assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+          });
+          role.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName('AdministratorAccess'));
+          
+          // Bad: Hardcoded values
+          const fn = new lambda.Function(this, 'my-function', {
+            runtime: lambda.Runtime.NODEJS_14_X,
+            handler: 'index.handler',
+            code: lambda.Code.fromAsset('lambda'),
+            role: role,
+            timeout: cdk.Duration.seconds(30),
+            memorySize: 1024,
+          });
+        }
+      }
+    output: |
+      import * as cdk from 'aws-cdk-lib';
+      import { Construct } from 'constructs';
+      import * as lambda from 'aws-cdk-lib/aws-lambda';
+      import * as iam from 'aws-cdk-lib/aws-iam';
+      
+      interface LambdaStackProps extends cdk.StackProps {
+        readonly environment?: string;
+        readonly lambdaTimeout?: cdk.Duration;
+        readonly lambdaMemory?: number;
+      }
+      
+      export class ImprovedLambdaStack extends cdk.Stack {
+        constructor(scope: Construct, id: string, props: LambdaStackProps = {}) {
+          super(scope, id, props);
+          
+          // Good: Principle of least privilege
+          const role = new iam.Role(this, 'LambdaRole', {
+            assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+          });
+          
+          // Only add specific permissions needed
+          role.addToPolicy(new iam.PolicyStatement({
+            actions: ['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:PutLogEvents'],
+            resources: [`arn:aws:logs:${this.region}:${this.account}:log-group:/aws/lambda/*`],
+          }));
+          
+          // Good: Configurable values with sensible defaults
+          const fn = new lambda.Function(this, 'MyFunction', {
+            runtime: lambda.Runtime.NODEJS_18_X,
+            handler: 'index.handler',
+            code: lambda.Code.fromAsset('lambda'),
+            role: role,
+            timeout: props.lambdaTimeout || cdk.Duration.seconds(30),
+            memorySize: props.lambdaMemory || 512,
+            environment: {
+              ENVIRONMENT: props.environment || 'dev',
+            },
+            tracing: lambda.Tracing.ACTIVE,  // Enable X-Ray tracing
+          });
+          
+          // Good: Adding tags for resource management
+          cdk.Tags.of(fn).add('Environment', props.environment || 'dev');
+          cdk.Tags.of(fn).add('Service', 'MyService');
+        }
+      }
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 
