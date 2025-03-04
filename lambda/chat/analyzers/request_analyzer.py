@@ -7,7 +7,7 @@ user requests based on keywords and patterns.
 
 import os
 import sys
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 
 # Add the parent directory to sys.path to enable absolute imports if needed
 current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -41,7 +41,7 @@ class RequestAnalyzer:
         "device_status": ["status", "working", "broken", "online", "offline", "connected"],
         "play_music": ["play", "music", "song", "artist", "album", "playlist"],
         "device_info": ["what is", "information", "details", "specs", "tell me about"],
-        "multi_room_setup": ["multi-room", "whole home", "multiple devices", "sync", "all devices"],
+        "multi_room_setup": ["multi-room", "whole home", "multiple devices", "sync", "all devices", "all speakers", "every room", "same music", "synchronize", "play everywhere", "all rooms"],
         "custom_routine": ["routine", "automation", "automate", "sequence", "schedule", "when I"]
     }
     
@@ -120,4 +120,107 @@ class RequestAnalyzer:
         """
         if request_type in cls.REQUEST_TYPES:
             return cls.REQUEST_TYPES[request_type]
-        return [] 
+        return []
+
+    @classmethod
+    def extract_device_groups(cls, text: str) -> List[str]:
+        """
+        Extract device groups for multi-room audio requests.
+        
+        Args:
+            text: The user's request text
+            
+        Returns:
+            A list of device locations or groups mentioned in the request
+        """
+        text = text.lower()
+        locations = ["living room", "bedroom", "kitchen", "office", "bathroom", "dining room", 
+                    "conference room", "reception"]
+        
+        # Check for "all" or "every" keywords
+        if any(keyword in text for keyword in ["all", "every", "everywhere"]):
+            return ["all"]
+        
+        # Extract specific locations
+        mentioned_locations = []
+        for loc in locations:
+            if loc in text:
+                mentioned_locations.append(loc.replace(" ", "_"))
+        
+        return mentioned_locations
+
+    @classmethod
+    def extract_routine_details(cls, text: str) -> Dict[str, Any]:
+        """
+        Extract routine details for custom action requests.
+        
+        Args:
+            text: The user's request text
+            
+        Returns:
+            A dictionary containing routine details such as:
+            - name: The name of the routine
+            - trigger: What triggers the routine (time, event)
+            - actions: List of actions to perform
+            - devices: List of devices involved
+        """
+        text = text.lower()
+        
+        # Initialize routine details
+        routine = {
+            "name": None,
+            "trigger": None,
+            "trigger_value": None,
+            "actions": [],
+            "devices": []
+        }
+        
+        # Extract routine name
+        name_patterns = [
+            r"call(?:ed)? (?:it |the routine )?([\w\s]+)",
+            r"name(?:d)? (?:it |the routine )?([\w\s]+)",
+            r"create (?:a |the )routine ([\w\s]+)"
+        ]
+        
+        import re
+        for pattern in name_patterns:
+            match = re.search(pattern, text)
+            if match:
+                routine["name"] = match.group(1).strip()
+                break
+        
+        # Extract trigger type and value
+        if "when" in text:
+            routine["trigger"] = "event"
+            if "at" in text and re.search(r"\d{1,2}(?::\d{2})?\s*(?:am|pm)?", text):
+                routine["trigger"] = "time"
+                time_match = re.search(r"(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)", text)
+                if time_match:
+                    routine["trigger_value"] = time_match.group(1)
+        
+        # Extract actions
+        action_keywords = {
+            "play": "play_music",
+            "turn on": "power_on",
+            "turn off": "power_off",
+            "volume": "volume_change",
+            "mute": "mute",
+            "unmute": "unmute"
+        }
+        
+        for keyword, action in action_keywords.items():
+            if keyword in text:
+                routine["actions"].append(action)
+        
+        # Extract devices
+        device_types = ["speaker", "display", "hub"]
+        locations = ["living room", "bedroom", "kitchen", "office", "bathroom", "dining room", 
+                    "conference room", "reception"]
+        
+        for device in device_types:
+            if device in text:
+                for loc in locations:
+                    if loc in text:
+                        routine["devices"].append({"type": device, "location": loc.replace(" ", "_")})
+        
+        return routine 
