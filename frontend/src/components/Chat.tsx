@@ -6,19 +6,10 @@ import {
     Flex,
     Text,
     Select,
+    Badge,
 } from '@chakra-ui/react';
 import { Message } from '../types';
 import config from '../config';
-import axios from 'axios';
-
-// Create axios instance with default config
-const api = axios.create({
-    baseURL: config.apiUrl,
-    headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-    }
-});
 
 // Default customer IDs
 const CUSTOMER_IDS = [
@@ -33,7 +24,10 @@ export const Chat = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [customerId, setCustomerId] = useState(CUSTOMER_IDS[0].id);
+    const [isConnected, setIsConnected] = useState(false);
+    const [isConnecting, setIsConnecting] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const socketRef = useRef<WebSocket | null>(null);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -43,8 +37,81 @@ export const Chat = () => {
         scrollToBottom();
     }, [messages]);
 
-    const handleSend = async () => {
-        if (!input.trim()) return;
+    // Connect to WebSocket when component mounts or customerId changes
+    useEffect(() => {
+        connectWebSocket();
+
+        return () => {
+            // Disconnect when component unmounts
+            if (socketRef.current) {
+                socketRef.current.close();
+                socketRef.current = null;
+            }
+        };
+    }, [customerId]);
+
+    const connectWebSocket = () => {
+        // Close existing connection if any
+        if (socketRef.current) {
+            socketRef.current.close();
+            socketRef.current = null;
+        }
+
+        setIsConnecting(true);
+        setError(null);
+        setMessages([]);
+
+        // Create WebSocket URL with customerId as query parameter
+        const wsUrl = `${config.wsUrl}?customerId=${customerId}`;
+        const socket = new WebSocket(wsUrl);
+
+        socket.onopen = () => {
+            console.log('WebSocket connected');
+            setIsConnected(true);
+            setIsConnecting(false);
+        };
+
+        socket.onclose = (event) => {
+            console.log('WebSocket disconnected', event);
+            setIsConnected(false);
+            setIsConnecting(false);
+
+            // Attempt to reconnect after a delay if not intentionally closed
+            if (!event.wasClean && socketRef.current === socket) {
+                setTimeout(() => {
+                    connectWebSocket();
+                }, 3000);
+            }
+        };
+
+        socket.onerror = (error) => {
+            console.error('WebSocket error', error);
+            setError('Failed to connect to chat service');
+            setIsConnecting(false);
+        };
+
+        socket.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.message) {
+                    const botMessage: Message = {
+                        id: Date.now().toString(),
+                        text: data.message,
+                        sender: 'bot',
+                        timestamp: new Date().toISOString(),
+                    };
+                    setMessages((prev) => [...prev, botMessage]);
+                }
+            } catch (error) {
+                console.error('Error parsing WebSocket message', error);
+            }
+        };
+
+        socketRef.current = socket;
+    };
+
+    const handleSend = () => {
+        if (!input.trim() || !isConnected) return;
 
         const userMessage: Message = {
             id: Date.now().toString(),
@@ -53,25 +120,17 @@ export const Chat = () => {
             timestamp: new Date().toISOString(),
         };
 
-        setMessages((prev: Message[]) => [...prev, userMessage]);
+        setMessages((prev) => [...prev, userMessage]);
         setInput('');
         setIsLoading(true);
         setError(null);
 
         try {
-            const response = await api.post('/chat', {
-                message: input,
-                customerId: customerId,
-            });
-
-            const botMessage: Message = {
-                id: (Date.now() + 1).toString(),
-                text: response.data.message,
-                sender: 'bot',
-                timestamp: new Date().toISOString(),
-            };
-
-            setMessages((prev: Message[]) => [...prev, botMessage]);
+            if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+                socketRef.current.send(JSON.stringify({ message: input }));
+            } else {
+                setError('Not connected to chat service');
+            }
         } catch (err) {
             console.error('Error sending message:', err);
             setError('Failed to send message. Please try again.');
@@ -82,8 +141,7 @@ export const Chat = () => {
 
     const handleCustomerChange = (e: ChangeEvent<HTMLSelectElement>) => {
         setCustomerId(e.target.value);
-        // Clear messages when changing customer
-        setMessages([]);
+        // WebSocket reconnection will happen in the useEffect
     };
 
     return (
@@ -94,12 +152,20 @@ export const Chat = () => {
             display="flex"
             flexDirection="column"
         >
-            <Flex mb={4} justifyContent="flex-end">
+            <Flex mb={4} justifyContent="space-between" alignItems="center">
+                <Badge
+                    colorScheme={isConnected ? 'green' : isConnecting ? 'yellow' : 'red'}
+                    variant="subtle"
+                    p={2}
+                >
+                    {isConnected ? 'Connected' : isConnecting ? 'Connecting...' : 'Disconnected'}
+                </Badge>
                 <Select
                     value={customerId}
                     onChange={handleCustomerChange}
                     width="250px"
                     bg="white"
+                    isDisabled={isConnecting}
                 >
                     {CUSTOMER_IDS.map(customer => (
                         <option key={customer.id} value={customer.id}>
@@ -125,7 +191,11 @@ export const Chat = () => {
                             justify="center"
                         >
                             <Text color="gray.500">
-                                Send a message to start the conversation
+                                {isConnecting
+                                    ? 'Connecting to chat service...'
+                                    : isConnected
+                                        ? 'Send a message to start the conversation'
+                                        : 'Not connected to chat service'}
                             </Text>
                         </Flex>
                     ) : (
@@ -169,7 +239,7 @@ export const Chat = () => {
                         onChange={(e: ChangeEvent<HTMLInputElement>) => setInput(e.target.value)}
                         onKeyPress={(e: KeyboardEvent<HTMLInputElement>) => e.key === 'Enter' && handleSend()}
                         placeholder="Type your message..."
-                        disabled={isLoading}
+                        disabled={isLoading || !isConnected}
                         bg="white"
                         _focus={{ boxShadow: 'outline' }}
                     />
@@ -177,7 +247,7 @@ export const Chat = () => {
                         ml={2}
                         colorScheme="blue"
                         onClick={handleSend}
-                        disabled={isLoading}
+                        disabled={isLoading || !isConnected}
                     >
                         {isLoading ? 'Sending...' : 'Send'}
                     </Button>
