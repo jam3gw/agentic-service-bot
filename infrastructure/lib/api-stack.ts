@@ -92,11 +92,39 @@ export class ApiStack extends BaseStack {
             }
         });
 
+        // Create Lambda function for handling API requests
+        const apiFunction = new PythonFunction(this, 'ApiFunction', {
+            functionName: `${config.environment}-api-handler`,
+            runtime: lambda.Runtime.PYTHON_3_9,
+            handler: 'handler',
+            entry: path.join(__dirname, '../../lambda/api'),
+            timeout: cdk.Duration.minutes(5),
+            memorySize: 512,
+            environment: {
+                CUSTOMERS_TABLE: customersTable.tableName,
+                SERVICE_LEVELS_TABLE: serviceLevelsTable.tableName,
+                ENVIRONMENT: config.environment,
+                ALLOWED_ORIGIN: config.environment === 'prod'
+                    ? 'https://agentic-service-bot.jake-moses.com'
+                    : 'https://agentic-service-bot.dev.jake-moses.com',
+            },
+            bundling: {
+                assetExcludes: [
+                    'venv',
+                    '__pycache__'
+                ]
+            }
+        });
+
         // Grant Lambda permissions to access DynamoDB tables
         messagesTable.grantReadWriteData(chatFunction);
         customersTable.grantReadWriteData(chatFunction);
         serviceLevelsTable.grantReadWriteData(chatFunction);
         connectionsTable.grantReadWriteData(chatFunction);
+
+        // Grant API Lambda permissions to access DynamoDB tables
+        customersTable.grantReadWriteData(apiFunction);
+        serviceLevelsTable.grantReadData(apiFunction);
 
         // Create WebSocket API
         const webSocketApi = new websocketapi.WebSocketApi(this, 'ChatWebSocketApi', {
@@ -134,10 +162,51 @@ export class ApiStack extends BaseStack {
             resources: [`arn:aws:execute-api:${this.region}:${this.account}:${webSocketApi.apiId}/${config.environment}/*`],
         }));
 
+        // Create REST API for device and capability endpoints
+        const restApi = new apigateway.RestApi(this, 'DeviceApi', {
+            restApiName: `${config.environment}-device-api`,
+            description: 'API for device and capability management',
+            defaultCorsPreflightOptions: {
+                allowOrigins: [config.environment === 'prod'
+                    ? 'https://agentic-service-bot.jake-moses.com'
+                    : 'https://agentic-service-bot.dev.jake-moses.com'],
+                allowMethods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
+                allowHeaders: ['Content-Type', 'Authorization'],
+                allowCredentials: true,
+            },
+            deployOptions: {
+                stageName: config.environment,
+            },
+        });
+
+        // Create API resources and methods
+        const apiResource = restApi.root.addResource('api');
+
+        // Capabilities endpoint
+        const capabilitiesResource = apiResource.addResource('capabilities');
+        capabilitiesResource.addMethod('GET', new apigateway.LambdaIntegration(apiFunction));
+
+        // Customers endpoint
+        const customersResource = apiResource.addResource('customers');
+        const customerIdResource = customersResource.addResource('{customerId}');
+
+        // Devices endpoints
+        const devicesResource = customerIdResource.addResource('devices');
+        devicesResource.addMethod('GET', new apigateway.LambdaIntegration(apiFunction));
+
+        const deviceIdResource = devicesResource.addResource('{deviceId}');
+        deviceIdResource.addMethod('PATCH', new apigateway.LambdaIntegration(apiFunction));
+
         // Output the WebSocket URL
         new cdk.CfnOutput(this, 'WebSocketURL', {
             value: webSocketStage.url,
             description: 'WebSocket API URL',
+        });
+
+        // Output the REST API URL
+        new cdk.CfnOutput(this, 'RestApiURL', {
+            value: restApi.url,
+            description: 'REST API URL',
         });
 
         // Create a custom resource to seed the DynamoDB tables with initial data
