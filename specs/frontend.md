@@ -14,6 +14,31 @@ The Agentic Service Bot frontend provides a user-friendly interface for customer
 
 ## Components
 
+### App Component
+
+The top-level component that provides the application structure and navigation.
+
+**Features**:
+- Tab-based navigation between Chat, Devices, and Capabilities views
+- Shared customer context across all tabs
+- Responsive layout using Chakra UI
+
+**Props**: None (top-level component)
+
+**State**:
+- `customerId`: Currently selected customer ID
+
+### Instructions Section Component
+
+Provides an introduction and usage instructions for the smart home assistant.
+
+**Features**:
+- Welcome message and overview
+- Collapsible instructions on how to use the assistant
+- Example commands for different smart home functions
+
+**Props**: None
+
 ### Chat Component
 
 The main component that handles the chat interface and WebSocket communication.
@@ -25,8 +50,10 @@ The main component that handles the chat interface and WebSocket communication.
 - Connection status indicator
 - Error handling and display
 - Automatic scrolling to latest messages
+- Disconnect functionality
 
-**Props**: None (top-level component)
+**Props**:
+- `onCustomerChange`: Callback function when customer selection changes
 
 **State**:
 - `messages`: Array of message objects
@@ -36,6 +63,41 @@ The main component that handles the chat interface and WebSocket communication.
 - `customerId`: Currently selected customer ID
 - `isConnected`: Boolean indicating WebSocket connection status
 - `isConnecting`: Boolean indicating if connection is in progress
+- `isDisconnected`: Boolean indicating if user has manually disconnected
+
+### User Devices Table Component
+
+Displays a live-updated table of the user's smart home devices.
+
+**Features**:
+- Device listing with status indicators
+- Filtering by device type and location
+- Interactive controls for supported devices
+- Automatic refresh of device status
+- Responsive design for different screen sizes
+
+**Props**:
+- `customerId`: ID of the current customer
+
+**State**:
+- `devices`: Array of device objects
+- `isLoading`: Boolean indicating if devices are being loaded
+- `lastRefreshed`: Timestamp of last data refresh
+
+### Capabilities Table Component
+
+Provides a reference table for service level capabilities.
+
+**Features**:
+- Comparison of features across service levels
+- Categorized capabilities for easy reference
+- Visual indicators for available/unavailable features
+- Highlighting of current user's service level
+
+**Props**:
+- `customerId`: ID of the current customer
+
+**State**: None (static reference data)
 
 ### Message Component
 
@@ -45,27 +107,25 @@ Displays individual messages in the chat interface.
 - Different styling for user and bot messages
 - Timestamp display
 - Message content formatting
+- Message status indicators (sending, sent, delivered, error)
 
 **Props**:
-- `message`: Message object containing text, sender, and timestamp
-- `isLast`: Boolean indicating if this is the most recent message
+- `message`: Message object containing text, sender, timestamp, and status
 
-**State**: None (stateless component)
+### Connection Status Component
 
-### ConnectionStatus Component
-
-Displays the current connection status.
+Displays the current WebSocket connection status.
 
 **Features**:
-- Visual indicator of connection state
-- Status text
+- Visual indicators for different connection states
+- Error message display
+- Reconnect button for manual reconnection
 
 **Props**:
 - `isConnected`: Boolean indicating if connected
 - `isConnecting`: Boolean indicating if connecting
 - `error`: Error message if any
-
-**State**: None (stateless component)
+- `onReconnect`: Callback function for manual reconnection
 
 ### CustomerSelector Component
 
@@ -288,4 +348,59 @@ The frontend is deployed to a static hosting service (e.g., AWS S3 with CloudFro
 4. **Typing Indicators**: Show when the bot is generating a response
 5. **Message Templates**: Quick-access buttons for common requests
 6. **Dark Mode**: Toggle between light and dark themes
-7. **Offline Support**: Progressive Web App functionality 
+7. **Offline Support**: Progressive Web App functionality
+
+## User Interface
+
+### Layout
+
+The frontend uses a responsive layout with the following structure:
+
+- **Header**: Contains the application title and global controls
+- **Instructions Section**: Provides an introduction and usage instructions
+- **Tab Navigation**: Allows switching between different views
+  - **Chat Tab**: The main chat interface
+  - **My Devices Tab**: Shows the user's smart home devices
+  - **Capabilities Tab**: Displays service level capabilities
+- **Footer**: Contains additional information and links
+
+### Responsive Design
+
+The UI is designed to work on various screen sizes:
+
+- **Desktop**: Full layout with side-by-side elements
+- **Tablet**: Adjusted spacing and sizing
+- **Mobile**: Stacked layout with optimized controls for touch
+
+### Theme
+
+The application uses Chakra UI's theming system with:
+
+- Light and dark mode support
+- Consistent color scheme
+- Accessible contrast ratios
+- Responsive typography
+
+## Interactions
+
+### Chat Interaction
+
+1. User selects a customer profile (Basic, Premium, or Enterprise)
+2. User types a message in the input field
+3. Message is sent to the backend via WebSocket
+4. Response is received and displayed in the chat
+5. Chat automatically scrolls to the latest message
+
+### Device Management
+
+1. User navigates to the My Devices tab
+2. Devices are loaded based on the selected customer profile
+3. User can view device status and control supported devices
+4. Device status updates in real-time
+
+### Capability Reference
+
+1. User navigates to the Capabilities tab
+2. Capabilities are displayed based on service levels
+3. Current customer's service level is highlighted
+4. User can expand categories to view detailed capabilities 

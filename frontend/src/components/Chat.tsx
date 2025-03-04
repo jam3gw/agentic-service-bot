@@ -34,7 +34,11 @@ const CUSTOMER_IDS = [
     { id: 'cust_003', name: 'Alice Johnson (Enterprise)', avatar: '👩‍🔧' },
 ];
 
-export const Chat = () => {
+interface ChatProps {
+    onCustomerChange?: (customerId: string) => void;
+}
+
+export const Chat: React.FC<ChatProps> = ({ onCustomerChange }) => {
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -234,7 +238,12 @@ export const Chat = () => {
     };
 
     const handleCustomerChange = (e: ChangeEvent<HTMLSelectElement>) => {
-        setCustomerId(e.target.value);
+        const newCustomerId = e.target.value;
+        setCustomerId(newCustomerId);
+        // Call the onCustomerChange prop if provided
+        if (onCustomerChange) {
+            onCustomerChange(newCustomerId);
+        }
         // WebSocket reconnection will happen in the useEffect
     };
 
