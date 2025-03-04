@@ -5,7 +5,7 @@ alwaysApply: true
 ---
 # Python Testing Best Practices
 
-This rule enforces best practices for writing tests in Python.
+This rule enforces best practices for writing tests in Python, with a focus on ensuring tests provide business value.
 
 <rule>
 name: python_testing
@@ -21,119 +21,168 @@ actions:
     conditions:
       # If test function doesn't have docstring
       - pattern: "def\\s+test_[a-zA-Z0-9_]+\\s*\\([^)]*\\)\\s*:\\s*(?!\\s*[\"'])\\s*\\S+"
-        message: "Add docstrings to test functions to explain what they're testing"
+        message: "Add docstrings to test functions to explain what they're testing and what business value they provide"
       # If using assert without message
       - pattern: "assert\\s+[^,]+"
         message: "Include a message with assertions to clarify what's being tested"
       # If test has multiple assertions
       - pattern: "def\\s+test_[a-zA-Z0-9_]+[^:]*:(?:[^\\n]*\\n+\\s*)*assert[^\\n]*\\n+(?:[^\\n]*\\n+\\s*)*assert"
         message: "Consider splitting tests with multiple assertions into separate test functions"
+      # If test is mocking external dependencies without clear purpose
+      - pattern: "@patch\\(['\"][^'\"]+['\"]\\)"
+        message: "Ensure mocks are used purposefully and the test provides clear business value"
+      # If test has rigid string assertions
+      - pattern: "assert\\s+[\"'][^\"']+[\"']\\s+in\\s+.+"
+        message: "Consider using more flexible assertions that can handle variations in wording"
     message: |
       ## Python Testing Best Practices
 
       Follow these guidelines for writing tests:
 
-      1. Name test functions descriptively with `test_` prefix
+      1. **Business Value First**: Only write tests that provide clear business value
+         - Tests should verify critical business logic
+         - Tests should prevent regressions in important functionality
+         - Tests should document expected behavior for key features
       
-      2. Include docstrings for all test functions
+      2. **Test Quality Over Quantity**
+         - Focus on high-value tests rather than high test count
+         - Avoid tests that duplicate coverage without adding value
+         - Remove tests that are consistently failing without providing useful feedback
       
-      3. Follow the Arrange-Act-Assert (AAA) pattern
+      3. **Practical Mocking**
+         - Only mock external dependencies when necessary
+         - Ensure mocks reflect realistic behavior
+         - Don't create tests that are overly dependent on implementation details
       
-      4. Test one concept per test function
+      4. **Flexible Assertions**
+         - Use assertions that focus on business requirements, not implementation details
+         - For text validation, consider multiple ways the same concept might be expressed
+         - Use regular expressions or multiple conditions for flexible string matching
+         - Test for semantic meaning rather than exact wording
       
-      5. Use descriptive assertion messages
+      5. **Appropriate Timeouts**
+         - Set realistic timeouts for asynchronous operations
+         - Consider environment factors (like cold starts in serverless) when setting timeouts
+         - Include clear timeout messages that help diagnose issues
       
-      6. Use fixtures for test setup and teardown
+      6. Name test functions descriptively with `test_` prefix
       
-      7. Parameterize tests for multiple input scenarios
+      7. Include docstrings for all test functions that explain:
+         - What is being tested
+         - Why it matters (business value)
+         - Any special test conditions
       
-      8. Mock external dependencies
+      8. Follow the Arrange-Act-Assert (AAA) pattern
       
-      9. Aim for high test coverage, but focus on critical paths
+      9. Test one concept per test function
+      
+      10. Use descriptive assertion messages
+      
+      11. Use fixtures for test setup and teardown
+      
+      12. Parameterize tests for multiple input scenarios
+      
+      13. Aim for high test coverage of critical paths, not 100% coverage
 
-      ### Example:
+      ### Example of Flexible Text Assertion:
       ```python
-      import pytest
-      from myapp.calculator import Calculator
-      
-      @pytest.fixture
-      def calculator():
-          """Create a Calculator instance for testing."""
-          return Calculator()
-      
-      def test_addition_with_positive_numbers(calculator):
-          """Test that addition works with positive numbers."""
+      def test_error_message_for_invalid_input():
+          """Test that appropriate error message is shown for invalid input.
+          
+          This test ensures users receive helpful guidance when they
+          provide invalid input, which reduces support requests.
+          """
           # Arrange
-          a, b = 2, 3
+          invalid_input = "abc123"
           
           # Act
-          result = calculator.add(a, b)
+          result = process_numeric_input(invalid_input)
           
-          # Assert
-          assert result == 5, f"Expected 2 + 3 = 5, but got {result}"
-      
-      @pytest.mark.parametrize("a, b, expected", [
-          (1, 2, 3),
-          (0, 0, 0),
-          (-1, 1, 0),
-          (-1, -1, -2)
-      ])
-      def test_addition_with_various_inputs(calculator, a, b, expected):
-          """Test addition with various input combinations."""
-          result = calculator.add(a, b)
-          assert result == expected, f"Expected {a} + {b} = {expected}, but got {result}"
+          # Assert - flexible matching for error message
+          error_msg = result.get('error', '').lower()
+          assert any(phrase in error_msg for phrase in 
+                    ['invalid input', 'not valid', 'must be numeric', 'numbers only']), \
+                 f"Error message should indicate invalid input, but got: {error_msg}"
       ```
 
 examples:
   - input: |
-      # Bad: Test without docstring and with multiple assertions
-      def test_user_registration():
-          user = register_user("test@example.com", "password123")
-          assert user is not None
-          assert user.email == "test@example.com"
-          assert user.is_active == True
-          assert len(user.id) > 0
+      # Bad: Rigid string assertion
+      def test_permission_denied_message():
+          response = api.access_restricted_resource()
+          assert "Permission denied" in response.text
     output: |
-      # Good: Split into multiple tests with docstrings
-      def test_user_registration_creates_user():
-          """Test that user registration creates a non-None user object."""
-          user = register_user("test@example.com", "password123")
-          assert user is not None, "User registration should return a user object"
-      
-      def test_user_registration_sets_email():
-          """Test that user registration sets the correct email."""
-          user = register_user("test@example.com", "password123")
-          assert user.email == "test@example.com", "User should have the correct email"
-      
-      def test_user_registration_activates_user():
-          """Test that newly registered users are active by default."""
-          user = register_user("test@example.com", "password123")
-          assert user.is_active == True, "New users should be active by default"
-      
-      def test_user_registration_assigns_id():
-          """Test that user registration assigns a non-empty ID."""
-          user = register_user("test@example.com", "password123")
-          assert len(user.id) > 0, "User should be assigned a non-empty ID"
+      # Good: Flexible string assertion
+      def test_permission_denied_message():
+          """Test that users receive appropriate message when accessing restricted resources.
+          
+          This test ensures users understand why they can't access certain resources,
+          which improves user experience and reduces support tickets.
+          """
+          response = api.access_restricted_resource()
+          error_text = response.text.lower()
+          
+          # Check for various ways of expressing the same concept
+          permission_denied_phrases = [
+              "permission denied", 
+              "not authorized", 
+              "access denied",
+              "insufficient privileges",
+              "not allowed"
+          ]
+          
+          assert any(phrase in error_text for phrase in permission_denied_phrases), \
+                 f"Response should indicate permission denied, but got: {response.text}"
   
   - input: |
-      # Bad: Test without clear arrangement and assertion message
-      def test_calculate_total():
-          items = [{"price": 10}, {"price": 20}]
-          assert calculate_total(items) == 30
+      # Bad: Test without business value justification
+      @patch('external_api.get_data')
+      def test_process_data(mock_get_data):
+          mock_get_data.return_value = {"key": "value"}
+          result = process_data()
+          assert result == {"processed": "value"}
     output: |
-      # Good: Test with clear AAA pattern and assertion message
-      def test_calculate_total_sums_item_prices():
-          """Test that calculate_total correctly sums the prices of all items."""
+      # Good: Test with clear business value
+      @patch('external_api.get_data')
+      def test_process_data(mock_get_data):
+          """Test that data processing works correctly with API data.
+          
+          This test verifies that our core data processing function correctly
+          transforms external API data, which is critical for our reporting
+          feature used by 80% of customers.
+          """
           # Arrange
-          items = [{"price": 10}, {"price": 20}]
+          mock_get_data.return_value = {"key": "value"}
           
           # Act
-          total = calculate_total(items)
+          result = process_data()
           
           # Assert
-          assert total == 30, f"Expected sum of prices to be 30, but got {total}"
+          assert result == {"processed": "value"}, "Data should be correctly processed"
+  
+  - input: |
+      # Bad: Test with unrealistic timeout
+      def test_async_operation():
+          result = start_async_operation()
+          assert wait_for_completion(result, timeout=0.1)
+    output: |
+      # Good: Test with realistic timeout and helpful message
+      def test_async_operation():
+          """Test that async operation completes successfully.
+          
+          This operation is critical for background processing of customer data.
+          """
+          # Arrange
+          input_data = {"id": "test123"}
+          
+          # Act
+          result = start_async_operation(input_data)
+          
+          # Assert with realistic timeout
+          completed = wait_for_completion(result, timeout=5.0)
+          assert completed, f"Async operation did not complete within 5 seconds. Status: {result.status}"
 
 metadata:
   priority: high
-  version: 1.0
+  version: 1.2
 </rule> 
