@@ -42,6 +42,7 @@ actions:
       3. Each rule should have a clear description and purpose
       4. Rules should be properly formatted with the `<rule>` tag
       5. Consider adding `alwaysApply: true` to critical rules
+      6. **Always ensure codebase compliance** with new or updated rules before moving on to other tasks (see `rule-compliance-workflow.mdc`)
       
       ### When creating new rules:
       
@@ -49,6 +50,7 @@ actions:
       2. Follow the established rule format
       3. Test the rule to ensure it works as expected
       4. Document the rule's purpose and behavior
+      5. **Verify codebase compliance** with the new rule following the workflow in `rule-compliance-workflow.mdc`
       
       This ensures consistent application of all project standards across the codebase.
 
