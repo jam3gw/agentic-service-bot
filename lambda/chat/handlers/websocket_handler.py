@@ -23,7 +23,8 @@ from services.dynamodb_service import (
     save_connection, 
     get_customer_id_for_connection,
     delete_connection,
-    update_connection_status
+    update_connection_status,
+    store_message
 )
 from services.request_processor import process_request
 
@@ -37,7 +38,7 @@ CORS_HEADERS = {
     'Access-Control-Allow-Methods': 'OPTIONS,POST,GET'
 }
 
-def send_message(connection_id: str, message: str, endpoint_url: str) -> bool:
+def send_message(connection_id: str, message: str, endpoint_url: str, max_retries: int = 3) -> bool:
     """
     Send a message to a WebSocket client.
     
@@ -45,36 +46,64 @@ def send_message(connection_id: str, message: str, endpoint_url: str) -> bool:
         connection_id: The WebSocket connection ID
         message: The message to send
         endpoint_url: The API Gateway Management API endpoint URL
+        max_retries: Maximum number of retry attempts
         
     Returns:
         True if successful, False otherwise
     """
-    try:
-        logger.info(f"Sending message to connection {connection_id}")
-        apigw_management_api = boto3.client('apigatewaymanagementapi', endpoint_url=endpoint_url)
-        
-        # Ensure message is sent as a JSON object
-        if isinstance(message, str):
-            payload = json.dumps({'message': message})
-        else:
-            payload = json.dumps(message)
+    retries = 0
+    last_error = None
+    
+    while retries <= max_retries:
+        try:
+            logger.info(f"Sending message to connection {connection_id} (attempt {retries + 1}/{max_retries + 1})")
+            apigw_management_api = boto3.client('apigatewaymanagementapi', endpoint_url=endpoint_url)
             
-        apigw_management_api.post_to_connection(
-            ConnectionId=connection_id,
-            Data=payload.encode('utf-8')
-        )
-        logger.info(f"Message sent successfully to connection {connection_id}")
-        return True
-    except Exception as e:
-        error_message = str(e)
-        logger.error(f"Error sending message to connection {connection_id}: {error_message}")
-        
-        # If the connection is gone, mark it as disconnected instead of removing it
-        if "GoneException" in error_message:
-            logger.info(f"Connection {connection_id} is gone, marking as disconnected instead of removing")
-            update_connection_status(connection_id, "disconnected")
-        
-        return False
+            # Ensure message is sent as a JSON object
+            if isinstance(message, str):
+                payload = json.dumps({'message': message})
+                logger.info(f"RESPONSE PAYLOAD (string): {payload}")
+            else:
+                payload = json.dumps(message)
+                logger.info(f"RESPONSE PAYLOAD (object): {payload}")
+            
+            # Check if connection is valid before sending
+            try:
+                apigw_management_api.get_connection(ConnectionId=connection_id)
+                logger.info(f"Connection {connection_id} is valid, proceeding with message send")
+            except Exception as conn_err:
+                logger.error(f"Connection {connection_id} is invalid: {str(conn_err)}")
+                if "GoneException" in str(conn_err):
+                    update_connection_status(connection_id, "disconnected")
+                return False
+                
+            apigw_management_api.post_to_connection(
+                ConnectionId=connection_id,
+                Data=payload.encode('utf-8')
+            )
+            logger.info(f"Message sent successfully to connection {connection_id}")
+            return True
+        except Exception as e:
+            last_error = str(e)
+            error_type = type(e).__name__
+            logger.warning(f"Error sending message to connection {connection_id} (attempt {retries + 1}): {error_type}: {last_error}")
+            
+            # If the connection is gone, mark it as disconnected instead of removing it
+            if "GoneException" in last_error:
+                logger.info(f"Connection {connection_id} is gone, marking as disconnected instead of removing")
+                update_connection_status(connection_id, "disconnected")
+                return False
+            
+            # For other errors, retry if we haven't exceeded max_retries
+            retries += 1
+            if retries <= max_retries:
+                logger.info(f"Retrying in 0.5 seconds... ({retries}/{max_retries})")
+                time.sleep(0.5)  # Wait before retrying
+            else:
+                logger.error(f"Failed to send message after {max_retries + 1} attempts: {last_error}")
+                return False
+    
+    return False
 
 def handle_connect(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
@@ -168,9 +197,12 @@ def handle_message(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     customer_id = get_customer_id_for_connection(connection_id)
     logger.info(f"Retrieved customer ID for connection {connection_id}: {customer_id}")
     
-    # If no customer ID found in connection table, use the one from the message body
-    if not customer_id and body_customer_id:
-        logger.info(f"Using customer ID from message body: {body_customer_id}")
+    # If customer ID is provided in the message body, use it instead
+    if body_customer_id:
+        if customer_id and customer_id != body_customer_id:
+            logger.info(f"Overriding connection customer ID {customer_id} with message body customer ID {body_customer_id}")
+        else:
+            logger.info(f"Using customer ID from message body: {body_customer_id}")
         customer_id = body_customer_id
         
         # Save the connection with this customer ID for future messages
@@ -179,28 +211,70 @@ def handle_message(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             logger.info(f"Saved connection {connection_id} with customer ID {customer_id}")
         except Exception as e:
             logger.error(f"Error saving connection: {str(e)}")
-    
-    # If still no customer ID, return an error
-    if not customer_id:
+    # If no customer ID found in connection table or message body, return an error
+    elif not customer_id:
         logger.error("No customer ID found in connection or message")
         send_message(connection_id, {"error": "Missing customerId"}, endpoint_url)
         return {'statusCode': 400, 'body': json.dumps({"error": "Missing customerId"})}
     
+    # Store the user message in DynamoDB before processing
+    try:
+        timestamp_ms = int(time.time() * 1000)
+        user_conversation_id = f"conv_{customer_id}_user_{timestamp_ms}"
+        
+        logger.info(f"Storing user message in DynamoDB for customer {customer_id} from WebSocket handler")
+        user_stored = store_message(
+            conversation_id=user_conversation_id,
+            customer_id=customer_id,
+            message=message,
+            sender='user'
+        )
+        if not user_stored:
+            logger.error("Failed to store user message in DynamoDB from WebSocket handler")
+    except Exception as e:
+        logger.error(f"Error storing user message from WebSocket handler: {str(e)}")
+        # Continue processing even if storage fails
+    
     # Process the request
     try:
         # Send an acknowledgment
+        logger.info(f"Sending acknowledgment to connection {connection_id}")
         ack_sent = send_message(connection_id, {"status": "processing", "message": "Processing your request..."}, endpoint_url)
         if not ack_sent:
             logger.warning(f"Failed to send acknowledgment to connection {connection_id}")
+            # Check if connection is still valid
+            try:
+                apigw_management_api = boto3.client('apigatewaymanagementapi', endpoint_url=endpoint_url)
+                apigw_management_api.get_connection(ConnectionId=connection_id)
+                logger.info(f"Connection {connection_id} is still valid despite acknowledgment failure")
+            except Exception as conn_err:
+                logger.error(f"Connection {connection_id} appears to be invalid: {str(conn_err)}")
+                return {'statusCode': 500, 'body': json.dumps({"error": "Connection lost before processing completed"})}
         
         # Process the request
+        logger.info(f"Processing request for customer {customer_id} (service level: {get_customer(customer_id).service_level}): '{message}'")
+        start_time = time.time()
         response_text = process_request(customer_id, message)
-        logger.info(f"Generated response: {response_text}")
+        processing_time = time.time() - start_time
+        logger.info(f"Generated response in {processing_time:.2f} seconds: {response_text}")
+        
+        # Verify connection is still valid before sending response
+        try:
+            apigw_management_api = boto3.client('apigatewaymanagementapi', endpoint_url=endpoint_url)
+            apigw_management_api.get_connection(ConnectionId=connection_id)
+            logger.info(f"Connection {connection_id} is still valid before sending response")
+        except Exception as conn_err:
+            logger.error(f"Connection {connection_id} is no longer valid before sending response: {str(conn_err)}")
+            return {'statusCode': 500, 'body': json.dumps({"error": "Connection lost before response could be sent"})}
         
         # Send the response
-        response_sent = send_message(connection_id, {"message": response_text}, endpoint_url)
+        logger.info(f"Sending response to connection {connection_id}")
+        response_payload = {"message": response_text}
+        response_sent = send_message(connection_id, response_payload, endpoint_url)
         if not response_sent:
             logger.warning(f"Failed to send response to connection {connection_id}")
+        else:
+            logger.info(f"Successfully sent response to connection {connection_id}")
         
         return {'statusCode': 200, 'body': json.dumps({"status": "Message processed"})}
     except Exception as e:
