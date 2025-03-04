@@ -77,7 +77,8 @@ def generate_response(prompt: str, context: Dict[str, Any] = None) -> str:
             messages=[
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=1000
+            max_tokens=300,
+            temperature=0.3
         )
         return message.content[0].text
     except Exception as e:
@@ -95,35 +96,52 @@ def build_system_prompt(context: Dict[str, Any] = None) -> str:
         The system prompt for the Anthropic API
     """
     if not context:
-        return "You are a helpful AI assistant for a smart home device company."
+        return "You are a helpful AI assistant for a smart home device company. Keep responses brief and to the point."
     
     # Start with base prompt
-    system_prompt = "You are an AI assistant for a smart home device company. "
+    system_prompt = "You are an AI assistant for a smart home device company. Keep all responses brief and concise. "
     
     # Add customer info if available
     if "customer" in context:
         customer = context["customer"]
-        system_prompt += f"You are speaking with {customer.name}, who has a {customer.service_level} service level. "
+        system_prompt += f"Customer: {customer.name}, {customer.service_level} service. "
     
     # Add device info if available
     if "devices" in context and context["devices"]:
-        devices_desc = ", ".join([f"{d['type']} in the {d['location'].replace('_', ' ')}" for d in context["devices"]])
-        system_prompt += f"They have the following devices: {devices_desc}. "
+        devices_desc = ", ".join([f"{d['type']} ({d['location'].replace('_', ' ')})" for d in context["devices"]])
+        system_prompt += f"Devices: {devices_desc}. "
     
     # Add service level permissions
     if "permissions" in context:
         allowed = ", ".join(context["permissions"]["allowed_actions"])
-        system_prompt += f"Their service level permits these actions: {allowed}. "
+        system_prompt += f"Allowed actions: {allowed}. "
     
     # Add specific instructions based on context
     if "action_allowed" in context:
         if context["action_allowed"]:
-            system_prompt += "The requested action IS permitted for this customer's service level. Respond helpfully and proceed with the request. "
+            system_prompt += "Request IS permitted. Respond helpfully and briefly. "
         else:
-            system_prompt += (
-                "The requested action is NOT permitted for this customer's service level. "
-                "Politely explain this limitation and offer to connect them with customer support to upgrade their service. "
-                "Do not explain specific pricing or offer workarounds."
-            )
+            system_prompt += "Request NOT permitted. Politely explain and suggest upgrade. "
+    
+    # Add multi-room audio context if available
+    if "device_groups" in context and context["request_type"] == "multi_room_setup":
+        if "all" in context["device_groups"]:
+            system_prompt += "Setup: multi-room audio (all devices). "
+        else:
+            group_str = ", ".join([loc.replace("_", " ") for loc in context["device_groups"]])
+            system_prompt += f"Setup: multi-room audio ({group_str}). "
+    
+    # Add custom routine context if available
+    if "routine" in context and context["request_type"] == "custom_routine":
+        routine = context["routine"]
+        routine_name = routine["name"] or "unnamed"
+        system_prompt += f"Routine: '{routine_name}'. "
+        
+        if routine["trigger"] and routine["trigger"] == "time" and routine["trigger_value"]:
+            system_prompt += f"Trigger: {routine['trigger_value']}. "
+        
+        if routine["actions"]:
+            actions_str = ", ".join(routine["actions"])
+            system_prompt += f"Actions: {actions_str}. "
     
     return system_prompt 
