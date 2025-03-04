@@ -1,0 +1,117 @@
+# Agentic Service Bot Architecture
+
+This rule documents the key architectural patterns and requirements for the Agentic Service Bot project.
+
+<rule>
+name: agentic_service_bot_architecture
+description: Documents the architecture, configuration requirements, and best practices for the Agentic Service Bot
+filters:
+  - type: file_extension
+    pattern: "\\.(py|ts|tsx|json)$"
+  - type: content
+    pattern: "(?i)(lambda|dynamodb|anthropic|service.level|customer|request.analyzer)"
+
+actions:
+  - type: suggest
+    conditions:
+      # If missing environment variables
+      - pattern: "os\\.environ\\.get\\(['\"](MESSAGES_TABLE|CUSTOMERS_TABLE|SERVICE_LEVELS_TABLE|CONNECTIONS_TABLE|ANTHROPIC_API_KEY|ANTHROPIC_MODEL)['\"]\\)"
+        message: "Ensure all required environment variables are set for the application to function properly"
+      # If modifying request analyzer
+      - pattern: "class\\s+RequestAnalyzer"
+        message: "The RequestAnalyzer class categorizes user requests and determines required actions based on service level permissions"
+      # If modifying customer class
+      - pattern: "class\\s+Customer"
+        message: "The Customer class manages customer data, service levels, and device information"
+    message: |
+      ## Agentic Service Bot Architecture
+
+      This project implements a smart home assistant service bot with the following key components:
+
+      ### 1. Environment Configuration
+      - Required environment variables:
+        - `MESSAGES_TABLE`: DynamoDB table for conversation history
+        - `CUSTOMERS_TABLE`: DynamoDB table for customer data
+        - `SERVICE_LEVELS_TABLE`: DynamoDB table for service tier permissions
+        - `CONNECTIONS_TABLE`: DynamoDB table for WebSocket connections
+        - `ANTHROPIC_API_KEY`: API key for Anthropic Claude
+        - `ANTHROPIC_MODEL`: Model name for Anthropic Claude (default: claude-3-opus-20240229)
+
+      ### 2. Service Tier System
+      - Three service tiers: basic, premium, and enterprise
+      - Each tier has specific allowed actions and device limits
+      - Permission checks are enforced before processing requests
+
+      ### 3. Request Processing Flow
+      1. Identify request type using keyword analysis
+      2. Determine required actions for the request
+      3. Check if customer's service level permits those actions
+      4. Generate appropriate response using Anthropic Claude
+      5. Store conversation history in DynamoDB
+
+      ### 4. Communication Channels
+      - WebSocket API for real-time communication
+      - HTTP API for backward compatibility
+      - Connection state maintained in DynamoDB
+
+      ### 5. Local Testing
+      - Mock DynamoDB tables for local development
+      - Sample data loaded from JSON files
+      - Command-line interface for interaction
+
+      ### 6. AI Integration
+      - Context-aware system prompts include:
+        - Customer information and service level
+        - Device details and capabilities
+        - Permission constraints
+        - Action-specific instructions
+
+      When modifying this codebase, ensure you maintain these architectural patterns and properly handle service level permissions.
+
+examples:
+  - input: |
+      # Missing environment variables
+      def lambda_handler(event, context):
+          dynamodb = boto3.resource('dynamodb')
+          messages_table = dynamodb.Table('messages')
+          customers_table = dynamodb.Table('customers')
+    output: |
+      # Properly configured environment variables
+      def lambda_handler(event, context):
+          dynamodb = boto3.resource('dynamodb')
+          messages_table = dynamodb.Table(os.environ.get('MESSAGES_TABLE'))
+          customers_table = dynamodb.Table(os.environ.get('CUSTOMERS_TABLE'))
+  
+  - input: |
+      # Processing a request without permission check
+      def process_request(customer_id, user_input):
+          customer = get_customer(customer_id)
+          request_type = RequestAnalyzer.identify_request_type(user_input)
+          # Generate response without checking permissions
+          return generate_response(user_input, {"customer": customer})
+    output: |
+      # Processing a request with proper permission check
+      def process_request(customer_id, user_input):
+          customer = get_customer(customer_id)
+          request_type = RequestAnalyzer.identify_request_type(user_input)
+          required_actions = RequestAnalyzer.get_required_actions(request_type)
+          
+          # Check if all required actions are allowed for this customer's service level
+          all_actions_allowed = all(
+              is_action_allowed(customer, action)
+              for action in required_actions
+          )
+          
+          # Build context with permission information
+          context = {
+              "customer": customer,
+              "permissions": get_service_level_permissions(customer.service_level),
+              "action_allowed": all_actions_allowed
+          }
+          
+          return generate_response(user_input, context)
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 
