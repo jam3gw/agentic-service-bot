@@ -1,0 +1,427 @@
+# WebSocket Frontend Best Practices
+
+This rule enforces best practices for building robust WebSocket-based chat interfaces in frontend applications.
+
+<rule>
+name: websocket_frontend_best_practices
+description: Enforce best practices for WebSocket-based chat interfaces in frontend applications
+filters:
+  - type: file_extension
+    pattern: "\\.(ts|tsx|js|jsx)$"
+  - type: content
+    pattern: "WebSocket|socket|ws\\.|wss:|connect|onmessage|onopen|onclose|onerror"
+
+actions:
+  - type: suggest
+    conditions:
+      # If WebSocket is created without error handling
+      - pattern: "new\\s+WebSocket\\([^)]+\\)(?!.*onerror)"
+        message: "Always implement error handling for WebSocket connections"
+      # If reconnection logic is missing
+      - pattern: "socket\\.onclose\\s*=\\s*\\([^)]*\\)\\s*=>\\s*\\{[^\\}]*\\}"
+        message: "Implement reconnection logic in onclose handler"
+      # If connection state management is missing
+      - pattern: "new\\s+WebSocket\\([^)]+\\)(?!.*isConnected|.*connectionState)"
+        message: "Maintain connection state for UI feedback"
+      # If not using a connection timeout
+      - pattern: "connect\\([^)]*\\)(?!.*timeout)"
+        message: "Implement connection timeouts to prevent indefinite loading states"
+      # If not handling message parsing errors
+      - pattern: "socket\\.onmessage\\s*=\\s*\\([^)]*\\)\\s*=>\\s*\\{[^\\}]*JSON\\.parse[^\\}]*\\}"
+        message: "Always use try/catch when parsing WebSocket messages"
+    message: |
+      ## WebSocket Frontend Best Practices
+
+      Follow these guidelines for building robust WebSocket chat interfaces:
+
+      ### 1. Connection Management
+      
+      - **Connection State Tracking**: Maintain observable connection states (connecting, connected, disconnected, error)
+      - **Visual Feedback**: Provide clear UI indicators of connection status
+      - **Automatic Reconnection**: Implement exponential backoff for reconnection attempts
+      - **Connection Timeouts**: Set reasonable timeouts for initial connections (3-5 seconds)
+      - **Connection Validation**: Verify connection is valid before sending messages
+      
+      ### 2. Error Handling
+      
+      - **Comprehensive Error States**: Handle all error scenarios (connection failure, message send failure, etc.)
+      - **Graceful Degradation**: Fall back to alternative communication methods when WebSockets fail
+      - **User-Friendly Error Messages**: Translate technical errors into actionable user guidance
+      - **Error Logging**: Log detailed error information for debugging
+      - **Recovery Mechanisms**: Implement strategies to recover from errors automatically
+      
+      ### 3. Message Processing
+      
+      - **Message Queue**: Implement a queue for messages that fail to send
+      - **Message Acknowledgment**: Track message delivery status (sent, delivered, read)
+      - **Optimistic Updates**: Show messages in UI before confirmation from server
+      - **Message Retry Logic**: Automatically retry failed message sends
+      - **Message Validation**: Validate message format before sending
+      
+      ### 4. Performance Optimization
+      
+      - **Throttling & Debouncing**: Limit rapid message sends and typing indicators
+      - **Pagination**: Load chat history in chunks rather than all at once
+      - **Efficient DOM Updates**: Use virtual DOM or efficient rendering techniques
+      - **Message Batching**: Group messages for more efficient processing
+      - **Resource Cleanup**: Properly close connections and clear intervals on component unmount
+      
+      ### 5. Security Considerations
+      
+      - **Input Sanitization**: Sanitize user input before sending
+      - **Authentication**: Maintain secure authentication for WebSocket connections
+      - **Token Refresh**: Handle authentication token expiration and refresh
+      - **Content Validation**: Validate incoming message content before processing
+      - **Secure WebSocket Protocol**: Use wss:// instead of ws:// in production
+
+      ### Example Implementation:
+      ```typescript
+      // Connection management with state tracking
+      export const createChatConnection = (url: string, authToken: string) => {
+        // Observable connection state
+        const connectionState = ref('disconnected');
+        const messages = ref([]);
+        const connectionError = ref(null);
+        
+        // WebSocket instance
+        let socket: WebSocket | null = null;
+        let reconnectTimer: number | null = null;
+        let reconnectAttempt = 0;
+        const MAX_RECONNECT_ATTEMPTS = 5;
+        
+        // Message queue for failed sends
+        const messageQueue = [];
+        
+        const connect = () => {
+          if (connectionState.value === 'connecting') return;
+          
+          connectionState.value = 'connecting';
+          connectionError.value = null;
+          
+          // Connection timeout
+          const connectionTimeout = setTimeout(() => {
+            if (connectionState.value === 'connecting') {
+              connectionState.value = 'error';
+              connectionError.value = 'Connection timeout';
+              handleReconnect();
+            }
+          }, 5000);
+          
+          // Create WebSocket with auth
+          try {
+            socket = new WebSocket(`${url}?token=${authToken}`);
+          } catch (err) {
+            clearTimeout(connectionTimeout);
+            connectionState.value = 'error';
+            connectionError.value = `Failed to create connection: ${err.message}`;
+            handleReconnect();
+            return;
+          }
+          
+          // Connection opened
+          socket.onopen = () => {
+            clearTimeout(connectionTimeout);
+            connectionState.value = 'connected';
+            reconnectAttempt = 0;
+            
+            // Process any queued messages
+            processMessageQueue();
+          };
+          
+          // Connection closed
+          socket.onclose = (event) => {
+            clearTimeout(connectionTimeout);
+            connectionState.value = 'disconnected';
+            handleReconnect();
+          };
+          
+          // Connection error
+          socket.onerror = (error) => {
+            clearTimeout(connectionTimeout);
+            connectionState.value = 'error';
+            connectionError.value = 'Connection error';
+            // Don't reconnect here, let onclose handle it
+          };
+          
+          // Message received
+          socket.onmessage = (event) => {
+            try {
+              const data = JSON.parse(event.data);
+              processIncomingMessage(data);
+            } catch (error) {
+              console.error('Error parsing message:', error);
+            }
+          };
+        };
+        
+        // Handle reconnection with exponential backoff
+        const handleReconnect = () => {
+          if (reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
+            connectionError.value = 'Maximum reconnection attempts reached';
+            return;
+          }
+          
+          // Clear any existing timer
+          if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+          }
+          
+          // Calculate backoff time
+          const backoffTime = Math.min(30000, 1000 * Math.pow(2, reconnectAttempt));
+          reconnectAttempt++;
+          
+          reconnectTimer = setTimeout(() => {
+            connect();
+          }, backoffTime);
+        };
+        
+        // Send message with retry logic
+        const sendMessage = (message: string) => {
+          if (!isConnectionValid()) {
+            // Queue message for later
+            messageQueue.push(message);
+            
+            // Try to reconnect
+            if (connectionState.value !== 'connecting') {
+              connect();
+            }
+            
+            return false;
+          }
+          
+          try {
+            socket.send(JSON.stringify({
+              type: 'message',
+              content: message,
+              timestamp: Date.now()
+            }));
+            return true;
+          } catch (error) {
+            messageQueue.push(message);
+            return false;
+          }
+        };
+        
+        // Check if connection is valid
+        const isConnectionValid = () => {
+          return socket && socket.readyState === WebSocket.OPEN;
+        };
+        
+        // Process queued messages
+        const processMessageQueue = () => {
+          if (!isConnectionValid()) return;
+          
+          while (messageQueue.length > 0) {
+            const message = messageQueue.shift();
+            try {
+              socket.send(JSON.stringify({
+                type: 'message',
+                content: message,
+                timestamp: Date.now()
+              }));
+            } catch (error) {
+              // Put the message back in the queue
+              messageQueue.unshift(message);
+              break;
+            }
+          }
+        };
+        
+        // Clean up resources
+        const disconnect = () => {
+          if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+          }
+          
+          if (socket) {
+            socket.close();
+            socket = null;
+          }
+          
+          connectionState.value = 'disconnected';
+        };
+        
+        return {
+          connect,
+          disconnect,
+          sendMessage,
+          connectionState,
+          connectionError,
+          messages,
+          isConnectionValid
+        };
+      };
+      ```
+
+examples:
+  - input: |
+      // Bad: Basic WebSocket implementation without proper error handling
+      const connectWebSocket = (url) => {
+        const socket = new WebSocket(url);
+        
+        socket.onopen = () => {
+          console.log('Connected to WebSocket');
+        };
+        
+        socket.onmessage = (event) => {
+          const data = JSON.parse(event.data);
+          handleMessage(data);
+        };
+        
+        return socket;
+      };
+    output: |
+      // Good: Robust WebSocket implementation with proper error handling
+      const connectWebSocket = (url) => {
+        const connectionState = ref('disconnected');
+        const connectionError = ref(null);
+        let socket = null;
+        let reconnectTimer = null;
+        let reconnectAttempt = 0;
+        
+        const connect = () => {
+          connectionState.value = 'connecting';
+          
+          // Set connection timeout
+          const connectionTimeout = setTimeout(() => {
+            if (connectionState.value === 'connecting') {
+              connectionState.value = 'error';
+              connectionError.value = 'Connection timeout';
+              handleReconnect();
+            }
+          }, 5000);
+          
+          try {
+            socket = new WebSocket(url);
+          } catch (err) {
+            clearTimeout(connectionTimeout);
+            connectionState.value = 'error';
+            connectionError.value = `Failed to create connection: ${err.message}`;
+            handleReconnect();
+            return;
+          }
+          
+          socket.onopen = () => {
+            clearTimeout(connectionTimeout);
+            connectionState.value = 'connected';
+            reconnectAttempt = 0;
+          };
+          
+          socket.onclose = () => {
+            clearTimeout(connectionTimeout);
+            connectionState.value = 'disconnected';
+            handleReconnect();
+          };
+          
+          socket.onerror = (error) => {
+            clearTimeout(connectionTimeout);
+            connectionState.value = 'error';
+            connectionError.value = 'Connection error';
+          };
+          
+          socket.onmessage = (event) => {
+            try {
+              const data = JSON.parse(event.data);
+              handleMessage(data);
+            } catch (error) {
+              console.error('Error parsing message:', error);
+            }
+          };
+        };
+        
+        const handleReconnect = () => {
+          if (reconnectAttempt >= 5) return;
+          
+          if (reconnectTimer) clearTimeout(reconnectTimer);
+          
+          const backoffTime = Math.min(30000, 1000 * Math.pow(2, reconnectAttempt));
+          reconnectAttempt++;
+          
+          reconnectTimer = setTimeout(connect, backoffTime);
+        };
+        
+        // Initial connection
+        connect();
+        
+        return {
+          socket,
+          connectionState,
+          connectionError,
+          reconnect: connect,
+          disconnect: () => {
+            if (reconnectTimer) clearTimeout(reconnectTimer);
+            if (socket) socket.close();
+          }
+        };
+      };
+  
+  - input: |
+      // Bad: Message sending without validation or queue
+      const sendMessage = (socket, message) => {
+        socket.send(JSON.stringify({
+          content: message
+        }));
+      };
+    output: |
+      // Good: Message sending with validation, queue and retry
+      const sendMessage = (message) => {
+        // Validate message
+        if (!message || message.trim() === '') {
+          return { success: false, error: 'Message cannot be empty' };
+        }
+        
+        // Check connection
+        if (!isConnectionValid()) {
+          // Queue message for later
+          messageQueue.push(message);
+          
+          // Try to reconnect
+          if (connectionState.value !== 'connecting') {
+            connect();
+          }
+          
+          return { 
+            success: false, 
+            queued: true, 
+            error: 'Connection unavailable, message queued' 
+          };
+        }
+        
+        // Send with optimistic UI update
+        try {
+          const messageId = generateUniqueId();
+          
+          // Add to local messages with pending status
+          messages.value.push({
+            id: messageId,
+            content: message,
+            sender: 'user',
+            status: 'sending',
+            timestamp: Date.now()
+          });
+          
+          // Send to server
+          socket.send(JSON.stringify({
+            id: messageId,
+            type: 'message',
+            content: message,
+            timestamp: Date.now()
+          }));
+          
+          return { success: true, messageId };
+        } catch (error) {
+          // Queue for retry
+          messageQueue.push(message);
+          return { 
+            success: false, 
+            queued: true, 
+            error: `Send failed: ${error.message}` 
+          };
+        }
+      };
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 
