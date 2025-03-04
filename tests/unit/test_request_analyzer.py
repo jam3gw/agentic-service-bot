@@ -108,5 +108,45 @@ class TestRequestAnalyzer(unittest.TestCase):
             []
         )
 
+    def test_extract_device_groups(self):
+        # Test with "all" keyword
+        text = "Play the same music on all my speakers"
+        groups = RequestAnalyzer.extract_device_groups(text)
+        self.assertIn("all", groups)
+        
+        # Test with specific locations
+        text = "Sync audio between my living room and bedroom speakers"
+        groups = RequestAnalyzer.extract_device_groups(text)
+        self.assertIn("living_room", groups)
+        self.assertIn("bedroom", groups)
+        
+        # Test with no locations
+        text = "Tell me about my devices"
+        groups = RequestAnalyzer.extract_device_groups(text)
+        self.assertEqual(len(groups), 0)
+
+    def test_extract_routine_details(self):
+        # Test with routine name and time trigger
+        text = "Create a routine called Morning Music to play music at 7:00 am on my bedroom speaker"
+        details = RequestAnalyzer.extract_routine_details(text)
+        self.assertEqual(details["name"], "Morning Music")
+        self.assertEqual(details["trigger"], "time")
+        self.assertEqual(details["trigger_value"], "7:00 am")
+        self.assertIn("play_music", details["actions"])
+        self.assertGreater(len(details["devices"]), 0)
+        self.assertEqual(details["devices"][0]["location"], "bedroom")
+        
+        # Test with event trigger
+        text = "Create a routine when I say goodnight to turn off all speakers"
+        details = RequestAnalyzer.extract_routine_details(text)
+        self.assertEqual(details["trigger"], "event")
+        self.assertIn("power_off", details["actions"])
+        
+        # Test with no clear details
+        text = "I want to create a routine"
+        details = RequestAnalyzer.extract_routine_details(text)
+        self.assertIsNone(details["name"])
+        self.assertEqual(len(details["actions"]), 0)
+
 if __name__ == '__main__':
     unittest.main() 
