@@ -1,0 +1,99 @@
+# React Chakra UI Dependencies Best Practices
+
+This rule ensures that all necessary Chakra UI dependencies are installed when developing React components.
+
+<rule>
+name: react_chakra_dependencies
+description: Ensure all required Chakra UI dependencies are installed for React components
+filters:
+  - type: file_extension
+    pattern: "\\.(tsx|jsx)$"
+  - type: content
+    pattern: "import.*from.*@chakra-ui"
+
+actions:
+  - type: suggest
+    conditions:
+      # If using Chakra UI icons without the package
+      - pattern: "import.*from.*@chakra-ui/icons"
+        message: "Ensure @chakra-ui/icons package is installed"
+      # If using Chakra UI components without the core package
+      - pattern: "import.*from.*@chakra-ui/react"
+        message: "Ensure @chakra-ui/react package is installed"
+      # If using Chakra UI theme without the package
+      - pattern: "import.*from.*@chakra-ui/theme"
+        message: "Ensure @chakra-ui/theme package is installed"
+      # If using Chakra UI hooks without the package
+      - pattern: "import.*from.*@chakra-ui/hooks"
+        message: "Ensure @chakra-ui/hooks package is installed"
+    message: |
+      ## React Chakra UI Dependencies
+
+      When developing React components with Chakra UI, ensure all required dependencies are installed:
+
+      ### Core Dependencies
+      
+      - **@chakra-ui/react**: The main Chakra UI package
+        ```bash
+        npm install @chakra-ui/react @emotion/react @emotion/styled framer-motion
+        ```
+      
+      ### Additional Packages
+      
+      - **@chakra-ui/icons**: For Chakra UI icons
+        ```bash
+        npm install @chakra-ui/icons
+        ```
+      
+      - **@chakra-ui/theme**: For custom theming (usually included in @chakra-ui/react)
+        ```bash
+        npm install @chakra-ui/theme
+        ```
+      
+      - **@chakra-ui/hooks**: For Chakra UI hooks (usually included in @chakra-ui/react)
+        ```bash
+        npm install @chakra-ui/hooks
+        ```
+
+      ### Dependency Verification
+      
+      Before creating new components, verify that all required dependencies are installed:
+      
+      ```bash
+      cd frontend && npm list @chakra-ui/react @chakra-ui/icons
+      ```
+      
+      ### Common Issues
+      
+      1. **Missing Icons**: If you see an error like `Failed to resolve import "@chakra-ui/icons"`, install the icons package.
+      
+      2. **Peer Dependencies**: Ensure all peer dependencies are installed (emotion and framer-motion).
+      
+      3. **Version Mismatches**: Keep all Chakra UI packages on the same version to avoid compatibility issues.
+
+examples:
+  - input: |
+      // Component using Chakra UI icons
+      import React from 'react';
+      import { Box, Button } from '@chakra-ui/react';
+      import { CheckIcon, CloseIcon } from '@chakra-ui/icons';
+      
+      const MyComponent = () => {
+        return (
+          <Box>
+            <Button leftIcon={<CheckIcon />}>Accept</Button>
+            <Button leftIcon={<CloseIcon />}>Reject</Button>
+          </Box>
+        );
+      };
+      
+      export default MyComponent;
+    output: |
+      // Make sure to install the required dependencies:
+      // npm install @chakra-ui/react @emotion/react @emotion/styled framer-motion
+      // npm install @chakra-ui/icons
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 
