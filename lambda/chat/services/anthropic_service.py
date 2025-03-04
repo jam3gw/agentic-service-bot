@@ -99,7 +99,7 @@ def build_system_prompt(context: Dict[str, Any] = None) -> str:
         return "You are a helpful AI assistant for a smart home device company. Keep responses brief and to the point."
     
     # Start with base prompt
-    system_prompt = "You are an AI assistant for a smart home device company. Keep all responses brief and concise. "
+    system_prompt = "You are an AI assistant for a smart home device company. Keep all responses brief and concise. IMPORTANT: Always respect service level permissions and NEVER provide instructions for actions that are not permitted for the customer's service level. For allowed actions, be confident and direct - DO NOT apologize or express uncertainty. For disallowed actions, clearly state that the action is not allowed with their current service level. "
     
     # Add customer info if available
     if "customer" in context:
@@ -119,9 +119,9 @@ def build_system_prompt(context: Dict[str, Any] = None) -> str:
     # Add specific instructions based on context
     if "action_allowed" in context:
         if context["action_allowed"]:
-            system_prompt += "Request IS permitted. Respond helpfully and briefly. "
+            system_prompt += "Request IS permitted. Respond helpfully and briefly. DO NOT apologize or express uncertainty for actions that are allowed. Be confident and direct in your response. "
         else:
-            system_prompt += "Request NOT permitted. Politely explain and suggest upgrade. "
+            system_prompt += "Request NOT permitted. Politely explain that this action is not allowed with their current service level and suggest an upgrade. NEVER provide instructions for actions that are not permitted. "
     
     # Add multi-room audio context if available
     if "device_groups" in context and context["request_type"] == "multi_room_setup":
