@@ -1,0 +1,99 @@
+---
+description: Python Import Best Practices
+globs: "**/*.py"
+alwaysApply: true
+---
+# Python Import Best Practices
+
+This rule enforces best practices for organizing and structuring imports in Python files.
+
+<rule>
+name: python_imports
+description: Enforce best practices for Python imports
+filters:
+  - type: file_extension
+    pattern: "\\.py$"
+
+actions:
+  - type: suggest
+    conditions:
+      # If imports are not grouped properly
+      - pattern: "import\\s+[a-zA-Z0-9_]+\\s*(?:\\n|;)\\s*from\\s+"
+        message: "Group imports by standard library, third-party, and local modules"
+      # If using wildcard imports
+      - pattern: "from\\s+[a-zA-Z0-9_.]+\\s+import\\s+\\*"
+        message: "Avoid wildcard imports as they make it unclear which names are present in the namespace"
+      # If imports are not alphabetized within groups
+      - pattern: "import\\s+([a-zA-Z0-9_]+)\\s*(?:\\n|;)\\s*import\\s+([a-zA-Z0-9_]+)"
+        message: "Alphabetize imports within each group"
+    message: |
+      ## Python Import Best Practices
+
+      Follow these guidelines for organizing imports:
+
+      1. Group imports in the following order:
+         - Standard library imports
+         - Related third-party imports
+         - Local application/library specific imports
+      
+      2. Separate each group with a blank line
+      
+      3. Alphabetize imports within each group
+      
+      4. Prefer absolute imports over relative imports
+      
+      5. Avoid wildcard imports (`from module import *`)
+
+      ### Example:
+      ```python
+      # Standard library imports
+      import os
+      import sys
+      from datetime import datetime
+      
+      # Third-party imports
+      import numpy as np
+      import pandas as pd
+      from sklearn.model_selection import train_test_split
+      
+      # Local application imports
+      from mypackage import utils
+      from mypackage.models import MyModel
+      ```
+
+examples:
+  - input: |
+      # Bad: Unorganized imports
+      import pandas as pd
+      import os
+      from mymodule import helper
+      import numpy as np
+      from datetime import datetime
+      import sys
+    output: |
+      # Good: Organized imports
+      # Standard library imports
+      import os
+      import sys
+      from datetime import datetime
+      
+      # Third-party imports
+      import numpy as np
+      import pandas as pd
+      
+      # Local application imports
+      from mymodule import helper
+  
+  - input: |
+      # Bad: Using wildcard imports
+      from numpy import *
+      from utils import *
+    output: |
+      # Good: Explicit imports
+      import numpy as np
+      from utils import function1, function2
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 

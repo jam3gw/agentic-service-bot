@@ -1,0 +1,177 @@
+---
+description: Python Lambda CDK Deployment
+globs: 
+alwaysApply: true
+---
+# Python Lambda CDK Deployment Rule
+
+This rule enforces the use of the PythonFunction CDK library for deploying Python Lambda functions and prevents custom bundling of Python dependencies, while always excluding venv and __pycache__ directories.
+
+<rule>
+name: python_lambda_cdk
+description: Enforce the use of PythonFunction CDK library for Python Lambda deployments
+filters:
+  # Match Python files that might be Lambda functions
+  - type: file_extension
+    pattern: "\\.py$"
+  # Match TypeScript/JavaScript files that might be CDK code
+  - type: file_extension
+    pattern: "\\.(ts|js)$"
+  # Match content that suggests Lambda deployment
+  - type: content
+    pattern: "(?i)(lambda|function|aws-lambda|serverless).*?(deploy|provision|create|update)"
+
+actions:
+  - type: suggest
+    conditions:
+      # If file contains custom bundling code
+      - pattern: "(?i)(bundle|package|zip|layer|dependencies|requirements\\.txt).*?(lambda|function)"
+        message: "Use PythonFunction CDK construct instead of custom bundling for Python Lambda functions"
+      # If file contains AWS CLI Lambda deployment commands
+      - pattern: "aws\\s+lambda\\s+(create-function|update-function-code)"
+        message: "Use PythonFunction CDK construct instead of AWS CLI for Lambda deployments"
+      # If file contains CloudFormation Lambda references without CDK
+      - pattern: "(?i)(cloudformation|stack|template).*?(lambda|function)"
+        message: "Use PythonFunction CDK construct for Lambda deployments"
+      # If file contains custom Lambda packaging code
+      - pattern: "(pip\\s+install|virtualenv|venv|requirements\\.txt).*?(package|bundle|zip)"
+        message: "Use PythonFunction CDK construct which handles Python dependencies automatically"
+      # If PythonFunction is used without bundling configuration for excluding venv and __pycache__
+      - pattern: "new PythonFunction\\([^{]+(\\{[^}]+\\})?[^;]*;(?!.*bundling.*assetExcludes.*venv)"
+        message: "Always include bundling configuration to exclude venv and __pycache__ directories"
+    message: |
+      ## Python Lambda CDK Deployment Standard
+
+      This project uses the AWS CDK PythonFunction construct for all Python Lambda deployments. Please follow these guidelines:
+
+      1. All Python Lambda functions should be deployed using the PythonFunction CDK construct
+      2. Never implement custom bundling of Python dependencies
+      3. Place all Lambda function code in the `lambda/` directory
+      4. Place all CDK infrastructure code in the `infrastructure/` directory
+      5. Always include bundling configuration to exclude venv and __pycache__ directories
+
+      ### Standard PythonFunction implementation:
+      ```typescript
+      // Example CDK code for Python Lambda deployment
+      import * as cdk from 'aws-cdk-lib';
+      import { PythonFunction } from '@aws-cdk/aws-lambda-python-alpha';
+      import * as lambda from 'aws-cdk-lib/aws-lambda';
+      
+      export class MyLambdaStack extends cdk.Stack {
+        constructor(scope: cdk.App, id: string, props?: cdk.StackProps) {
+          super(scope, id, props);
+          
+          // Use PythonFunction which handles dependencies automatically
+          new PythonFunction(this, 'MyPythonFunction', {
+            entry: 'lambda/my_function',  // Directory containing Python code
+            runtime: lambda.Runtime.PYTHON_3_9,
+            index: 'app.py',  // The file containing your handler function
+            handler: 'handler',  // The name of the exported handler function
+            bundling: {
+              assetExcludes: [
+                'venv',
+                '__pycache__'
+              ]
+            }
+          });
+        }
+      }
+      ```
+
+      ### Benefits of PythonFunction:
+      1. Automatically bundles dependencies from requirements.txt
+      2. Handles Python packaging correctly across platforms
+      3. Optimizes the deployment package size
+      4. Ensures consistent deployment across environments
+      5. Excluding venv and __pycache__ reduces package size and prevents deployment issues
+
+      For questions about PythonFunction implementation, refer to the infrastructure documentation.
+
+examples:
+  - input: |
+      # Bad: Custom bundling of Python Lambda
+      #!/bin/bash
+      pip install -r requirements.txt -t ./package
+      cd package
+      zip -r ../lambda.zip .
+      cd ..
+      zip -g lambda.zip lambda_function.py
+      aws lambda update-function-code --function-name MyFunction --zip-file fileb://lambda.zip
+    output: "Replace with PythonFunction CDK deployment"
+  
+  - input: |
+      # Bad: CDK with custom bundling
+      import * as cdk from 'aws-cdk-lib';
+      import * as lambda from 'aws-cdk-lib/aws-lambda';
+      
+      export class MyLambdaStack extends cdk.Stack {
+        constructor(scope: cdk.App, id: string, props?: cdk.StackProps) {
+          super(scope, id, props);
+          
+          new lambda.Function(this, 'MyFunction', {
+            runtime: lambda.Runtime.PYTHON_3_9,
+            code: lambda.Code.fromAsset('lambda', {
+              bundling: {
+                image: lambda.Runtime.PYTHON_3_9.bundlingImage,
+                command: [
+                  'bash', '-c',
+                  'pip install -r requirements.txt -t /asset-output && cp -au . /asset-output'
+                ],
+              },
+            }),
+            handler: 'index.handler',
+          });
+        }
+      }
+    output: "Replace with PythonFunction CDK construct"
+  
+  - input: |
+      # Bad: PythonFunction without bundling configuration
+      import * as cdk from 'aws-cdk-lib';
+      import { PythonFunction } from '@aws-cdk/aws-lambda-python-alpha';
+      import * as lambda from 'aws-cdk-lib/aws-lambda';
+      
+      export class MyLambdaStack extends cdk.Stack {
+        constructor(scope: cdk.App, id: string, props?: cdk.StackProps) {
+          super(scope, id, props);
+          
+          new PythonFunction(this, 'MyPythonFunction', {
+            entry: 'lambda/my_function',
+            runtime: lambda.Runtime.PYTHON_3_9,
+            index: 'app.py',
+            handler: 'handler',
+          });
+        }
+      }
+    output: "Add bundling configuration to exclude venv and __pycache__"
+  
+  - input: |
+      # Good: PythonFunction with proper bundling configuration
+      import * as cdk from 'aws-cdk-lib';
+      import { PythonFunction } from '@aws-cdk/aws-lambda-python-alpha';
+      import * as lambda from 'aws-cdk-lib/aws-lambda';
+      
+      export class MyLambdaStack extends cdk.Stack {
+        constructor(scope: cdk.App, id: string, props?: cdk.StackProps) {
+          super(scope, id, props);
+          
+          new PythonFunction(this, 'MyPythonFunction', {
+            entry: 'lambda/my_function',
+            runtime: lambda.Runtime.PYTHON_3_9,
+            index: 'app.py',
+            handler: 'handler',
+            bundling: {
+              assetExcludes: [
+                'venv',
+                '__pycache__'
+              ]
+            }
+          });
+        }
+      }
+    output: "Correctly using PythonFunction CDK with proper bundling configuration"
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 

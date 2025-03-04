@@ -1,0 +1,111 @@
+# AWS CDK Deployment Rule
+
+This rule enforces the use of AWS CDK for all AWS deployments instead of shell scripts or other deployment methods.
+
+<rule>
+name: aws_cdk_deployment
+description: Enforce the use of AWS CDK for all AWS deployments
+filters:
+  # Match shell scripts that might be used for deployments
+  - type: file_extension
+    pattern: "\\.(sh|bash)$"
+  # Match Python scripts that might be used for deployments
+  - type: file_extension
+    pattern: "\\.py$"
+  # Match JavaScript/TypeScript files that might be used for deployments
+  - type: file_extension
+    pattern: "\\.(js|ts)$"
+  # Match content that suggests AWS deployment
+  - type: content
+    pattern: "(?i)(aws|amazon|cloudformation|s3|lambda|apigateway|dynamodb).*?(deploy|provision|create|update)"
+
+actions:
+  - type: suggest
+    conditions:
+      # If file contains AWS CLI commands
+      - pattern: "aws\\s+[a-z-]+\\s+[a-z-]+"
+        message: "Use AWS CDK instead of AWS CLI commands for deployments"
+      # If file contains CloudFormation template references
+      - pattern: "(?i)(cloudformation|stack|template).*?(deploy|create|update)"
+        message: "Use AWS CDK instead of direct CloudFormation operations"
+      # If file contains Terraform commands
+      - pattern: "terraform\\s+(apply|plan|init)"
+        message: "Use AWS CDK instead of Terraform for AWS deployments"
+      # If file contains Serverless Framework references
+      - pattern: "serverless\\s+(deploy|package|remove)"
+        message: "Use AWS CDK instead of Serverless Framework for AWS deployments"
+    message: |
+      ## AWS CDK Deployment Standard
+
+      This project uses AWS CDK for all AWS deployments. Please follow these guidelines:
+
+      1. All infrastructure should be defined as code using AWS CDK
+      2. Use TypeScript for CDK code when possible
+      3. Place all CDK code in the `infrastructure/` directory
+      4. Follow the established CDK patterns:
+         - One stack per logical application component
+         - Use constructs for reusable components
+         - Use context values for environment-specific configuration
+
+      ### Instead of shell scripts or AWS CLI:
+      ```typescript
+      // Example CDK code for Lambda deployment
+      import * as cdk from 'aws-cdk-lib';
+      import * as lambda from 'aws-cdk-lib/aws-lambda';
+      
+      export class MyLambdaStack extends cdk.Stack {
+        constructor(scope: cdk.App, id: string, props?: cdk.StackProps) {
+          super(scope, id, props);
+          
+          new lambda.Function(this, 'MyFunction', {
+            runtime: lambda.Runtime.PYTHON_3_9,
+            code: lambda.Code.fromAsset('lambda'),
+            handler: 'index.handler',
+          });
+        }
+      }
+      ```
+
+      ### Deployment Process:
+      1. Define infrastructure in CDK
+      2. Use `cdk diff` to preview changes
+      3. Use `cdk deploy` to deploy changes
+      4. Use `cdk destroy` to remove resources when needed
+
+      For questions about CDK implementation, refer to the infrastructure documentation.
+
+examples:
+  - input: |
+      # Bad: Shell script for AWS deployment
+      #!/bin/bash
+      aws s3 sync ./build s3://my-bucket
+      aws cloudformation deploy --template-file template.yaml --stack-name my-stack
+    output: "Replace with CDK deployment code in the infrastructure directory"
+  
+  - input: |
+      # Good: Using CDK for deployment
+      import * as cdk from 'aws-cdk-lib';
+      import * as s3 from 'aws-cdk-lib/aws-s3';
+      import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
+      
+      export class WebsiteStack extends cdk.Stack {
+        constructor(scope: cdk.App, id: string, props?: cdk.StackProps) {
+          super(scope, id, props);
+          
+          const bucket = new s3.Bucket(this, 'WebsiteBucket', {
+            websiteIndexDocument: 'index.html',
+            publicReadAccess: true
+          });
+          
+          new s3deploy.BucketDeployment(this, 'DeployWebsite', {
+            sources: [s3deploy.Source.asset('./build')],
+            destinationBucket: bucket
+          });
+        }
+      }
+    output: "Correctly using CDK for AWS deployment"
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 

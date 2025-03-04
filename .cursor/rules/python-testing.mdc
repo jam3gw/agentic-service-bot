@@ -1,0 +1,139 @@
+---
+description: Python Testing Best Practices
+globs: "**/test_*.py"
+alwaysApply: true
+---
+# Python Testing Best Practices
+
+This rule enforces best practices for writing tests in Python.
+
+<rule>
+name: python_testing
+description: Enforce best practices for Python testing
+filters:
+  - type: file_extension
+    pattern: "\\.py$"
+  - type: content
+    pattern: "(?:import\\s+(?:unittest|pytest)|def\\s+test_)"
+
+actions:
+  - type: suggest
+    conditions:
+      # If test function doesn't have docstring
+      - pattern: "def\\s+test_[a-zA-Z0-9_]+\\s*\\([^)]*\\)\\s*:\\s*(?!\\s*[\"'])\\s*\\S+"
+        message: "Add docstrings to test functions to explain what they're testing"
+      # If using assert without message
+      - pattern: "assert\\s+[^,]+"
+        message: "Include a message with assertions to clarify what's being tested"
+      # If test has multiple assertions
+      - pattern: "def\\s+test_[a-zA-Z0-9_]+[^:]*:(?:[^\\n]*\\n+\\s*)*assert[^\\n]*\\n+(?:[^\\n]*\\n+\\s*)*assert"
+        message: "Consider splitting tests with multiple assertions into separate test functions"
+    message: |
+      ## Python Testing Best Practices
+
+      Follow these guidelines for writing tests:
+
+      1. Name test functions descriptively with `test_` prefix
+      
+      2. Include docstrings for all test functions
+      
+      3. Follow the Arrange-Act-Assert (AAA) pattern
+      
+      4. Test one concept per test function
+      
+      5. Use descriptive assertion messages
+      
+      6. Use fixtures for test setup and teardown
+      
+      7. Parameterize tests for multiple input scenarios
+      
+      8. Mock external dependencies
+      
+      9. Aim for high test coverage, but focus on critical paths
+
+      ### Example:
+      ```python
+      import pytest
+      from myapp.calculator import Calculator
+      
+      @pytest.fixture
+      def calculator():
+          """Create a Calculator instance for testing."""
+          return Calculator()
+      
+      def test_addition_with_positive_numbers(calculator):
+          """Test that addition works with positive numbers."""
+          # Arrange
+          a, b = 2, 3
+          
+          # Act
+          result = calculator.add(a, b)
+          
+          # Assert
+          assert result == 5, f"Expected 2 + 3 = 5, but got {result}"
+      
+      @pytest.mark.parametrize("a, b, expected", [
+          (1, 2, 3),
+          (0, 0, 0),
+          (-1, 1, 0),
+          (-1, -1, -2)
+      ])
+      def test_addition_with_various_inputs(calculator, a, b, expected):
+          """Test addition with various input combinations."""
+          result = calculator.add(a, b)
+          assert result == expected, f"Expected {a} + {b} = {expected}, but got {result}"
+      ```
+
+examples:
+  - input: |
+      # Bad: Test without docstring and with multiple assertions
+      def test_user_registration():
+          user = register_user("test@example.com", "password123")
+          assert user is not None
+          assert user.email == "test@example.com"
+          assert user.is_active == True
+          assert len(user.id) > 0
+    output: |
+      # Good: Split into multiple tests with docstrings
+      def test_user_registration_creates_user():
+          """Test that user registration creates a non-None user object."""
+          user = register_user("test@example.com", "password123")
+          assert user is not None, "User registration should return a user object"
+      
+      def test_user_registration_sets_email():
+          """Test that user registration sets the correct email."""
+          user = register_user("test@example.com", "password123")
+          assert user.email == "test@example.com", "User should have the correct email"
+      
+      def test_user_registration_activates_user():
+          """Test that newly registered users are active by default."""
+          user = register_user("test@example.com", "password123")
+          assert user.is_active == True, "New users should be active by default"
+      
+      def test_user_registration_assigns_id():
+          """Test that user registration assigns a non-empty ID."""
+          user = register_user("test@example.com", "password123")
+          assert len(user.id) > 0, "User should be assigned a non-empty ID"
+  
+  - input: |
+      # Bad: Test without clear arrangement and assertion message
+      def test_calculate_total():
+          items = [{"price": 10}, {"price": 20}]
+          assert calculate_total(items) == 30
+    output: |
+      # Good: Test with clear AAA pattern and assertion message
+      def test_calculate_total_sums_item_prices():
+          """Test that calculate_total correctly sums the prices of all items."""
+          # Arrange
+          items = [{"price": 10}, {"price": 20}]
+          
+          # Act
+          total = calculate_total(items)
+          
+          # Assert
+          assert total == 30, f"Expected sum of prices to be 30, but got {total}"
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 

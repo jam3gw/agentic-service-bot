@@ -1,0 +1,118 @@
+---
+description: Python Function Best Practices
+globs: "**/*.py"
+alwaysApply: true
+---
+# Python Function Best Practices
+
+This rule enforces best practices for defining and using functions in Python.
+
+<rule>
+name: python_functions
+description: Enforce best practices for Python functions
+filters:
+  - type: file_extension
+    pattern: "\\.py$"
+
+actions:
+  - type: suggest
+    conditions:
+      # If function has no docstring
+      - pattern: "def\\s+[a-zA-Z0-9_]+\\s*\\([^)]*\\)\\s*(?:->\\s*[^:]+)?\\s*:\\s*(?!\\s*[\"'])\\s*\\S+"
+        message: "Add docstrings to functions to explain their purpose and usage"
+      # If function has too many parameters
+      - pattern: "def\\s+[a-zA-Z0-9_]+\\s*\\([^)]{100,}\\)"
+        message: "Consider refactoring functions with too many parameters"
+      # If function is too long
+      - pattern: "def\\s+[a-zA-Z0-9_]+\\s*\\([^)]*\\)(?:(?!def).){3000,}"
+        message: "Consider breaking down large functions into smaller, more focused functions"
+    message: |
+      ## Python Function Best Practices
+
+      Follow these guidelines for defining functions:
+
+      1. Use descriptive function names that follow the `snake_case` convention
+      
+      2. Include docstrings for all functions using one of these styles:
+         - Google style
+         - NumPy style
+         - reStructuredText (reST)
+      
+      3. Specify type hints for parameters and return values
+      
+      4. Keep functions focused on a single responsibility
+      
+      5. Limit the number of parameters (aim for 5 or fewer)
+      
+      6. Use default parameter values for optional arguments
+      
+      7. Return early to avoid deep nesting
+
+      ### Example:
+      ```python
+      def calculate_statistics(data: list[float], include_outliers: bool = True) -> dict[str, float]:
+          """Calculate basic statistics for a dataset.
+          
+          Args:
+              data: A list of numerical values to analyze
+              include_outliers: Whether to include outliers in calculations
+              
+          Returns:
+              A dictionary containing the mean, median, and standard deviation
+              
+          Raises:
+              ValueError: If the data list is empty
+          """
+          if not data:
+              raise ValueError("Cannot calculate statistics on empty data")
+              
+          # Function implementation...
+          return {"mean": mean_value, "median": median_value, "std_dev": std_dev_value}
+      ```
+
+examples:
+  - input: |
+      # Bad: Function without docstring or type hints
+      def process_data(data, normalize, min_val, max_val, exclude_zeros):
+          result = []
+          for item in data:
+              if exclude_zeros and item == 0:
+                  continue
+              if normalize:
+                  item = (item - min_val) / (max_val - min_val)
+              result.append(item)
+          return result
+    output: |
+      # Good: Function with docstring and type hints
+      def process_data(
+          data: list[float],
+          normalize: bool = False,
+          min_val: float = 0.0,
+          max_val: float = 1.0,
+          exclude_zeros: bool = False
+      ) -> list[float]:
+          """Process a list of numerical data with optional normalization.
+          
+          Args:
+              data: The input data to process
+              normalize: Whether to normalize the data
+              min_val: Minimum value for normalization
+              max_val: Maximum value for normalization
+              exclude_zeros: Whether to exclude zero values
+              
+          Returns:
+              The processed data as a list of floats
+          """
+          result = []
+          for item in data:
+              if exclude_zeros and item == 0:
+                  continue
+              if normalize:
+                  item = (item - min_val) / (max_val - min_val)
+              result.append(item)
+          return result
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 

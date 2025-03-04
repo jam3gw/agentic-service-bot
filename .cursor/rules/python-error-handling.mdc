@@ -1,0 +1,164 @@
+---
+description: Python Error Handling Best Practices
+globs: "**/*.py"
+alwaysApply: true
+---
+# Python Error Handling Best Practices
+
+This rule enforces best practices for handling errors and exceptions in Python.
+
+<rule>
+name: python_error_handling
+description: Enforce best practices for Python error handling
+filters:
+  - type: file_extension
+    pattern: "\\.py$"
+
+actions:
+  - type: suggest
+    conditions:
+      # If using bare except
+      - pattern: "try\\s*:(?:[^\\n]*\\n+\\s*)+except\\s*:"
+        message: "Avoid bare except clauses; specify the exceptions you want to catch"
+      # If catching Exception
+      - pattern: "except\\s+Exception\\s*(?:as\\s+[a-zA-Z0-9_]+)?\\s*:"
+        message: "Avoid catching Exception; catch specific exceptions instead"
+      # If using pass in except block
+      - pattern: "except\\s+[a-zA-Z0-9_]+(?:\\s+as\\s+[a-zA-Z0-9_]+)?\\s*:\\s*(?:[^\\n]*\\n+\\s*)*pass"
+        message: "Avoid using pass in except blocks; handle the exception properly or log it"
+    message: |
+      ## Python Error Handling Best Practices
+
+      Follow these guidelines for handling errors:
+
+      1. Always catch specific exceptions, not `Exception` or bare `except:`
+      
+      2. Use multiple `except` blocks for different exception types
+      
+      3. Keep the `try` block as small as possible
+      
+      4. Always include meaningful error messages
+      
+      5. Use `else` clause for code that should run only if no exceptions occur
+      
+      6. Use `finally` clause for cleanup code that should always run
+      
+      7. Create custom exception classes for your application's specific errors
+      
+      8. Log exceptions with appropriate context
+
+      ### Example:
+      ```python
+      import logging
+      from typing import Dict, Any
+      
+      class ConfigError(Exception):
+          """Raised when there is an error in the configuration."""
+          pass
+      
+      def load_config(file_path: str) -> Dict[str, Any]:
+          """Load configuration from a file.
+          
+          Args:
+              file_path: Path to the configuration file
+              
+          Returns:
+              The configuration as a dictionary
+              
+          Raises:
+              FileNotFoundError: If the configuration file doesn't exist
+              ConfigError: If the configuration is invalid
+          """
+          try:
+              with open(file_path, 'r') as file:
+                  config_text = file.read()
+          except FileNotFoundError as e:
+              logging.error(f"Configuration file not found: {file_path}")
+              raise
+              
+          try:
+              config = parse_config(config_text)
+          except ValueError as e:
+              logging.error(f"Invalid configuration format: {e}")
+              raise ConfigError(f"Invalid configuration: {e}") from e
+              
+          return config
+      ```
+
+examples:
+  - input: |
+      # Bad: Using bare except and pass
+      def get_user_data(user_id):
+          try:
+              response = api.get_user(user_id)
+              return response.json()
+          except:
+              pass
+          return {}
+    output: |
+      # Good: Catching specific exceptions with proper handling
+      import logging
+      
+      def get_user_data(user_id: str) -> dict:
+          """Retrieve user data from the API.
+          
+          Args:
+              user_id: The ID of the user to retrieve
+              
+          Returns:
+              The user data as a dictionary, or an empty dict if retrieval fails
+          """
+          try:
+              response = api.get_user(user_id)
+              return response.json()
+          except ConnectionError as e:
+              logging.error(f"Connection error retrieving user {user_id}: {e}")
+          except TimeoutError as e:
+              logging.error(f"Timeout retrieving user {user_id}: {e}")
+          except ValueError as e:
+              logging.error(f"Invalid JSON in response for user {user_id}: {e}")
+          return {}
+  
+  - input: |
+      # Bad: Catching Exception
+      def process_file(filename):
+          try:
+              with open(filename, 'r') as f:
+                  data = f.read()
+                  return process_data(data)
+          except Exception as e:
+              print(f"Error: {e}")
+              return None
+    output: |
+      # Good: Catching specific exceptions
+      import logging
+      
+      def process_file(filename: str):
+          """Process data from a file.
+          
+          Args:
+              filename: The name of the file to process
+              
+          Returns:
+              The processed data, or None if processing fails
+          """
+          try:
+              with open(filename, 'r') as f:
+                  data = f.read()
+          except FileNotFoundError:
+              logging.error(f"File not found: {filename}")
+              return None
+          except PermissionError:
+              logging.error(f"Permission denied: {filename}")
+              return None
+              
+          try:
+              return process_data(data)
+          except ValueError as e:
+              logging.error(f"Invalid data format in {filename}: {e}")
+              return None
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 

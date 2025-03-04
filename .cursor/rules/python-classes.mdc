@@ -1,0 +1,129 @@
+---
+description: Python Class Best Practices
+globs: "**/*.py"
+alwaysApply: true
+---
+# Python Class Best Practices
+
+This rule enforces best practices for defining and using classes in Python.
+
+<rule>
+name: python_classes
+description: Enforce best practices for Python classes
+filters:
+  - type: file_extension
+    pattern: "\\.py$"
+
+actions:
+  - type: suggest
+    conditions:
+      # If class has no docstring
+      - pattern: "class\\s+[a-zA-Z0-9_]+(?:\\s*\\([^)]*\\))?\\s*:\\s*(?!\\s*[\"'])\\s*\\S+"
+        message: "Add docstrings to classes to explain their purpose and usage"
+      # If using mutable default arguments in methods
+      - pattern: "def\\s+[a-zA-Z0-9_]+\\s*\\([^)]*\\s*=\\s*\\[\\s*\\][^)]*\\)"
+        message: "Avoid using mutable default arguments like empty lists"
+      # If not using dataclasses for data containers
+      - pattern: "class\\s+[a-zA-Z0-9_]+(?:\\s*\\([^)]*\\))?\\s*:\\s*(?:[^\\n]*\\n+\\s*)+def\\s+__init__\\s*\\(self,\\s*[^)]+\\):\\s*(?:[^\\n]*\\n+\\s*)+self\\.[a-zA-Z0-9_]+\\s*="
+        message: "Consider using @dataclass for simple data container classes"
+    message: |
+      ## Python Class Best Practices
+
+      Follow these guidelines for defining classes:
+
+      1. Use descriptive class names that follow the `PascalCase` convention
+      
+      2. Include docstrings for all classes
+      
+      3. Use `@dataclass` for simple data container classes
+      
+      4. Implement special methods like `__str__` and `__repr__` for better debugging
+      
+      5. Follow the principle of composition over inheritance when possible
+      
+      6. Avoid deep inheritance hierarchies
+      
+      7. Use properties instead of getter/setter methods
+      
+      8. Never use mutable default arguments
+
+      ### Example:
+      ```python
+      from dataclasses import dataclass
+      from typing import List, Optional
+      
+      @dataclass
+      class Customer:
+          """Represents a customer in the system.
+          
+          Attributes:
+              id: Unique identifier for the customer
+              name: Full name of the customer
+              email: Email address of the customer
+              active: Whether the customer account is active
+              purchase_history: List of previous purchases
+          """
+          id: str
+          name: str
+          email: str
+          active: bool = True
+          purchase_history: List[str] = None
+          
+          def __post_init__(self):
+              if self.purchase_history is None:
+                  self.purchase_history = []
+                  
+          def add_purchase(self, purchase_id: str) -> None:
+              """Add a purchase to the customer's history.
+              
+              Args:
+                  purchase_id: The ID of the purchase to add
+              """
+              self.purchase_history.append(purchase_id)
+      ```
+
+examples:
+  - input: |
+      # Bad: Class without docstring and with mutable default argument
+      class User:
+          def __init__(self, name, email, roles=[]):
+              self.name = name
+              self.email = email
+              self.roles = roles
+              self.active = True
+              
+          def add_role(self, role):
+              self.roles.append(role)
+    output: |
+      # Good: Class with docstring and proper handling of mutable defaults
+      @dataclass
+      class User:
+          """Represents a user in the system.
+          
+          Attributes:
+              name: The user's full name
+              email: The user's email address
+              roles: List of roles assigned to the user
+              active: Whether the user account is active
+          """
+          name: str
+          email: str
+          roles: List[str] = None
+          active: bool = True
+          
+          def __post_init__(self):
+              if self.roles is None:
+                  self.roles = []
+                  
+          def add_role(self, role: str) -> None:
+              """Add a role to the user.
+              
+              Args:
+                  role: The role to add
+              """
+              self.roles.append(role)
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 

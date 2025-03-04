@@ -1,0 +1,148 @@
+---
+description: Python Performance Best Practices
+globs: "**/*.py"
+alwaysApply: true
+---
+# Python Performance Best Practices
+
+This rule enforces best practices for writing performant Python code.
+
+<rule>
+name: python_performance
+description: Enforce best practices for Python performance
+filters:
+  - type: file_extension
+    pattern: "\\.py$"
+
+actions:
+  - type: suggest
+    conditions:
+      # If using + for string concatenation in loops
+      - pattern: "for\\s+[^:]+:\\s*(?:[^\\n]*\\n+\\s*)*[a-zA-Z0-9_]+\\s*\\+=\\s*['\"]"
+        message: "Use string join() instead of += for string concatenation in loops"
+      # If using list comprehension with if/else
+      - pattern: "\\[.+\\s+if\\s+.+\\s+else\\s+.+\\s+for\\s+.+\\s+in\\s+.+\\]"
+        message: "Consider using generator expressions for complex comprehensions"
+      # If using range(len(x)) for iteration
+      - pattern: "for\\s+[a-zA-Z0-9_]+\\s+in\\s+range\\s*\\(\\s*len\\s*\\(\\s*[a-zA-Z0-9_]+\\s*\\)\\s*\\)"
+        message: "Use enumerate() instead of range(len(x)) for iteration"
+    message: |
+      ## Python Performance Best Practices
+
+      Follow these guidelines for writing performant Python code:
+
+      1. Use appropriate data structures for the task:
+         - Lists for ordered collections
+         - Sets for unique values and membership testing
+         - Dictionaries for key-value lookups
+      
+      2. Use generators and iterators for large datasets
+      
+      3. Prefer list/dict/set comprehensions over loops when appropriate
+      
+      4. Use `join()` for string concatenation
+      
+      5. Use built-in functions and libraries (they're optimized)
+      
+      6. Use `collections` module specialized containers
+      
+      7. Avoid unnecessary function calls in loops
+      
+      8. Use `enumerate()` instead of `range(len(x))`
+      
+      9. Profile your code before optimizing
+
+      ### Example:
+      ```python
+      # Inefficient
+      def process_large_file_inefficient(file_path):
+          result = []
+          with open(file_path, 'r') as f:
+              data = f.readlines()  # Loads entire file into memory
+          
+          for i in range(len(data)):
+              line = data[i]
+              if line.strip():
+                  processed = process_line(line)
+                  result.append(processed)
+          
+          return result
+      
+      # Efficient
+      def process_large_file_efficient(file_path):
+          with open(file_path, 'r') as f:
+              # Process one line at a time using generator
+              return [process_line(line) for line in f if line.strip()]
+      ```
+
+examples:
+  - input: |
+      # Bad: Inefficient string concatenation
+      def build_report(items):
+          report = ""
+          for item in items:
+              report += item + ", "
+          return report.rstrip(", ")
+    output: |
+      # Good: Efficient string concatenation
+      def build_report(items: list[str]) -> str:
+          """Build a comma-separated report from a list of items.
+          
+          Args:
+              items: List of items to include in the report
+              
+          Returns:
+              A comma-separated string of all items
+          """
+          return ", ".join(items)
+  
+  - input: |
+      # Bad: Using range(len(x)) for iteration
+      def process_with_index(items):
+          result = []
+          for i in range(len(items)):
+              result.append(f"Item {i}: {items[i]}")
+          return result
+    output: |
+      # Good: Using enumerate() for iteration
+      def process_with_index(items: list) -> list[str]:
+          """Process items with their indices.
+          
+          Args:
+              items: The items to process
+              
+          Returns:
+              A list of processed items with their indices
+          """
+          return [f"Item {i}: {item}" for i, item in enumerate(items)]
+  
+  - input: |
+      # Bad: Creating intermediate lists unnecessarily
+      def get_even_squares(numbers):
+          evens = []
+          for num in numbers:
+              if num % 2 == 0:
+                  evens.append(num)
+          
+          squares = []
+          for num in evens:
+              squares.append(num ** 2)
+          
+          return squares
+    output: |
+      # Good: Using comprehensions
+      def get_even_squares(numbers: list[int]) -> list[int]:
+          """Calculate squares of even numbers.
+          
+          Args:
+              numbers: List of numbers to process
+              
+          Returns:
+              List containing squares of even numbers
+          """
+          return [num ** 2 for num in numbers if num % 2 == 0]
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 
