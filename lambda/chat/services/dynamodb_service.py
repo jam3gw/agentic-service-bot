@@ -11,6 +11,7 @@ import logging
 import time
 from typing import Dict, Any, Optional, List
 import boto3
+from datetime import datetime
 
 # Add the parent directory to sys.path to enable absolute imports
 current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -95,49 +96,35 @@ def get_service_level_permissions(service_level: str) -> Dict[str, Any]:
         logger.error(f"Error getting service level: {str(e)}")
         return {"allowed_actions": []}
 
-def save_connection(connection_id: str, customer_id: str) -> None:
+def save_connection(connection_id: str, customer_id: str) -> bool:
     """
-    Save a WebSocket connection ID with a customer ID.
+    Save a WebSocket connection to the connections table.
     
     Args:
         connection_id: The WebSocket connection ID
-        customer_id: The customer ID
+        customer_id: The customer ID associated with this connection
+        
+    Returns:
+        True if successful, False otherwise
     """
-    logger.info(f"Saving connection {connection_id} for customer {customer_id}")
-    
-    # Calculate TTL
-    ttl = int(time.time()) + CONNECTION_TTL
-    
     try:
-        # Save the connection in DynamoDB
+        # Calculate TTL
+        ttl = int(time.time()) + CONNECTION_TTL
+        
         connections_table.put_item(
             Item={
                 'connectionId': connection_id,
                 'customerId': customer_id,
+                'timestamp': datetime.utcnow().isoformat(),
                 'ttl': ttl,
-                'timestamp': int(time.time())
+                'status': 'connected'  # Add initial status
             }
         )
         logger.info(f"Successfully saved connection {connection_id} for customer {customer_id}")
-        
-        # Verify the connection was saved by retrieving it
-        try:
-            response = connections_table.get_item(
-                Key={
-                    'connectionId': connection_id
-                }
-            )
-            item = response.get('Item')
-            if item:
-                logger.info(f"Verified connection saved: {item}")
-            else:
-                logger.warning(f"Connection verification failed: Item not found for connection {connection_id}")
-        except Exception as verify_error:
-            logger.error(f"Error verifying connection: {str(verify_error)}")
-            
+        return True
     except Exception as e:
-        logger.error(f"Error saving connection: {str(e)}")
-        raise
+        logger.error(f"Error saving connection {connection_id}: {str(e)}")
+        return False
 
 def get_customer_id_for_connection(connection_id: str) -> Optional[str]:
     """
@@ -189,6 +176,37 @@ def delete_connection(connection_id: str) -> bool:
         logger.error(f"Error removing connection {connection_id} from database: {str(e)}")
         return False
 
+def update_connection_status(connection_id: str, status: str) -> bool:
+    """
+    Update the status of a connection in the connections table.
+    
+    Args:
+        connection_id: The WebSocket connection ID to update
+        status: The new status for the connection (e.g., 'disconnected')
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        connections_table.update_item(
+            Key={
+                'connectionId': connection_id
+            },
+            UpdateExpression="SET #status = :status, updatedAt = :timestamp",
+            ExpressionAttributeNames={
+                '#status': 'status'
+            },
+            ExpressionAttributeValues={
+                ':status': status,
+                ':timestamp': datetime.utcnow().isoformat()
+            }
+        )
+        logger.info(f"Successfully updated connection {connection_id} status to '{status}'")
+        return True
+    except Exception as e:
+        logger.error(f"Error updating connection {connection_id} status: {str(e)}")
+        return False
+
 def store_message(conversation_id: str, customer_id: str, message: str, 
                  sender: str, request_type: Optional[str] = None, 
                  actions_allowed: Optional[bool] = None) -> bool:
@@ -207,8 +225,6 @@ def store_message(conversation_id: str, customer_id: str, message: str,
         True if successful, False otherwise
     """
     try:
-        from datetime import datetime
-        
         item = {
             'conversationId': conversation_id,
             'timestamp': datetime.utcnow().isoformat(),

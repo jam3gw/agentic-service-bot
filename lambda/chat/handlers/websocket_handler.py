@@ -22,7 +22,8 @@ if current_dir not in sys.path:
 from services.dynamodb_service import (
     save_connection, 
     get_customer_id_for_connection,
-    delete_connection
+    delete_connection,
+    update_connection_status
 )
 from services.request_processor import process_request
 
@@ -68,10 +69,10 @@ def send_message(connection_id: str, message: str, endpoint_url: str) -> bool:
         error_message = str(e)
         logger.error(f"Error sending message to connection {connection_id}: {error_message}")
         
-        # If the connection is gone, remove it from the database
+        # If the connection is gone, mark it as disconnected instead of removing it
         if "GoneException" in error_message:
-            logger.info(f"Connection {connection_id} is gone, removing from database")
-            delete_connection(connection_id)
+            logger.info(f"Connection {connection_id} is gone, marking as disconnected instead of removing")
+            update_connection_status(connection_id, "disconnected")
         
         return False
 
@@ -231,6 +232,8 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             # Simple disconnect handler
             connection_id = event['requestContext']['connectionId']
             logger.info(f"Disconnect event received for connection ID: {connection_id}")
+            # Mark the connection as disconnected instead of removing it
+            update_connection_status(connection_id, "disconnected")
             return {'statusCode': 200, 'body': 'Disconnected'}
         elif route_key == 'message':
             return handle_message(event, context)

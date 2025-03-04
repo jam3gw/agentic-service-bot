@@ -57,6 +57,9 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             # Simple disconnect handler
             connection_id = event['requestContext']['connectionId']
             logger.info(f"Disconnect event received for connection ID: {connection_id}")
+            # Mark the connection as disconnected instead of removing it
+            from services.dynamodb_service import update_connection_status
+            update_connection_status(connection_id, "disconnected")
             return {'statusCode': 200, 'body': 'Disconnected'}
         elif route_key == 'message':
             return handle_message(event, context)
