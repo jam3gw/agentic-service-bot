@@ -3,4 +3,5 @@ export interface Message {
     text: string;
     sender: 'user' | 'bot';
     timestamp: string;
+    status?: 'sending' | 'sent' | 'queued' | 'error' | 'delivered';
 } 
