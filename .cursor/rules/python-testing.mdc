@@ -34,6 +34,12 @@ actions:
       # If test has rigid string assertions
       - pattern: "assert\\s+[\"'][^\"']+[\"']\\s+in\\s+.+"
         message: "Consider using more flexible assertions that can handle variations in wording"
+      # If committing test files without running them
+      - pattern: "git\\s+add\\s+.*test_.*\\.py"
+        message: "Verify that tests pass before committing them"
+      # If mocking AWS services without proper response structure
+      - pattern: "boto3|dynamodb|s3|lambda"
+        message: "Ensure AWS service mocks include proper response structures to avoid ResourceNotFound errors"
     message: |
       ## Python Testing Best Practices
 
@@ -53,6 +59,10 @@ actions:
          - Only mock external dependencies when necessary
          - Ensure mocks reflect realistic behavior
          - Don't create tests that are overly dependent on implementation details
+         - For AWS services, ensure mocks include proper response structures:
+           - DynamoDB: Include proper response metadata and expected return values
+           - S3: Mock both client and resource interfaces appropriately
+           - Lambda: Include proper invocation response format
       
       4. **Flexible Assertions**
          - Use assertions that focus on business requirements, not implementation details
@@ -65,24 +75,36 @@ actions:
          - Consider environment factors (like cold starts in serverless) when setting timeouts
          - Include clear timeout messages that help diagnose issues
       
-      6. Name test functions descriptively with `test_` prefix
+      6. **Verify Before Committing**
+         - Always run tests before committing them
+         - Use test runners like `pytest` or `unittest` to verify functionality
+         - Fix failing tests before committing or document known issues
+         - Include test verification in your pre-commit workflow
+         - For Lambda functions, use the provided `run_tests.py` script
       
-      7. Include docstrings for all test functions that explain:
+      7. **Effective Test Debugging**
+         - Debug tests individually rather than running the entire suite when troubleshooting
+         - Create debug scripts that run specific test classes or methods in isolation
+         - Add detailed logging to tests to understand what's happening during execution
+         - Verify environment variables and mock configurations in each test
+         - Use descriptive test names that help identify what's being tested
+      
+      8. Include docstrings for all test functions that explain:
          - What is being tested
          - Why it matters (business value)
          - Any special test conditions
       
-      8. Follow the Arrange-Act-Assert (AAA) pattern
+      9. Follow the Arrange-Act-Assert (AAA) pattern
       
-      9. Test one concept per test function
+      10. Test one concept per test function
       
-      10. Use descriptive assertion messages
+      11. Use descriptive assertion messages
       
-      11. Use fixtures for test setup and teardown
+      12. Use fixtures for test setup and teardown
       
-      12. Parameterize tests for multiple input scenarios
+      13. Parameterize tests for multiple input scenarios
       
-      13. Aim for high test coverage of critical paths, not 100% coverage
+      14. Aim for high test coverage of critical paths, not 100% coverage
 
       ### Example of Flexible Text Assertion:
       ```python
@@ -103,6 +125,94 @@ actions:
           assert any(phrase in error_msg for phrase in 
                     ['invalid input', 'not valid', 'must be numeric', 'numbers only']), \
                  f"Error message should indicate invalid input, but got: {error_msg}"
+      ```
+      
+      ### Example of Test Verification Before Commit:
+      ```bash
+      # For general Python tests
+      python -m pytest
+      
+      # For Lambda function tests
+      cd lambda/api
+      python run_tests.py
+      
+      # Only commit if tests pass
+      if [ $? -eq 0 ]; then
+          git add .
+          git commit -m "test: add new tests for feature X"
+      else
+          echo "Tests failed, fixing before committing"
+      fi
+      ```
+      
+      ### Example of Individual Test Debugging:
+      ```python
+      # debug_tests.py - A script to run tests individually for debugging
+      import unittest
+      import os
+      import sys
+      
+      # Set up environment variables for testing
+      os.environ['CUSTOMERS_TABLE'] = 'test-customers'
+      os.environ['SERVICE_LEVELS_TABLE'] = 'test-service-levels'
+      
+      # Import the test class
+      from services.test_dynamodb_service import TestDynamoDBService
+      
+      # Create a test suite with just one test method
+      suite = unittest.TestSuite()
+      suite.addTest(TestDynamoDBService('test_update_device_state_success'))
+      
+      # Run the test with high verbosity
+      runner = unittest.TextTestRunner(verbosity=2)
+      result = runner.run(suite)
+      
+      # Print detailed results
+      print(f"\nTest passed: {result.wasSuccessful()}")
+      if not result.wasSuccessful():
+          print(f"Errors: {len(result.errors)}")
+          for test, error in result.errors:
+              print(f"\n{'-'*40}\nError in {test}:\n{error}")
+          
+          print(f"Failures: {len(result.failures)}")
+          for test, failure in result.failures:
+              print(f"\n{'-'*40}\nFailure in {test}:\n{failure}")
+      ```
+      
+      ### Example of Proper AWS Service Mocking:
+      ```python
+      @patch('boto3.resource')
+      def test_update_dynamodb_item(self, mock_boto3_resource):
+          """Test updating an item in DynamoDB.
+          
+          This test verifies that our update logic correctly modifies
+          items in DynamoDB, which is critical for data consistency.
+          """
+          # Arrange
+          mock_table = MagicMock()
+          # Properly mock the response structure
+          mock_table.update_item.return_value = {
+              'ResponseMetadata': {
+                  'HTTPStatusCode': 200
+              },
+              'Attributes': {
+                  'id': 'test-id',
+                  'status': 'updated'
+              }
+          }
+          mock_dynamodb = MagicMock()
+          mock_dynamodb.Table.return_value = mock_table
+          mock_boto3_resource.return_value = mock_dynamodb
+          
+          # Act
+          result = update_item('test-id', 'updated')
+          
+          # Assert
+          self.assertTrue(result, "Update should return True on success")
+          mock_table.update_item.assert_called_once()
+          args, kwargs = mock_table.update_item.call_args
+          self.assertEqual(kwargs['Key'], {'id': 'test-id'}, 
+                          "Key in update_item should match item ID")
       ```
 
 examples:
@@ -181,8 +291,95 @@ examples:
           # Assert with realistic timeout
           completed = wait_for_completion(result, timeout=5.0)
           assert completed, f"Async operation did not complete within 5 seconds. Status: {result.status}"
+  
+  - input: |
+      # Bad: Committing tests without verification
+      git add lambda/api/test_*.py
+      git commit -m "test: add new tests"
+    output: |
+      # Good: Verifying tests before committing
+      # Run the tests first
+      cd lambda/api
+      python run_tests.py
+      
+      # Only commit if tests pass
+      if [ $? -eq 0 ]; then
+          git add lambda/api/test_*.py
+          git commit -m "test: add new tests with verified functionality"
+      else
+          echo "Tests failed, fixing before committing"
+      fi
+  
+  - input: |
+      # Bad: Debugging by running the entire test suite
+      python -m unittest discover
+    output: |
+      # Good: Debugging individual tests
+      # Create a debug script (debug_test.py)
+      import unittest
+      from my_module.tests.test_problematic import TestProblematic
+      
+      # Set up any required environment variables
+      import os
+      os.environ['TEST_ENV_VAR'] = 'test_value'
+      
+      # Run just the failing test
+      suite = unittest.TestSuite()
+      suite.addTest(TestProblematic('test_specific_failing_method'))
+      
+      # Run with high verbosity for detailed output
+      unittest.TextTestRunner(verbosity=2).run(suite)
+      
+  - input: |
+      # Bad: Incomplete AWS service mock
+      @patch('boto3.resource')
+      def test_dynamodb_update(mock_boto3_resource):
+          mock_table = MagicMock()
+          mock_dynamodb = MagicMock()
+          mock_dynamodb.Table.return_value = mock_table
+          mock_boto3_resource.return_value = mock_dynamodb
+          
+          result = update_item('item-123', 'new-value')
+          assert result is True
+    output: |
+      # Good: Complete AWS service mock with proper response structure
+      @patch('boto3.resource')
+      def test_dynamodb_update(mock_boto3_resource):
+          """Test updating an item in DynamoDB.
+          
+          This test ensures our update operation correctly modifies data,
+          which is critical for maintaining data integrity.
+          """
+          # Arrange
+          mock_table = MagicMock()
+          # Include proper response structure
+          mock_table.update_item.return_value = {
+              'ResponseMetadata': {
+                  'HTTPStatusCode': 200,
+                  'RequestId': 'EXAMPLE-REQUEST-ID'
+              },
+              'Attributes': {
+                  'id': 'item-123',
+                  'value': 'new-value',
+                  'updated_at': '2023-01-01T12:00:00Z'
+              }
+          }
+          mock_dynamodb = MagicMock()
+          mock_dynamodb.Table.return_value = mock_table
+          mock_boto3_resource.return_value = mock_dynamodb
+          
+          # Act
+          result = update_item('item-123', 'new-value')
+          
+          # Assert
+          assert result is True, "Update operation should return True on success"
+          mock_table.update_item.assert_called_once()
+          # Verify the correct parameters were used
+          args, kwargs = mock_table.update_item.call_args
+          assert kwargs['Key'] == {'id': 'item-123'}, "Key should match the item ID"
+          assert 'UpdateExpression' in kwargs, "Update should include UpdateExpression"
 
 metadata:
   priority: high
-  version: 1.2
+  version: 1.5
 </rule> 
