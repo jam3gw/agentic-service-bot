@@ -555,6 +555,59 @@ End-to-end testing in the AWS development environment provides critical business
 - Weekly test coverage and success rate reports
 - Integration with AWS X-Ray for performance analysis
 
+## WebSocket Connection Testing
+
+WebSocket connections are a critical part of the chat functionality in the Agentic Service Bot. The following tests should be implemented to ensure proper functionality:
+
+### Unit Tests
+
+1. **Request Analyzer Tests**
+   - Test that the request analyzer correctly identifies different types of requests
+   - Test that the request analyzer extracts the correct information from requests
+   - Test that the request analyzer returns the correct required actions for each request type
+   - Ensure device control requests are properly identified with various phrasings
+
+2. **Service Level Permission Tests**
+   - Test that service level permissions are correctly enforced for different request types
+   - Test that basic tier customers can perform allowed actions (status check, volume control, device info, device control)
+   - Test that basic tier customers cannot perform restricted actions (device relocation, music services, multi-room audio, custom actions)
+   - Test similar permission checks for premium and enterprise tiers
+
+3. **WebSocket Handler Tests**
+   - Test that the WebSocket handler correctly processes messages
+   - Test that the WebSocket handler correctly enforces service level permissions
+   - Test that the WebSocket handler correctly generates responses based on service level permissions
+   - Test connection establishment and disconnection handling
+
+### Integration Tests
+
+1. **End-to-End Flow Tests**
+   - Test the complete flow from connection to message processing to response
+   - Test with different customer service levels to ensure permissions are correctly enforced
+   - Test with different request types to ensure proper handling
+   - Test error scenarios and edge cases
+
+2. **Service Level Enforcement Tests**
+   - Test that a basic tier customer can control devices
+   - Test that a basic tier customer cannot relocate devices
+   - Test that a premium tier customer can control and relocate devices
+   - Test that a premium tier customer cannot set up multi-room audio
+   - Test that an enterprise tier customer can perform all actions
+
+### Test Scenarios
+
+| Test Case | Service Level | Request | Expected Result |
+|-----------|---------------|---------|-----------------|
+| Device Control - Basic | Basic | "Turn off my living room light" | Success - Action allowed |
+| Device Relocation - Basic | Basic | "Move my speaker to the kitchen" | Failure - Action not allowed |
+| Device Control - Premium | Premium | "Turn on the kitchen lights" | Success - Action allowed |
+| Device Relocation - Premium | Premium | "Move my display to the bedroom" | Success - Action allowed |
+| Multi-Room Audio - Premium | Premium | "Play music in all rooms" | Failure - Action not allowed |
+| Device Control - Enterprise | Enterprise | "Turn off all lights" | Success - Action allowed |
+| Multi-Room Audio - Enterprise | Enterprise | "Sync music across all speakers" | Success - Action allowed |
+
+These tests ensure that the chat service correctly enforces service level permissions and provides appropriate responses to users based on their service level.
+
 ## Conclusion
 
 End-to-end testing in the AWS development environment is a critical part of our testing strategy. By testing the complete system with real AWS services, we can ensure that the Agentic Service Bot functions correctly and provides value to customers across all service tiers. 
