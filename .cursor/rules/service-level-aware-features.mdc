@@ -1,0 +1,150 @@
+# Service Level-Aware Feature Implementation
+
+This rule enforces best practices for implementing features that respect customer service levels in the Agentic Service Bot project.
+
+<rule>
+name: service_level_aware_features
+description: Enforce best practices for service level-aware feature implementation
+filters:
+  - type: file_extension
+    pattern: "\\.py$|\\.ts$|\\.tsx$|\\.js$|\\.jsx$"
+  - type: content
+    pattern: "(?:service_level|allowed_actions|permissions|can_perform)"
+
+actions:
+  - type: suggest
+    conditions:
+      # If implementing a feature without service level check
+      - pattern: "def\\s+[a-zA-Z0-9_]+\\s*\\([^)]*customer[^)]*\\)\\s*(?:->\\s*[^:]+)?\\s*:\\s*(?!\\s*[\"'])\\s*\\S+"
+        message: "Check service level permissions before performing actions"
+      # If handling a request without permission validation
+      - pattern: "def\\s+process_[a-zA-Z0-9_]+\\s*\\([^)]*\\)\\s*(?:->\\s*[^:]+)?\\s*:\\s*(?!\\s*[\"'])\\s*\\S+"
+        message: "Validate customer permissions before processing requests"
+    message: |
+      ## Service Level-Aware Feature Implementation
+
+      Follow these guidelines for implementing service level-aware features:
+
+      1. **Permission Checking**: Always check if a customer's service level allows an action before performing it
+      
+      2. **Graceful Denial**: Provide helpful, informative messages when denying access to features
+      
+      3. **Feature Discovery**: Only show or suggest features that are available to the customer's service level
+      
+      4. **Upsell Opportunities**: When denying access, suggest upgrading when appropriate
+      
+      5. **Consistent Permission Model**: Use a consistent approach to permission checking across all services
+      
+      6. **Centralized Permission Logic**: Define permissions in a single location for consistency
+      
+      7. **Permission Caching**: Cache permission results when appropriate for performance
+      
+      8. **Clear Documentation**: Document which features are available at each service level
+      
+      9. **Feature Flags**: Use feature flags to gradually roll out new features by service level
+      
+      10. **Testing Different Levels**: Test features with customers at different service levels
+
+      ### Example Implementation:
+      ```python
+      def process_request(customer_id, request_text):
+          """Process a customer request with service level awareness.
+          
+          Args:
+              customer_id: Unique identifier for the customer
+              request_text: The text of the customer's request
+              
+          Returns:
+              Response text appropriate for the customer's service level
+          """
+          try:
+              # Get customer data
+              customer = get_customer(customer_id)
+              
+              # Analyze the request to determine required action
+              analyzer = RequestAnalyzer()
+              request_type = analyzer.get_request_type(request_text)
+              
+              # Get service level permissions
+              permissions = get_service_level_permissions(customer.service_level)
+              
+              # Check if the action is allowed for this service level
+              if request_type not in permissions.get("allowed_actions", []):
+                  logger.info(f"Customer {customer_id} attempted disallowed action: {request_type}")
+                  
+                  # Provide helpful message with upgrade information
+                  if request_type == "multi_room_audio":
+                      return (
+                          f"I'm sorry, but your {customer.service_level} service level doesn't "
+                          f"allow multi-room audio. Please upgrade to premium or enterprise "
+                          f"for this feature."
+                      )
+                  elif request_type == "custom_actions":
+                      return (
+                          f"I'm sorry, but your {customer.service_level} service level doesn't "
+                          f"allow custom routines. Please upgrade to enterprise for this feature."
+                      )
+                  else:
+                      return (
+                          f"I'm sorry, but your {customer.service_level} service level doesn't "
+                          f"allow this action. Please contact support for more information."
+                      )
+              
+              # Action is allowed, proceed with processing
+              # ... feature implementation ...
+              
+              return "Here's the result of your request."
+              
+          except Exception as e:
+              logger.error(f"Error processing request: {str(e)}")
+              return "Sorry, an error occurred while processing your request."
+      ```
+
+examples:
+  - input: |
+      # Bad: No service level checking
+      def setup_multi_room_audio(customer, device_groups):
+          """Set up multi-room audio without checking permissions."""
+          # Directly implement feature without checking if allowed
+          for device in customer.devices:
+              if device.location in device_groups:
+                  device.sync_audio = True
+          
+          return "Multi-room audio has been set up."
+    output: |
+      # Good: Service level-aware implementation
+      def setup_multi_room_audio(customer, device_groups):
+          """Set up multi-room audio with service level awareness."""
+          # Get service level permissions
+          permissions = get_service_level_permissions(customer.service_level)
+          
+          # Check if the action is allowed for this service level
+          if "multi_room_audio" not in permissions.get("allowed_actions", []):
+              logger.info(f"Customer {customer.id} attempted disallowed action: multi_room_audio")
+              
+              # Provide helpful message with upgrade information
+              return (
+                  f"I'm sorry, but your {customer.service_level} service level doesn't "
+                  f"allow multi-room audio. Please upgrade to premium or enterprise "
+                  f"for this feature."
+              )
+          
+          # Action is allowed, proceed with implementation
+          try:
+              for device in customer.devices:
+                  if device.location in device_groups:
+                      device.sync_audio = True
+              
+              # Log successful action
+              logger.info(f"Multi-room audio set up for customer {customer.id} in groups: {device_groups}")
+              
+              return "Multi-room audio has been set up for your devices."
+              
+          except Exception as e:
+              logger.error(f"Error setting up multi-room audio: {str(e)}")
+              return "Sorry, an error occurred while setting up multi-room audio."
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 

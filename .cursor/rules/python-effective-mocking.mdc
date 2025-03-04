@@ -1,0 +1,176 @@
+# Python Effective Mocking Best Practices
+
+This rule enforces best practices for mocking external dependencies in Python tests.
+
+<rule>
+name: python_effective_mocking
+description: Enforce best practices for mocking in Python tests
+filters:
+  - type: file_extension
+    pattern: "\\.py$"
+  - type: content
+    pattern: "(?:import\\s+(?:unittest|pytest|mock)|from\\s+unittest\\s+import\\s+mock|patch\\s*\\(|MagicMock)"
+
+actions:
+  - type: suggest
+    conditions:
+      # If using patch without specifying the correct target
+      - pattern: "@patch\\s*\\(['\"][^'\"]+['\"]\\)"
+        message: "Ensure you're patching the correct import path where the object is used, not where it's defined"
+      # If creating a mock without configuring return values
+      - pattern: "\\w+\\s*=\\s*MagicMock\\(\\)"
+        message: "Configure return values or side effects for your mocks to ensure predictable test behavior"
+      # If using patch without as parameter
+      - pattern: "@patch\\s*\\([^)]+\\)\\s*\\n\\s*def\\s+test_[^(]+\\([^)]*\\):"
+        message: "Use the 'as' parameter in patch decorators to make the test more readable"
+    message: |
+      ## Python Effective Mocking Best Practices
+
+      Follow these guidelines for effective mocking in tests:
+
+      1. **Patch Where Used, Not Where Defined**: 
+         - Mock objects where they are imported and used, not where they are defined
+         - Use the fully qualified name of the import in the module being tested
+      
+      2. **Configure Mock Behavior Explicitly**:
+         - Set return values for all mock methods that will be called
+         - Configure side effects when needed for complex behavior
+         - Set up mock responses for all expected calls
+      
+      3. **Verify Mock Interactions**:
+         - Assert that mocks were called with expected arguments
+         - Verify the number of times a mock was called
+         - Check the order of calls for sequence-dependent operations
+      
+      4. **Use Appropriate Mock Types**:
+         - Use `MagicMock` for general mocking needs
+         - Use `PropertyMock` for mocking properties
+         - Use `AsyncMock` for mocking coroutines
+      
+      5. **Avoid Overmocking**:
+         - Only mock external dependencies and boundaries
+         - Don't mock the system under test
+         - Consider using integration tests for complex interactions
+      
+      6. **Handle Nested Dependencies**:
+         - Configure the entire chain of nested attributes and methods
+         - Use `return_value` to set up nested mock objects
+      
+      7. **Reset Mocks Between Tests**:
+         - Use `setUp` and `tearDown` to reset mocks
+         - Or use `reset_mock()` explicitly
+      
+      8. **Document Mock Behavior**:
+         - Comment complex mock setups
+         - Explain why certain behaviors are being mocked
+
+      ### Example:
+      ```python
+      # Good: Patching where used with explicit configuration
+      @patch('myapp.service.requests.get')  # Patch where requests is used
+      def test_fetch_data(mock_get):
+          # Configure the mock
+          mock_response = MagicMock()
+          mock_response.status_code = 200
+          mock_response.json.return_value = {'key': 'value'}
+          mock_get.return_value = mock_response
+          
+          # Call the function under test
+          result = fetch_data('https://example.com/api')
+          
+          # Verify the result
+          assert result == {'key': 'value'}
+          
+          # Verify the mock was called correctly
+          mock_get.assert_called_once_with('https://example.com/api')
+          mock_response.json.assert_called_once()
+      ```
+
+examples:
+  - input: |
+      # Bad: Incorrect patching and insufficient configuration
+      @patch('requests.get')  # Patching the wrong path
+      def test_fetch_user_data(mock_get):
+          # No configuration of the mock
+          result = user_service.get_user(123)
+          assert result is not None
+    output: |
+      # Good: Correct patching and proper configuration
+      @patch('user_service.requests.get')  # Patch where requests is imported in user_service
+      def test_fetch_user_data(mock_get):
+          # Configure the mock response
+          mock_response = MagicMock()
+          mock_response.status_code = 200
+          mock_response.json.return_value = {
+              'id': 123,
+              'name': 'Test User',
+              'email': 'test@example.com'
+          }
+          mock_get.return_value = mock_response
+          
+          # Call the function under test
+          result = user_service.get_user(123)
+          
+          # Verify the result
+          assert result['id'] == 123
+          assert result['name'] == 'Test User'
+          
+          # Verify the mock was called correctly
+          mock_get.assert_called_once_with('https://api.example.com/users/123')
+          mock_response.json.assert_called_once()
+  
+  - input: |
+      # Bad: Mocking without handling errors or edge cases
+      @patch('myapp.db.get_item')
+      def test_get_customer(mock_get_item):
+          mock_get_item.return_value = {'id': 'cust_001', 'name': 'Test Customer'}
+          result = get_customer('cust_001')
+          assert result.id == 'cust_001'
+    output: |
+      # Good: Comprehensive mocking with error cases
+      @patch('myapp.services.customer_service.db.get_item')
+      def test_get_customer_success(mock_get_item):
+          """Test successful customer retrieval."""
+          # Configure the mock for success case
+          mock_get_item.return_value = {'Item': {'id': 'cust_001', 'name': 'Test Customer'}}
+          
+          # Call the function under test
+          result = get_customer('cust_001')
+          
+          # Verify the result
+          assert result.id == 'cust_001'
+          assert result.name == 'Test Customer'
+          
+          # Verify the mock was called correctly
+          mock_get_item.assert_called_once_with(
+              TableName='customers',
+              Key={'id': {'S': 'cust_001'}}
+          )
+      
+      @patch('myapp.services.customer_service.db.get_item')
+      def test_get_customer_not_found(mock_get_item):
+          """Test customer not found case."""
+          # Configure the mock for not found case
+          mock_get_item.return_value = {}
+          
+          # Call the function and verify it raises the expected exception
+          with pytest.raises(CustomerNotFoundError):
+              get_customer('cust_001')
+          
+          # Verify the mock was called
+          mock_get_item.assert_called_once()
+      
+      @patch('myapp.services.customer_service.db.get_item')
+      def test_get_customer_db_error(mock_get_item):
+          """Test database error handling."""
+          # Configure the mock to raise an exception
+          mock_get_item.side_effect = Exception("DB connection error")
+          
+          # Call the function and verify it raises the expected exception
+          with pytest.raises(DatabaseError):
+              get_customer('cust_001')
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 

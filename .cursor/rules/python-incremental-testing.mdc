@@ -1,0 +1,110 @@
+# Python Incremental Testing Best Practices
+
+This rule enforces best practices for incremental testing in Python development.
+
+<rule>
+name: python_incremental_testing
+description: Enforce best practices for incremental testing in Python
+filters:
+  - type: file_extension
+    pattern: "\\.py$"
+  - type: content
+    pattern: "(?:import\\s+(?:unittest|pytest)|def\\s+test_)"
+
+actions:
+  - type: suggest
+    conditions:
+      # If implementing a feature without tests
+      - pattern: "def\\s+[a-zA-Z0-9_]+\\s*\\([^)]*\\)\\s*(?:->\\s*[^:]+)?\\s*:\\s*(?!\\s*[\"'])\\s*\\S+"
+        message: "Implement tests for new functions as they are developed"
+      # If modifying existing code without updating tests
+      - pattern: "def\\s+[a-zA-Z0-9_]+\\s*\\([^)]*\\)\\s*(?:->\\s*[^:]+)?\\s*:\\s*(?!\\s*[\"'])\\s*\\S+"
+        message: "Update tests when modifying existing functionality"
+    message: |
+      ## Python Incremental Testing Best Practices
+
+      Follow these guidelines for incremental testing:
+
+      1. Write tests alongside new feature development, not after
+      
+      2. Run tests after each significant code change
+      
+      3. Test one feature at a time before moving to the next
+      
+      4. Fix failing tests immediately before continuing development
+      
+      5. Use test-driven development (TDD) when appropriate:
+         - Write a failing test first
+         - Implement the minimum code to make the test pass
+         - Refactor while keeping tests passing
+      
+      6. Maintain a high level of test coverage for new code
+      
+      7. Use a consistent testing pattern across the project
+
+      ### Example Workflow:
+      ```
+      # 1. Write a test for the new feature
+      def test_new_feature():
+          # Test the expected behavior
+          result = new_feature(test_input)
+          assert result == expected_output
+      
+      # 2. Run the test to confirm it fails
+      # python -m pytest test_module.py -v
+      
+      # 3. Implement the feature
+      def new_feature(input_data):
+          # Implementation
+          return processed_data
+      
+      # 4. Run the test again to confirm it passes
+      # python -m pytest test_module.py -v
+      
+      # 5. Refactor if needed, running tests after each change
+      ```
+
+examples:
+  - input: |
+      # Bad: Implementing a feature without tests
+      def process_data(data):
+          result = []
+          for item in data:
+              if item > 0:
+                  result.append(item * 2)
+          return result
+      
+      # Later implementing tests after several features
+      def test_process_data():
+          assert process_data([1, 2, 3]) == [2, 4, 6]
+    output: |
+      # Good: Test-driven development approach
+      # First, write the test
+      def test_process_data():
+          """Test that process_data correctly doubles positive numbers."""
+          assert process_data([1, 2, 3]) == [2, 4, 6]
+          assert process_data([-1, 0, 1]) == [2]
+      
+      # Run the test to confirm it fails
+      # Then implement the feature
+      def process_data(data):
+          """Process a list of numbers, doubling all positive values.
+          
+          Args:
+              data: List of numbers to process
+              
+          Returns:
+              List containing doubled positive numbers
+          """
+          result = []
+          for item in data:
+              if item > 0:
+                  result.append(item * 2)
+          return result
+      
+      # Run the test again to confirm it passes
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 

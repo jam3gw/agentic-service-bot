@@ -1,0 +1,195 @@
+# WebSocket API with DynamoDB Testing Best Practices
+
+This rule documents best practices for testing WebSocket APIs that store data in DynamoDB, based on learnings from the Agentic Service Bot project.
+
+<rule>
+name: websocket_dynamodb_testing
+description: Best practices for testing WebSocket APIs with DynamoDB storage
+filters:
+  - type: file_extension
+    pattern: "\\.py$"
+  - type: content
+    pattern: "(?:websocket|WebSocket|dynamodb|DynamoDB)"
+
+actions:
+  - type: suggest
+    conditions:
+      # If scanning DynamoDB without pagination
+      - pattern: "dynamodb.*\\.scan\\("
+        message: "Consider implementing pagination for DynamoDB scans"
+      # If not handling DynamoDB eventual consistency
+      - pattern: "assert.*dynamodb"
+        message: "Account for DynamoDB eventual consistency in assertions"
+      # If not using batch operations
+      - pattern: "for.*in.*:\\s*dynamodb.*\\.put_item"
+        message: "Use batch operations for multiple DynamoDB items"
+    message: |
+      ## WebSocket API with DynamoDB Testing Best Practices
+
+      Follow these guidelines for testing WebSocket APIs with DynamoDB:
+
+      1. **Account for DynamoDB Eventual Consistency**
+         - Implement retry mechanisms with backoff for DynamoDB queries
+         - Use polling with timeouts instead of fixed waits
+         - Consider using strongly consistent reads where appropriate
+
+      2. **Optimize DynamoDB Operations**
+         - Use batch operations for multiple items
+         - Implement pagination for scan operations
+         - Use query operations with appropriate indexes instead of scans
+
+      3. **Handle WebSocket and DynamoDB Timing**
+         - Implement proper sequencing between WebSocket messages and DynamoDB checks
+         - Use event-based waiting for WebSocket responses
+         - Implement smart polling for DynamoDB verification
+
+      4. **Manage Test Data Efficiently**
+         - Use unique identifiers for test data to avoid conflicts
+         - Clean up test data after tests complete
+         - Consider using transactions for related data
+
+      5. **Implement Robust Verification**
+         - Verify both WebSocket responses and DynamoDB storage
+         - Check for correct data structure and content
+         - Implement comprehensive logging for debugging
+
+      6. **Handle Asynchronous Processing**
+         - Account for processing delays between WebSocket messages and DynamoDB storage
+         - Implement appropriate wait times or polling mechanisms
+         - Log timestamps for message sending and database operations
+
+      ### Example:
+      ```python
+      def test_websocket_with_dynamodb_storage():
+          # Generate unique test ID
+          test_id = f"test_{uuid.uuid4().hex[:8]}"
+          
+          try:
+              # Set up test data
+              setup_test_data(test_id)
+              
+              # Connect to WebSocket
+              ws = connect_to_websocket(test_id)
+              
+              # Send message and get response
+              response = send_message_and_wait_for_response(ws, "Test message")
+              
+              # Verify WebSocket response
+              assert response is not None
+              assert "message" in response
+              
+              # Wait for data to be stored in DynamoDB with smart polling
+              stored_data = wait_for_dynamodb_data(
+                  table_name="messages",
+                  key={"id": test_id},
+                  timeout=10,
+                  poll_interval=0.5
+              )
+              
+              # Verify stored data
+              assert stored_data is not None
+              assert stored_data["message"] == "Test message"
+              
+          finally:
+              # Clean up test data
+              cleanup_test_data(test_id)
+      
+      def wait_for_dynamodb_data(table_name, key, timeout=10, poll_interval=0.5):
+          """Poll DynamoDB until data is available or timeout is reached."""
+          table = boto3.resource("dynamodb").Table(table_name)
+          start_time = time.time()
+          
+          while time.time() - start_time < timeout:
+              try:
+                  response = table.get_item(Key=key, ConsistentRead=True)
+                  if "Item" in response:
+                      return response["Item"]
+              except Exception as e:
+                  logger.warning(f"Error querying DynamoDB: {e}")
+              
+              time.sleep(poll_interval)
+          
+          return None
+      ```
+
+examples:
+  - input: |
+      # Bad: Not accounting for eventual consistency
+      def test_message_storage():
+          # Send message via WebSocket
+          send_websocket_message("test_user", "Hello world")
+          
+          # Immediately check DynamoDB
+          response = messages_table.scan(
+              FilterExpression=boto3.dynamodb.conditions.Attr("userId").eq("test_user")
+          )
+          
+          # This might fail due to eventual consistency
+          assert len(response["Items"]) > 0
+    output: |
+      # Good: Accounting for eventual consistency
+      def test_message_storage():
+          # Generate unique ID for this test
+          test_id = f"test_user_{uuid.uuid4().hex[:8]}"
+          
+          # Send message via WebSocket
+          send_websocket_message(test_id, "Hello world")
+          
+          # Poll DynamoDB with timeout
+          max_attempts = 5
+          poll_interval = 1
+          
+          for attempt in range(max_attempts):
+              response = messages_table.scan(
+                  FilterExpression=boto3.dynamodb.conditions.Attr("userId").eq(test_id)
+              )
+              
+              if len(response["Items"]) > 0:
+                  break
+                  
+              if attempt < max_attempts - 1:
+                  time.sleep(poll_interval)
+                  # Optionally increase poll_interval for backoff
+          
+          assert len(response["Items"]) > 0, f"Message for {test_id} not found in DynamoDB after {max_attempts} attempts"
+  
+  - input: |
+      # Bad: Using scan without pagination
+      def get_all_messages(user_id):
+          response = messages_table.scan(
+              FilterExpression=boto3.dynamodb.conditions.Attr("userId").eq(user_id)
+          )
+          return response["Items"]
+    output: |
+      # Good: Using scan with pagination
+      def get_all_messages(user_id):
+          items = []
+          last_evaluated_key = None
+          
+          while True:
+              # Build scan parameters
+              scan_params = {
+                  "FilterExpression": boto3.dynamodb.conditions.Attr("userId").eq(user_id)
+              }
+              
+              # Add pagination token if we have one
+              if last_evaluated_key:
+                  scan_params["ExclusiveStartKey"] = last_evaluated_key
+              
+              # Execute scan
+              response = messages_table.scan(**scan_params)
+              
+              # Add items to our result
+              items.extend(response.get("Items", []))
+              
+              # Check if we need to paginate
+              last_evaluated_key = response.get("LastEvaluatedKey")
+              if not last_evaluated_key:
+                  break
+          
+          return items
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 

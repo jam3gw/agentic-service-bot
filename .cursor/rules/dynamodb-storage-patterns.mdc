@@ -1,0 +1,242 @@
+---
+title: DynamoDB Storage Best Practices
+description: Best practices for storing and retrieving data in DynamoDB, with a focus on preventing race conditions and ensuring data integrity
+---
+
+# DynamoDB Storage Best Practices
+
+This rule provides guidance on best practices for storing and retrieving data in DynamoDB, with a focus on preventing race conditions and ensuring data integrity.
+
+## Rule
+
+```json
+{
+  "name": "dynamodb_storage_patterns",
+  "description": "Best practices for storing and retrieving data in DynamoDB",
+  "priority": "high",
+  "version": "1.0",
+  "filters": [
+    {
+      "extension": [".py", ".js", ".ts"],
+      "content_patterns": ["dynamodb", "DynamoDB", "put_item", "update_item", "batch_write"]
+    }
+  ],
+  "actions": [
+    {
+      "pattern": "time\\.time\\(\\)",
+      "suggestion": "Consider using a more precise timestamp with millisecond precision (time.time() * 1000) for generating unique IDs",
+      "explanation": "Using millisecond precision helps prevent ID collisions in high-throughput scenarios"
+    },
+    {
+      "pattern": "conversationId.*customer_id",
+      "suggestion": "Ensure each record has a unique identifier by combining entity type, timestamp, and a suffix",
+      "explanation": "Using composite IDs (e.g., `conv_{customer_id}_{entity_type}_{timestamp}`) prevents race conditions"
+    },
+    {
+      "pattern": "put_item\\(Item=\\{[^}]*\\}\\)",
+      "suggestion": "Add error handling around DynamoDB operations and include a unique ID field",
+      "explanation": "Error handling prevents silent failures, and unique IDs prevent record collisions"
+    },
+    {
+      "pattern": "batch_write_item\\(",
+      "suggestion": "Implement retry logic for batch operations and handle partial failures",
+      "explanation": "Batch operations can partially succeed, requiring careful error handling"
+    }
+  ]
+}
+```
+
+## Best Practices
+
+### 1. Use Unique and Composite Primary Keys
+
+**Bad Practice:**
+```python
+# Using only customer_id as the key can lead to overwrites
+conversation_id = f"conv_{customer_id}"
+dynamodb_table.put_item(Item={
+    'conversationId': conversation_id,
+    'userId': customer_id,
+    'message': message
+})
+```
+
+**Good Practice:**
+```python
+# Using a composite key with timestamp and type ensures uniqueness
+timestamp_ms = int(time.time() * 1000)
+message_id = f"msg_{customer_id}_{timestamp_ms}"
+conversation_id = f"conv_{customer_id}_{message_type}_{timestamp_ms}"
+dynamodb_table.put_item(Item={
+    'id': message_id,  # Unique ID as primary key
+    'conversationId': conversation_id,
+    'timestamp': datetime.utcnow().isoformat(),
+    'userId': customer_id,
+    'message': message,
+    'type': message_type
+})
+```
+
+### 2. Implement Proper Error Handling
+
+**Bad Practice:**
+```python
+# No error handling can lead to silent failures
+dynamodb_table.put_item(Item={
+    'id': item_id,
+    'data': item_data
+})
+```
+
+**Good Practice:**
+```python
+try:
+    dynamodb_table.put_item(Item={
+        'id': item_id,
+        'data': item_data
+    })
+except Exception as e:
+    logger.error(f"Failed to store item {item_id} in DynamoDB: {str(e)}")
+    # Implement appropriate fallback or retry logic
+```
+
+### 3. Use Conditional Writes for Concurrency Control
+
+**Bad Practice:**
+```python
+# Unconditional writes can lead to lost updates
+dynamodb_table.update_item(
+    Key={'id': item_id},
+    UpdateExpression="SET #count = #count + :inc",
+    ExpressionAttributeNames={"#count": "count"},
+    ExpressionAttributeValues={":inc": 1}
+)
+```
+
+**Good Practice:**
+```python
+try:
+    # Use conditional expressions to prevent lost updates
+    dynamodb_table.update_item(
+        Key={'id': item_id},
+        UpdateExpression="SET #count = #count + :inc",
+        ConditionExpression="attribute_exists(id)",
+        ExpressionAttributeNames={"#count": "count"},
+        ExpressionAttributeValues={":inc": 1}
+    )
+except dynamodb.exceptions.ConditionalCheckFailedException:
+    logger.warning(f"Item {item_id} does not exist, creating new item")
+    dynamodb_table.put_item(Item={
+        'id': item_id,
+        'count': 1
+    })
+```
+
+### 4. Implement Retry Logic with Exponential Backoff
+
+**Bad Practice:**
+```python
+# Single attempt without retries can fail due to throttling
+response = dynamodb_table.query(
+    KeyConditionExpression=Key('userId').eq(user_id)
+)
+```
+
+**Good Practice:**
+```python
+def query_with_retry(user_id, max_attempts=3):
+    attempt = 0
+    while attempt < max_attempts:
+        try:
+            response = dynamodb_table.query(
+                KeyConditionExpression=Key('userId').eq(user_id)
+            )
+            return response
+        except dynamodb.exceptions.ProvisionedThroughputExceededException:
+            wait_time = (2 ** attempt) * 0.1  # Exponential backoff
+            logger.warning(f"Throttled, retrying in {wait_time}s")
+            time.sleep(wait_time)
+            attempt += 1
+    
+    # If we've exhausted retries, log and handle the failure
+    logger.error(f"Failed to query after {max_attempts} attempts")
+    return None
+```
+
+### 5. Use Batch Operations Efficiently
+
+**Bad Practice:**
+```python
+# Individual writes for multiple items is inefficient
+for item in items:
+    dynamodb_table.put_item(Item=item)
+```
+
+**Good Practice:**
+```python
+def batch_write_with_retry(items, table_name, max_attempts=3):
+    # DynamoDB limits batch size to 25 items
+    batch_size = 25
+    for i in range(0, len(items), batch_size):
+        batch_items = items[i:i+batch_size]
+        request_items = {
+            table_name: [{'PutRequest': {'Item': item}} for item in batch_items]
+        }
+        
+        attempt = 0
+        unprocessed_items = request_items
+        
+        while unprocessed_items and attempt < max_attempts:
+            response = dynamodb.batch_write_item(RequestItems=unprocessed_items)
+            unprocessed_items = response.get('UnprocessedItems', {})
+            
+            if unprocessed_items:
+                wait_time = (2 ** attempt) * 0.1
+                logger.warning(f"Unprocessed items, retrying in {wait_time}s")
+                time.sleep(wait_time)
+                attempt += 1
+        
+        if unprocessed_items:
+            logger.error(f"Failed to process {len(unprocessed_items)} items after {max_attempts} attempts")
+```
+
+### 6. Ensure Idempotent Operations
+
+**Bad Practice:**
+```python
+# Non-idempotent operation can cause duplicate processing
+def process_message(message_id):
+    # Process the message
+    mark_as_processed(message_id)
+```
+
+**Good Practice:**
+```python
+def process_message(message_id):
+    # Check if already processed
+    response = dynamodb_table.get_item(
+        Key={'id': message_id},
+        ProjectionExpression='processed'
+    )
+    
+    if response.get('Item', {}).get('processed', False):
+        logger.info(f"Message {message_id} already processed, skipping")
+        return
+    
+    # Process the message
+    try:
+        # Actual processing logic
+        
+        # Mark as processed with condition to ensure idempotency
+        dynamodb_table.update_item(
+            Key={'id': message_id},
+            UpdateExpression="SET processed = :true",
+            ConditionExpression="attribute_not_exists(processed) OR processed = :false",
+            ExpressionAttributeValues={
+                ':true': True,
+                ':false': False
+            }
+        )
+    except dynamodb.exceptions.ConditionalCheckFailedException:
+        logger.warning(f"Message {message_id} processed by another instance")
+``` 

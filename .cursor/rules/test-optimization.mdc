@@ -1,0 +1,171 @@
+# Test Optimization Best Practices
+
+This rule documents best practices for optimizing test execution times while maintaining reliability.
+
+<rule>
+name: test_optimization
+description: Best practices for optimizing test execution times
+filters:
+  - type: file_extension
+    pattern: "\\.py$"
+  - type: content
+    pattern: "(?:test_|unittest|pytest)"
+
+actions:
+  - type: suggest
+    conditions:
+      # If using long sleep times
+      - pattern: "time\\.sleep\\((\\d+)\\)"
+        message: "Consider reducing sleep times and implementing retry mechanisms"
+      # If not using parallel execution
+      - pattern: "unittest\\.TestCase"
+        message: "Consider using pytest with parallel execution for faster test runs"
+      # If not using fixtures for setup/teardown
+      - pattern: "def setUp\\(self\\):"
+        message: "Consider using pytest fixtures for more efficient setup/teardown"
+    message: |
+      ## Test Optimization Best Practices
+
+      Follow these guidelines to optimize test execution times:
+
+      1. **Minimize Wait Times**
+         - Replace fixed `time.sleep()` calls with event-based waiting
+         - Use shorter timeouts with retry mechanisms
+         - Implement exponential backoff for retries
+
+      2. **Parallelize Test Execution**
+         - Use pytest with the `-xvs` flag for parallel execution
+         - Group tests that can run independently
+         - Avoid tests with interdependencies
+
+      3. **Optimize Resource Usage**
+         - Reuse expensive resources across tests
+         - Use connection pooling for database and API connections
+         - Clean up resources promptly after use
+
+      4. **Implement Smart Polling**
+         - Use polling with timeouts instead of fixed waits
+         - Start with short intervals and increase if needed
+         - Add early exit conditions when expected state is reached
+
+      5. **Reduce External Dependencies**
+         - Mock external services when possible
+         - Use local test doubles for third-party services
+         - Create focused test environments
+
+      6. **Optimize Database Interactions**
+         - Batch database operations
+         - Use efficient queries with proper indexing
+         - Implement database transaction rollbacks instead of cleanup
+
+      ### Example:
+      ```python
+      # Bad: Fixed waiting
+      def test_with_fixed_wait():
+          trigger_async_operation()
+          time.sleep(10)  # Wait for operation to complete
+          verify_result()
+      
+      # Good: Smart polling with timeout
+      def test_with_smart_polling():
+          trigger_async_operation()
+          
+          start_time = time.time()
+          max_wait_time = 10
+          poll_interval = 0.2
+          
+          while time.time() - start_time < max_wait_time:
+              if check_if_operation_complete():
+                  break
+              time.sleep(poll_interval)
+              # Optionally increase poll_interval for exponential backoff
+          
+          verify_result()
+      
+      # Even better: Event-based waiting
+      def test_with_event_based_waiting():
+          operation_complete = threading.Event()
+          
+          def on_operation_complete(result):
+              # Store result for later verification
+              nonlocal operation_result
+              operation_result = result
+              operation_complete.set()
+          
+          trigger_async_operation(callback=on_operation_complete)
+          
+          # Wait with timeout
+          if not operation_complete.wait(timeout=10):
+              pytest.fail("Operation did not complete within timeout")
+          
+          verify_result(operation_result)
+      ```
+
+examples:
+  - input: |
+      # Bad: Sequential tests with fixed waits
+      class TestSequential(unittest.TestCase):
+          def setUp(self):
+              self.resource = create_expensive_resource()
+          
+          def tearDown(self):
+              self.resource.cleanup()
+          
+          def test_first_operation(self):
+              self.resource.trigger_operation()
+              time.sleep(5)
+              assert self.resource.get_result() == "expected"
+          
+          def test_second_operation(self):
+              self.resource.trigger_operation()
+              time.sleep(5)
+              assert self.resource.get_result() == "expected"
+    output: |
+      # Good: Optimized tests with fixtures and smart waiting
+      import pytest
+      
+      @pytest.fixture(scope="module")
+      def shared_resource():
+          # Create once for all tests in module
+          resource = create_expensive_resource()
+          yield resource
+          # Clean up after all tests
+          resource.cleanup()
+      
+      def test_first_operation(shared_resource):
+          shared_resource.trigger_operation()
+          
+          # Smart polling instead of fixed wait
+          wait_for_condition(
+              lambda: shared_resource.get_result() == "expected",
+              timeout=5,
+              poll_interval=0.1
+          )
+          
+          assert shared_resource.get_result() == "expected"
+      
+      def test_second_operation(shared_resource):
+          shared_resource.trigger_operation()
+          
+          # Smart polling instead of fixed wait
+          wait_for_condition(
+              lambda: shared_resource.get_result() == "expected",
+              timeout=5,
+              poll_interval=0.1
+          )
+          
+          assert shared_resource.get_result() == "expected"
+      
+      # Helper function for smart waiting
+      def wait_for_condition(condition_func, timeout=5, poll_interval=0.1):
+          start_time = time.time()
+          while time.time() - start_time < timeout:
+              if condition_func():
+                  return True
+              time.sleep(poll_interval)
+          return False
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 
