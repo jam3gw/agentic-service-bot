@@ -199,6 +199,85 @@ The Agentic Service Bot uses DynamoDB as its primary data store. The data model 
    - Deleted automatically after TTL expires (24 hours)
    - Deleted manually when connection is closed
 
+## API Endpoints
+
+### Device Management
+
+**Get Customer Devices**
+- **Endpoint**: `GET /api/customers/{customerId}/devices`
+- **Description**: Retrieves all devices associated with a specific customer
+- **Response Format**:
+```json
+{
+  "devices": [
+    {
+      "id": "dev_001",
+      "type": "SmartSpeaker",
+      "name": "Living Room Speaker",
+      "location": "living_room",
+      "state": "on",
+      "capabilities": ["volume_control", "music_playback"],
+      "lastUpdated": "2023-03-01T14:30:45.123Z"
+    }
+  ]
+}
+```
+
+**Update Device State**
+- **Endpoint**: `PATCH /api/customers/{customerId}/devices/{deviceId}`
+- **Description**: Updates the state of a specific device
+- **Request Body**:
+```json
+{
+  "state": "off"
+}
+```
+- **Response Format**:
+```json
+{
+  "device": {
+    "id": "dev_001",
+    "type": "SmartSpeaker",
+    "name": "Living Room Speaker",
+    "location": "living_room",
+    "state": "off",
+    "capabilities": ["volume_control", "music_playback"],
+    "lastUpdated": "2023-03-01T15:45:12.456Z"
+  }
+}
+```
+
+### Service Capabilities
+
+**Get Service Capabilities**
+- **Endpoint**: `GET /api/capabilities`
+- **Description**: Retrieves all available service capabilities and their availability by service level
+- **Response Format**:
+```json
+{
+  "capabilities": [
+    {
+      "id": "cap_001",
+      "name": "Volume Control",
+      "description": "Adjust volume of audio devices",
+      "basic": true,
+      "premium": true,
+      "enterprise": true,
+      "category": "device-control"
+    },
+    {
+      "id": "cap_002",
+      "name": "Multi-room Audio",
+      "description": "Play audio across multiple speakers",
+      "basic": false,
+      "premium": true,
+      "enterprise": true,
+      "category": "device-control"
+    }
+  ]
+}
+```
+
 ## Implementation Notes
 
 - All tables use on-demand capacity for automatic scaling
