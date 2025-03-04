@@ -8,6 +8,7 @@ and generating appropriate responses.
 import time
 import os
 import sys
+import logging
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 
@@ -24,6 +25,9 @@ from models.customer import Customer
 from analyzers.request_analyzer import RequestAnalyzer
 from services.dynamodb_service import get_customer, get_service_level_permissions
 from services.anthropic_service import generate_response
+
+# Configure logging
+logger = logging.getLogger()
 
 # Initialize DynamoDB resources
 dynamodb = boto3.resource('dynamodb')
@@ -79,6 +83,16 @@ def process_request(customer_id: str, user_input: str) -> str:
     if request_type == "device_relocation":
         source_location, destination_location = RequestAnalyzer.extract_locations(user_input)
     
+    # Extract device groups for multi-room audio requests
+    device_groups = None
+    if request_type == "multi_room_setup":
+        device_groups = RequestAnalyzer.extract_device_groups(user_input)
+    
+    # Extract routine details for custom action requests
+    routine_details = None
+    if request_type == "custom_routine":
+        routine_details = RequestAnalyzer.extract_routine_details(user_input)
+    
     # Build context for the LLM
     context = {
         "customer": customer,
@@ -95,15 +109,52 @@ def process_request(customer_id: str, user_input: str) -> str:
         # Add specific explanation for relocation requests
         if all_actions_allowed:
             prompt = (
-                f"The customer wants to move their device to the {destination_location.replace('_', ' ')}. "
-                f"They are allowed to do this with their {customer.service_level} service level. "
-                f"Please confirm the relocation and provide any helpful information."
+                f"Move device to {destination_location.replace('_', ' ')}. "
+                f"This is allowed with {customer.service_level} service level."
             )
         else:
             prompt = (
-                f"The customer wants to move their device to the {destination_location.replace('_', ' ')}, "
-                f"but their {customer.service_level} service level doesn't allow device relocation. "
-                f"Politely explain this limitation and offer to connect them with customer support to upgrade."
+                f"Customer wants to move device to {destination_location.replace('_', ' ')}. "
+                f"Not allowed with {customer.service_level} service level. "
+                f"Suggest upgrade options."
+            )
+    # For multi-room audio requests, add additional context
+    elif request_type == "multi_room_setup" and device_groups:
+        context["device_groups"] = device_groups
+        
+        if all_actions_allowed:
+            if "all" in device_groups:
+                prompt = (
+                    f"Set up multi-room audio across all devices. "
+                    f"Allowed with {customer.service_level} service level."
+                )
+            else:
+                group_str = ", ".join([loc.replace("_", " ") for loc in device_groups])
+                prompt = (
+                    f"Set up multi-room audio in {group_str}. "
+                    f"Allowed with {customer.service_level} service level."
+                )
+        else:
+            prompt = (
+                f"Multi-room audio setup requested. "
+                f"Not allowed with {customer.service_level} service level. "
+                f"Suggest upgrade options."
+            )
+    # For custom action requests, add additional context
+    elif request_type == "custom_routine" and routine_details:
+        context["routine"] = routine_details
+        
+        if all_actions_allowed:
+            routine_name = routine_details["name"] or "the new routine"
+            prompt = (
+                f"Create custom routine '{routine_name}'. "
+                f"Allowed with {customer.service_level} service level."
+            )
+        else:
+            prompt = (
+                f"Custom routine creation requested. "
+                f"Not allowed with {customer.service_level} service level. "
+                f"Suggest upgrade options."
             )
     else:
         # Generic prompt for other request types
@@ -113,29 +164,45 @@ def process_request(customer_id: str, user_input: str) -> str:
     response = generate_response(prompt, context)
     
     # Store the interaction in conversation history
-    conversation_id = f"conv_{customer_id}_{int(time.time() * 1000)}"
+    # FIX: Generate a unique conversation ID for each message to ensure they're stored separately
+    # The previous implementation used the same conversation ID for both user and bot messages
+    # which could cause race conditions in high-volume scenarios
+    timestamp_ms = int(time.time() * 1000)
+    user_conversation_id = f"conv_{customer_id}_user_{timestamp_ms}"
+    bot_conversation_id = f"conv_{customer_id}_bot_{timestamp_ms}"
     timestamp = datetime.utcnow().isoformat()
     
-    # Store user message
-    messages_table.put_item(Item={
-        'conversationId': conversation_id,
-        'timestamp': timestamp,
-        'userId': customer_id,
-        'message': user_input,
-        'sender': 'user',
-        'request_type': request_type,
-        'actions_allowed': all_actions_allowed
-    })
-    
-    # Store bot response
-    messages_table.put_item(Item={
-        'conversationId': conversation_id,
-        'timestamp': datetime.utcnow().isoformat(),
-        'userId': customer_id,
-        'message': response,
-        'sender': 'bot',
-        'request_type': request_type,
-        'actions_allowed': all_actions_allowed
-    })
+    try:
+        # Store user message with its own unique ID
+        user_item = {
+            'id': f"msg_{timestamp_ms}_user",  # Add a unique ID field
+            'conversationId': user_conversation_id,
+            'timestamp': timestamp,
+            'userId': customer_id,
+            'message': user_input,
+            'sender': 'user',
+            'request_type': request_type,
+            'actions_allowed': all_actions_allowed
+        }
+        logger.info(f"Storing user message in DynamoDB: {user_item}")
+        messages_table.put_item(Item=user_item)
+        
+        # Store bot response with its own unique ID
+        bot_timestamp = datetime.utcnow().isoformat()
+        bot_item = {
+            'id': f"msg_{timestamp_ms}_bot",  # Add a unique ID field
+            'conversationId': bot_conversation_id,
+            'timestamp': bot_timestamp,
+            'userId': customer_id,
+            'message': response,
+            'sender': 'bot',
+            'request_type': request_type,
+            'actions_allowed': all_actions_allowed
+        }
+        logger.info(f"Storing bot message in DynamoDB: {bot_item}")
+        messages_table.put_item(Item=bot_item)
+    except Exception as e:
+        logger.error(f"Error storing messages in DynamoDB: {str(e)}")
+        # Continue even if message storage fails - don't impact user experience
     
     return response 
