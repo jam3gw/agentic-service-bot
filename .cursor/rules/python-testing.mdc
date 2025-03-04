@@ -26,7 +26,7 @@ actions:
       - pattern: "assert\\s+[^,]+"
         message: "Include a message with assertions to clarify what's being tested"
       # If test has multiple assertions
-      - pattern: "def\\s+test_[a-zA-Z0-9_]+[^:]*:(?:[^\\n]*\\n+\\s*)*assert[^\\n]*\\n+(?:[^\\n]*\\n+\\s*)*assert"
+      - pattern: "def\\s+test_[a-zA-Z0-9_]+[^:]*:(?:[^\\n]*\\n+\\s*)+assert[^\\n]*\\n+(?:[^\\n]*\\n+\\s*)*assert"
         message: "Consider splitting tests with multiple assertions into separate test functions"
       # If test is mocking external dependencies without clear purpose
       - pattern: "@patch\\(['\"][^'\"]+['\"]\\)"
@@ -40,6 +40,9 @@ actions:
       # If mocking AWS services without proper response structure
       - pattern: "boto3|dynamodb|s3|lambda"
         message: "Ensure AWS service mocks include proper response structures to avoid ResourceNotFound errors"
+      # If mocking at the wrong level
+      - pattern: "@patch\\(['\"](boto3|aws_sdk|requests)['\"]\\)"
+        message: "Consider mocking at a more direct level instead of high-level libraries"
     message: |
       ## Python Testing Best Practices
 
@@ -59,6 +62,8 @@ actions:
          - Only mock external dependencies when necessary
          - Ensure mocks reflect realistic behavior
          - Don't create tests that are overly dependent on implementation details
+         - **Mock at the right level**: Prefer mocking the specific components you're testing rather than high-level dependencies
+         - **Direct mocking is more reliable**: Mock the specific functions or methods being called rather than their internal dependencies
          - For AWS services, ensure mocks include proper response structures:
            - DynamoDB: Include proper response metadata and expected return values
            - S3: Mock both client and resource interfaces appropriately
@@ -69,6 +74,7 @@ actions:
          - For text validation, consider multiple ways the same concept might be expressed
          - Use regular expressions or multiple conditions for flexible string matching
          - Test for semantic meaning rather than exact wording
+         - **Match implementation details**: Ensure assertions match the actual implementation details, including return value types (e.g., empty dict vs None)
       
       5. **Appropriate Timeouts**
          - Set realistic timeouts for asynchronous operations
@@ -89,22 +95,28 @@ actions:
          - Verify environment variables and mock configurations in each test
          - Use descriptive test names that help identify what's being tested
       
-      8. Include docstrings for all test functions that explain:
+      8. **Consistent Mocking Approach**
+         - Use a consistent mocking approach throughout the test suite
+         - Prefer patching specific components over patching high-level dependencies
+         - Document your mocking strategy for complex tests
+         - Use setup methods to establish common mocks across multiple tests
+      
+      9. Include docstrings for all test functions that explain:
          - What is being tested
          - Why it matters (business value)
          - Any special test conditions
       
-      9. Follow the Arrange-Act-Assert (AAA) pattern
+      10. Follow the Arrange-Act-Assert (AAA) pattern
       
-      10. Test one concept per test function
+      11. Test one concept per test function
       
-      11. Use descriptive assertion messages
+      12. Use descriptive assertion messages
       
-      12. Use fixtures for test setup and teardown
+      13. Use fixtures for test setup and teardown
       
-      13. Parameterize tests for multiple input scenarios
+      14. Parameterize tests for multiple input scenarios
       
-      14. Aim for high test coverage of critical paths, not 100% coverage
+      15. Aim for high test coverage of critical paths, not 100% coverage
 
       ### Example of Flexible Text Assertion:
       ```python
@@ -181,38 +193,88 @@ actions:
       
       ### Example of Proper AWS Service Mocking:
       ```python
+      # Bad: Mocking at too high a level
       @patch('boto3.resource')
-      def test_update_dynamodb_item(self, mock_boto3_resource):
-          """Test updating an item in DynamoDB.
-          
-          This test verifies that our update logic correctly modifies
-          items in DynamoDB, which is critical for data consistency.
-          """
-          # Arrange
+      def test_dynamodb_update(mock_boto3_resource):
           mock_table = MagicMock()
-          # Properly mock the response structure
-          mock_table.update_item.return_value = {
-              'ResponseMetadata': {
-                  'HTTPStatusCode': 200
-              },
-              'Attributes': {
-                  'id': 'test-id',
-                  'status': 'updated'
-              }
-          }
           mock_dynamodb = MagicMock()
           mock_dynamodb.Table.return_value = mock_table
           mock_boto3_resource.return_value = mock_dynamodb
           
+          result = update_item('item-123', 'new-value')
+          assert result is True
+      
+      # Good: Mocking at the right level
+      @patch('services.dynamodb_service.dynamodb.Table')
+      def test_dynamodb_update(mock_table_constructor):
+          """Test updating an item in DynamoDB.
+          
+          This test ensures our update operation correctly modifies data,
+          which is critical for maintaining data integrity.
+          """
+          # Arrange
+          mock_table = MagicMock()
+          # Include proper response structure
+          mock_table.update_item.return_value = {
+              'ResponseMetadata': {
+                  'HTTPStatusCode': 200,
+                  'RequestId': 'EXAMPLE-REQUEST-ID'
+              },
+              'Attributes': {
+                  'id': 'item-123',
+                  'value': 'new-value',
+                  'updated_at': '2023-01-01T12:00:00Z'
+              }
+          }
+          mock_table_constructor.return_value = mock_table
+          
           # Act
-          result = update_item('test-id', 'updated')
+          result = update_item('item-123', 'new-value')
           
           # Assert
-          self.assertTrue(result, "Update should return True on success")
+          assert result is True, "Update operation should return True on success"
           mock_table.update_item.assert_called_once()
+          # Verify the correct parameters were used
           args, kwargs = mock_table.update_item.call_args
-          self.assertEqual(kwargs['Key'], {'id': 'test-id'}, 
-                          "Key in update_item should match item ID")
+          assert kwargs['Key'] == {'id': 'item-123'}, "Key should match the item ID"
+          assert 'UpdateExpression' in kwargs, "Update should include UpdateExpression"
+      ```
+      
+      ### Example of Consistent Mocking Approach:
+      ```python
+      class TestUserService(unittest.TestCase):
+          """Tests for the UserService class."""
+          
+          def setUp(self):
+              """Set up common mocks for all tests."""
+              # Patch at the right level consistently across all tests
+              self.db_patcher = patch('services.user_service.database.get_connection')
+              self.mock_db = self.db_patcher.start()
+              self.mock_conn = MagicMock()
+              self.mock_db.return_value = self.mock_conn
+              
+              # Create the service with dependencies properly mocked
+              self.user_service = UserService()
+              
+          def tearDown(self):
+              """Clean up patches."""
+              self.db_patcher.stop()
+              
+          def test_get_user(self):
+              """Test retrieving a user by ID."""
+              # Arrange
+              self.mock_conn.execute.return_value.fetchone.return_value = {
+                  'id': 'user-123',
+                  'name': 'Test User',
+                  'email': 'test@example.com'
+              }
+              
+              # Act
+              user = self.user_service.get_user('user-123')
+              
+              # Assert
+              self.assertEqual(user['id'], 'user-123')
+              self.mock_conn.execute.assert_called_once()
       ```
 
 examples:
@@ -271,67 +333,7 @@ examples:
           assert result == {"processed": "value"}, "Data should be correctly processed"
   
   - input: |
-      # Bad: Test with unrealistic timeout
-      def test_async_operation():
-          result = start_async_operation()
-          assert wait_for_completion(result, timeout=0.1)
-    output: |
-      # Good: Test with realistic timeout and helpful message
-      def test_async_operation():
-          """Test that async operation completes successfully.
-          
-          This operation is critical for background processing of customer data.
-          """
-          # Arrange
-          input_data = {"id": "test123"}
-          
-          # Act
-          result = start_async_operation(input_data)
-          
-          # Assert with realistic timeout
-          completed = wait_for_completion(result, timeout=5.0)
-          assert completed, f"Async operation did not complete within 5 seconds. Status: {result.status}"
-  
-  - input: |
-      # Bad: Committing tests without verification
-      git add lambda/api/test_*.py
-      git commit -m "test: add new tests"
-    output: |
-      # Good: Verifying tests before committing
-      # Run the tests first
-      cd lambda/api
-      python run_tests.py
-      
-      # Only commit if tests pass
-      if [ $? -eq 0 ]; then
-          git add lambda/api/test_*.py
-          git commit -m "test: add new tests with verified functionality"
-      else
-          echo "Tests failed, fixing before committing"
-      fi
-  
-  - input: |
-      # Bad: Debugging by running the entire test suite
-      python -m unittest discover
-    output: |
-      # Good: Debugging individual tests
-      # Create a debug script (debug_test.py)
-      import unittest
-      from my_module.tests.test_problematic import TestProblematic
-      
-      # Set up any required environment variables
-      import os
-      os.environ['TEST_ENV_VAR'] = 'test_value'
-      
-      # Run just the failing test
-      suite = unittest.TestSuite()
-      suite.addTest(TestProblematic('test_specific_failing_method'))
-      
-      # Run with high verbosity for detailed output
-      unittest.TextTestRunner(verbosity=2).run(suite)
-      
-  - input: |
-      # Bad: Incomplete AWS service mock
+      # Bad: Mocking at too high a level
       @patch('boto3.resource')
       def test_dynamodb_update(mock_boto3_resource):
           mock_table = MagicMock()
@@ -342,9 +344,9 @@ examples:
           result = update_item('item-123', 'new-value')
           assert result is True
     output: |
-      # Good: Complete AWS service mock with proper response structure
-      @patch('boto3.resource')
-      def test_dynamodb_update(mock_boto3_resource):
+      # Good: Mocking at the right level
+      @patch('services.dynamodb_service.dynamodb.Table')
+      def test_dynamodb_update(mock_table_constructor):
           """Test updating an item in DynamoDB.
           
           This test ensures our update operation correctly modifies data,
@@ -364,9 +366,7 @@ examples:
                   'updated_at': '2023-01-01T12:00:00Z'
               }
           }
-          mock_dynamodb = MagicMock()
-          mock_dynamodb.Table.return_value = mock_table
-          mock_boto3_resource.return_value = mock_dynamodb
+          mock_table_constructor.return_value = mock_table
           
           # Act
           result = update_item('item-123', 'new-value')
@@ -381,5 +381,5 @@ examples:
 
 metadata:
   priority: high
-  version: 1.5
+  version: 1.6
 </rule> 
