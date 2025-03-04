@@ -1,0 +1,88 @@
+# Agentic Service Bot Learnings
+
+This rule documents key learnings from the Agentic Service Bot project to guide future development.
+
+<rule>
+name: agentic_service_bot_learnings
+description: Document key learnings from the Agentic Service Bot project
+filters:
+  - type: file_extension
+    pattern: "\\.py$"
+  - type: content
+    pattern: "(?i)(websocket|connection|dynamodb|conversation|message)"
+
+actions:
+  - type: suggest
+    message: |
+      ## Agentic Service Bot Learnings
+
+      This project has yielded several important learnings that should guide future development:
+
+      ### WebSocket Connection Handling
+
+      1. **Connection Persistence**: Mark connections as "disconnected" instead of deleting them
+         - Preserves conversation history during temporary disconnections
+         - Enables reliable testing of conversation flows
+         - Provides better debugging capabilities
+
+      2. **Status Field**: Include a status field in connection records
+         - Allows tracking connection lifecycle (connected, disconnected)
+         - Enables filtering active connections without losing history
+         - Simplifies reconnection logic
+
+      ### DynamoDB Message Storage
+
+      1. **Unique IDs**: Generate unique IDs for each message
+         - Prevents race conditions in high-volume scenarios
+         - Ensures reliable message storage and retrieval
+         - Simplifies message tracking and debugging
+
+      2. **Error Handling**: Implement robust error handling for storage operations
+         - Log errors but don't impact user experience
+         - Ensure critical operations complete even if storage fails
+         - Provide detailed logs for debugging
+
+      ### Response Generation
+
+      1. **Concise Responses**: Configure LLM for brevity
+         - Set max_tokens parameter to limit response length (300 tokens)
+         - Use temperature parameter (0.3) for more focused responses
+         - Include explicit instructions for brevity in system prompts
+
+      2. **System Prompts**: Keep system prompts clear and concise
+         - Include only essential context
+         - Structure prompts for clarity
+         - Explicitly request brief responses
+
+      ### Testing Strategy
+
+      1. **End-to-End Testing**: Test complete conversation flows
+         - Verify message storage in DynamoDB
+         - Check response generation with actual LLM calls
+         - Validate WebSocket connection handling
+
+      2. **Mocking External Services**: Use consistent mocking patterns
+         - Mock LLM responses for deterministic testing
+         - Simulate WebSocket connections
+         - Create test fixtures for common scenarios
+
+examples:
+  - input: |
+      # Code with potential connection handling issues
+      def disconnect(connection_id):
+          connections_table.delete_item(
+              Key={'connection_id': connection_id}
+          )
+    output: |
+      # Improved connection handling
+      def disconnect(connection_id):
+          connections_table.update_item(
+              Key={'connection_id': connection_id},
+              UpdateExpression="SET connection_status = :status",
+              ExpressionAttributeValues={':status': 'disconnected'}
+          )
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 
