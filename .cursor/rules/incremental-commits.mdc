@@ -1,0 +1,73 @@
+# Incremental Commits Rule
+
+This rule enforces making small, focused commits that address a single concern rather than large, monolithic commits.
+
+<rule>
+name: incremental_commits
+description: Enforce small, focused commits that address a single concern
+filters:
+  - type: event
+    pattern: "pre_commit"
+
+actions:
+  - type: suggest
+    conditions:
+      # If too many files are being committed at once
+      - pattern: "git add \\."
+        message: "Avoid committing all changes at once. Make smaller, focused commits."
+      # If commit message suggests multiple changes
+      - pattern: "(?i)(and|,|multiple|several|various|both|many)"
+        message: "Commit message suggests multiple changes. Consider breaking into smaller commits."
+    message: |
+      ## Incremental Commits Standard
+
+      Make small, focused commits that address a single concern rather than large, monolithic commits.
+      This makes code reviews easier, improves git bisect effectiveness, and makes reverting changes safer.
+
+      ### Guidelines:
+
+      1. Each commit should address a single logical change
+      2. Limit commits to 10-15 files maximum when possible
+      3. Separate refactoring from feature changes
+      4. Separate formatting changes from functional changes
+      5. Use descriptive commit messages that explain the "why" not just the "what"
+      6. Include tests with the code they test
+
+      ### Instead of:
+      ```
+      git add .
+      git commit -m "Add user authentication, fix database connection, and update UI"
+      ```
+
+      ### Do this:
+      ```
+      git add path/to/auth/files
+      git commit -m "feat(auth): implement user authentication"
+
+      git add path/to/db/files
+      git commit -m "fix(db): resolve database connection timeout"
+
+      git add path/to/ui/files
+      git commit -m "feat(ui): update user interface with new design"
+      ```
+
+examples:
+  - input: |
+      # Bad: Large monolithic commit
+      git add .
+      git commit -m "Implement multiple features and fix bugs"
+    output: |
+      # Good: Series of focused commits
+      git add lambda/chat/services/auth_service.py
+      git commit -m "feat(auth): implement user authentication service"
+      
+      git add lambda/chat/services/db_service.py
+      git commit -m "fix(db): resolve connection timeout issue"
+      
+      git add lambda/chat/ui/
+      git commit -m "feat(ui): update chat interface design"
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 

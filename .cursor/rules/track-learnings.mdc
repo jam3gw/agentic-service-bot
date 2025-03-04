@@ -1,0 +1,78 @@
+# Track Learnings Rule
+
+This rule enforces documenting project learnings in a central location to build institutional knowledge.
+
+<rule>
+name: track_learnings
+description: Enforce documenting project learnings in a central location
+filters:
+  - type: event
+    pattern: "post_commit"
+
+actions:
+  - type: execute
+    command: |
+      # Extract learnings from commit message
+      COMMIT_MSG=$(git log -1 --pretty=%B)
+      if [[ "$COMMIT_MSG" == *"Learnings:"* ]]; then
+        # Extract the learning
+        LEARNING=$(echo "$COMMIT_MSG" | sed -n '/Learnings:/,$p')
+        COMMIT_TYPE=$(echo "$COMMIT_MSG" | head -n 1 | cut -d ":" -f 1)
+        COMMIT_SCOPE=$(echo "$COMMIT_MSG" | head -n 1 | sed -n 's/.*(\(.*\)).*/\1/p')
+        COMMIT_DESC=$(echo "$COMMIT_MSG" | head -n 1 | cut -d ":" -f 2-)
+        
+        # Ensure LEARNINGS.md exists
+        if [ ! -f "LEARNINGS.md" ]; then
+          echo "# Project Learnings\n\nThis document tracks key learnings from the project.\n" > LEARNINGS.md
+        fi
+        
+        # Add the learning to LEARNINGS.md
+        DATE=$(date +"%Y-%m-%d")
+        echo -e "\n## $COMMIT_TYPE: $COMMIT_SCOPE - $DATE\n\n$LEARNING\n" >> LEARNINGS.md
+        
+        # Stage and commit the updated LEARNINGS.md
+        git add LEARNINGS.md
+        git commit --amend --no-edit
+      fi
+
+  - type: suggest
+    message: |
+      ## Track Learnings Standard
+
+      All significant learnings from the project should be documented in a central location.
+      This helps build institutional knowledge and prevents repeating mistakes.
+
+      ### Guidelines:
+
+      1. Include a "Learnings:" section in your commit messages
+      2. The learnings will be automatically extracted and added to LEARNINGS.md
+      3. Review LEARNINGS.md periodically to consolidate and organize knowledge
+      4. Reference LEARNINGS.md when starting new features or fixing bugs
+
+      ### Example Commit Message:
+      ```
+      fix(websocket): improve connection handling to preserve history
+
+      Updated disconnect handlers to mark connections as disconnected
+      instead of deleting them to maintain conversation history.
+
+      Learnings: Preserving connection records with a status field instead
+      of deleting them helps maintain conversation history integrity during
+      disconnections, which is critical for test reliability.
+      ```
+
+examples:
+  - input: |
+      # Commit with learnings
+      git commit -m "fix(db): resolve race condition in transaction handling
+      
+      Implemented optimistic locking to prevent concurrent updates.
+      
+      Learnings: DynamoDB transactions are not fully ACID compliant and
+      require additional application-level locking for certain scenarios."
+    output: "Learnings automatically added to LEARNINGS.md"
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 

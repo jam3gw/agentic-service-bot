@@ -1,0 +1,90 @@
+# Rules Over Documentation Rule
+
+This rule enforces the practice of creating Cursor rules instead of standalone documentation files.
+
+<rule>
+name: rules_over_docs
+description: Enforce creating Cursor rules instead of standalone documentation files
+filters:
+  - type: file_change
+    pattern: "*.md"
+  - type: event
+    pattern: "file_create"
+
+actions:
+  - type: suggest
+    conditions:
+      # If creating a markdown file that's not in .cursor/rules
+      - pattern: "^(?!.cursor/rules).*\\.md$"
+        message: "Consider creating a Cursor rule instead of a standalone documentation file"
+    message: |
+      ## Rules Over Documentation Standard
+
+      This project prioritizes creating Cursor rules over standalone documentation files.
+      Rules provide active guidance and enforcement, while documentation is passive.
+
+      ### Guidelines:
+
+      1. Create Cursor rules (.mdc files) in .cursor/rules/ instead of markdown files
+      2. Rules should include:
+         - Clear description of the standard or practice
+         - Concrete examples of good and bad patterns
+         - Automated checks where possible
+         - Suggestions for improvement
+      3. Exceptions to this rule:
+         - README.md files for project/directory overviews
+         - API documentation
+         - External-facing documentation
+
+      ### Instead of:
+      ```
+      # Create a markdown file
+      touch docs/coding-standards.md
+      ```
+
+      ### Do this:
+      ```
+      # Create a Cursor rule
+      touch .cursor/rules/coding-standards.mdc
+      ```
+
+examples:
+  - input: |
+      # Bad: Creating a standalone documentation file
+      touch docs/git-commit-standards.md
+    output: |
+      # Good: Creating a Cursor rule
+      touch .cursor/rules/git-commit-standards.mdc
+  
+  - input: |
+      # Bad: Adding documentation to a markdown file
+      echo "# Coding Standards\n\n1. Use consistent indentation\n2. Add comments" > docs/standards.md
+    output: |
+      # Good: Creating a rule with the same content
+      cat << EOF > .cursor/rules/coding-standards.mdc
+      # Coding Standards
+      
+      <rule>
+      name: coding_standards
+      description: Enforce consistent coding standards
+      filters:
+        - type: file_extension
+          pattern: "\\.(py|js|ts)$"
+      
+      actions:
+        - type: suggest
+          conditions:
+            - pattern: "(?<!\t)  (?!\t)"
+              message: "Use consistent indentation"
+          message: |
+            ## Coding Standards
+            
+            1. Use consistent indentation
+            2. Add comments for complex logic
+      </rule>
+      EOF
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 
