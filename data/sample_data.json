@@ -1,0 +1,90 @@
+{
+    "customers": [
+        {
+            "id": "cust_001",
+            "name": "Jane Smith",
+            "service_level": "basic",
+            "devices": [
+                {
+                    "id": "dev_001",
+                    "type": "SmartSpeaker",
+                    "location": "living_room"
+                }
+            ]
+        },
+        {
+            "id": "cust_002",
+            "name": "John Doe",
+            "service_level": "premium",
+            "devices": [
+                {
+                    "id": "dev_002",
+                    "type": "SmartSpeaker",
+                    "location": "bedroom"
+                },
+                {
+                    "id": "dev_003",
+                    "type": "SmartDisplay",
+                    "location": "kitchen"
+                }
+            ]
+        },
+        {
+            "id": "cust_003",
+            "name": "Alice Johnson",
+            "service_level": "enterprise",
+            "devices": [
+                {
+                    "id": "dev_004",
+                    "type": "SmartSpeaker",
+                    "location": "office"
+                },
+                {
+                    "id": "dev_005",
+                    "type": "SmartDisplay",
+                    "location": "conference_room"
+                },
+                {
+                    "id": "dev_006",
+                    "type": "SmartHub",
+                    "location": "reception"
+                }
+            ]
+        }
+    ],
+    "service_levels": {
+        "basic": {
+            "allowed_actions": [
+                "status_check",
+                "volume_control",
+                "device_info"
+            ],
+            "max_devices": 1,
+            "support_priority": "standard"
+        },
+        "premium": {
+            "allowed_actions": [
+                "status_check",
+                "volume_control",
+                "device_info",
+                "device_relocation",
+                "music_services"
+            ],
+            "max_devices": 3,
+            "support_priority": "priority"
+        },
+        "enterprise": {
+            "allowed_actions": [
+                "status_check",
+                "volume_control",
+                "device_info",
+                "device_relocation",
+                "music_services",
+                "multi_room_audio",
+                "custom_actions"
+            ],
+            "max_devices": 10,
+            "support_priority": "dedicated"
+        }
+    }
+}
