@@ -1,17 +1,36 @@
+"""
+Utility class for interacting with the Anthropic Claude API
+"""
 import os
 import anthropic
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 class LLMClient:
-    """Wrapper for the Anthropic API"""
+    """Client for interacting with the Anthropic Claude API"""
     
-    def __init__(self, api_key: str, model: str):
+    def __init__(self, api_key: str, model: str = "claude-3-opus-20240229"):
+        """
+        Initialize the LLM client
+        
+        Args:
+            api_key: Anthropic API key
+            model: Model to use for generation
+        """
         self.api_key = api_key
         self.model = model
         self.client = anthropic.Anthropic(api_key=api_key)
     
-    def generate_response(self, prompt: str, context: Dict[str, Any] = None) -> str:
-        """Generate a response based on a prompt and optional context"""
+    def generate_response(self, prompt: str, context: Optional[Dict[str, Any]] = None) -> str:
+        """
+        Generate a response using Anthropic's Claude API
+        
+        Args:
+            prompt: The user prompt to respond to
+            context: Additional context for the system prompt
+            
+        Returns:
+            The generated response text
+        """
         system_prompt = self._build_system_prompt(context)
         
         try:
@@ -28,8 +47,16 @@ class LLMClient:
             print(f"Error calling Anthropic API: {e}")
             return "I apologize, but I'm having trouble processing your request right now."
     
-    def _build_system_prompt(self, context: Dict[str, Any] = None) -> str:
-        """Build a system prompt based on context"""
+    def _build_system_prompt(self, context: Optional[Dict[str, Any]] = None) -> str:
+        """
+        Build a system prompt based on context
+        
+        Args:
+            context: Additional context for the system prompt
+            
+        Returns:
+            The system prompt
+        """
         if not context:
             return "You are a helpful AI assistant for a smart home device company."
         
