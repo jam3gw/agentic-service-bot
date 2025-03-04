@@ -6,6 +6,7 @@ import time
 import anthropic
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
+import threading
 
 # Configure logging
 logger = logging.getLogger()
@@ -16,13 +17,16 @@ dynamodb = boto3.resource('dynamodb')
 messages_table = dynamodb.Table(os.environ.get('MESSAGES_TABLE'))
 customers_table = dynamodb.Table(os.environ.get('CUSTOMERS_TABLE'))
 service_levels_table = dynamodb.Table(os.environ.get('SERVICE_LEVELS_TABLE'))
+connections_table = dynamodb.Table(os.environ.get('CONNECTIONS_TABLE'))
 
-# CORS headers
+# Initialize API Gateway Management API client
+# This will be initialized in the handler with the correct endpoint
+
+# CORS headers (still needed for REST API fallback)
 CORS_HEADERS = {
-    'Access-Control-Allow-Origin': os.environ.get('ALLOWED_ORIGIN', 'https://agentic-service-bot.dev.jake-moses.com'),
+    'Access-Control-Allow-Origin': '*',  # Allow all origins
     'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Requested-With',
-    'Access-Control-Allow-Methods': 'OPTIONS,POST,GET',
-    'Access-Control-Allow-Credentials': 'true'
+    'Access-Control-Allow-Methods': 'OPTIONS,POST,GET'
 }
 
 # Initialize Anthropic client
@@ -30,6 +34,12 @@ anthropic_client = anthropic.Anthropic(
     api_key=os.environ.get('ANTHROPIC_API_KEY')
 )
 ANTHROPIC_MODEL = os.environ.get('ANTHROPIC_MODEL', 'claude-3-opus-20240229')
+
+# TTL for connections (24 hours in seconds)
+CONNECTION_TTL = 24 * 60 * 60
+
+# Maximum time to wait for a response (in seconds)
+MAX_RESPONSE_TIME = 25  # Lambda timeout is 30s by default
 
 class Customer:
     def __init__(self, customer_id: str, name: str, service_level: str, devices: List[Dict]):
@@ -306,12 +316,264 @@ def process_request(customer_id: str, user_input: str) -> str:
     
     return response
 
-def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+def save_connection(connection_id: str, customer_id: str) -> None:
     """
-    Lambda handler for chat messages.
+    Save a WebSocket connection ID with a customer ID
     
     Args:
-        event: The event data from API Gateway
+        connection_id: The WebSocket connection ID
+        customer_id: The customer ID
+    """
+    logger.info(f"Saving connection {connection_id} for customer {customer_id}")
+    
+    # Calculate TTL
+    ttl = int(time.time()) + CONNECTION_TTL
+    
+    try:
+        # Save the connection in DynamoDB
+        connections_table.put_item(
+            Item={
+                'connectionId': connection_id,
+                'customerId': customer_id,
+                'ttl': ttl,
+                'timestamp': int(time.time())
+            }
+        )
+        logger.info(f"Successfully saved connection {connection_id} for customer {customer_id}")
+        
+        # Verify the connection was saved by retrieving it
+        try:
+            response = connections_table.get_item(
+                Key={
+                    'connectionId': connection_id
+                }
+            )
+            item = response.get('Item')
+            if item:
+                logger.info(f"Verified connection saved: {json.dumps(item)}")
+            else:
+                logger.warning(f"Connection verification failed: Item not found for connection {connection_id}")
+        except Exception as verify_error:
+            logger.error(f"Error verifying connection: {str(verify_error)}")
+            
+    except Exception as e:
+        logger.error(f"Error saving connection: {str(e)}")
+        raise
+
+def get_customer_id_for_connection(connection_id: str) -> Optional[str]:
+    """
+    Get the customer ID associated with a connection ID
+    
+    Args:
+        connection_id: The WebSocket connection ID
+        
+    Returns:
+        The customer ID or None if not found
+    """
+    try:
+        logger.info(f"Getting customer ID for connection {connection_id}")
+        response = connections_table.get_item(
+            Key={
+                'connectionId': connection_id
+            }
+        )
+        item = response.get('Item')
+        if item:
+            customer_id = item.get('customerId')
+            logger.info(f"Found customer ID {customer_id} for connection {connection_id}")
+            return customer_id
+        logger.warning(f"No customer ID found for connection {connection_id}")
+        return None
+    except Exception as e:
+        logger.error(f"Error getting customer ID for connection {connection_id}: {str(e)}")
+        return None
+
+def send_message(connection_id: str, message: str, endpoint_url: str) -> bool:
+    """
+    Send a message to a WebSocket client
+    
+    Args:
+        connection_id: The WebSocket connection ID
+        message: The message to send
+        endpoint_url: The API Gateway Management API endpoint URL
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        logger.info(f"Sending message to connection {connection_id}")
+        apigw_management_api = boto3.client('apigatewaymanagementapi', endpoint_url=endpoint_url)
+        
+        # Ensure message is sent as a JSON object
+        if isinstance(message, str):
+            payload = json.dumps({'message': message})
+        else:
+            payload = json.dumps(message)
+            
+        apigw_management_api.post_to_connection(
+            ConnectionId=connection_id,
+            Data=payload.encode('utf-8')
+        )
+        logger.info(f"Message sent successfully to connection {connection_id}")
+        return True
+    except Exception as e:
+        error_message = str(e)
+        logger.error(f"Error sending message to connection {connection_id}: {error_message}")
+        
+        # If the connection is gone, remove it from the database
+        if "GoneException" in error_message:
+            logger.info(f"Connection {connection_id} is gone, removing from database")
+            try:
+                connections_table.delete_item(
+                    Key={
+                        'connectionId': connection_id
+                    }
+                )
+                logger.info(f"Successfully removed connection {connection_id} from database")
+            except Exception as delete_error:
+                logger.error(f"Error removing connection {connection_id} from database: {str(delete_error)}")
+        
+        return False
+
+def handle_connect(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    """
+    Handle WebSocket connect event
+    
+    Args:
+        event: The WebSocket event
+        context: The Lambda context
+        
+    Returns:
+        API Gateway response
+    """
+    connection_id = event['requestContext']['connectionId']
+    logger.info(f"Connect event received for connection ID: {connection_id}")
+    logger.info(f"Full connect event: {json.dumps(event)}")
+    
+    # Extract customer ID from query string parameters
+    query_string_parameters = event.get('queryStringParameters', {}) or {}
+    customer_id = query_string_parameters.get('customerId')
+    logger.info(f"Query string parameters: {json.dumps(query_string_parameters)}")
+    logger.info(f"Extracted customer ID from query: {customer_id}")
+    
+    # If no customer ID in query parameters, check for multiValueQueryStringParameters
+    if not customer_id and 'multiValueQueryStringParameters' in event:
+        multi_params = event.get('multiValueQueryStringParameters', {}) or {}
+        customer_id_list = multi_params.get('customerId', [])
+        if customer_id_list:
+            customer_id = customer_id_list[0]
+            logger.info(f"Extracted customer ID from multi-value query: {customer_id}")
+    
+    if not customer_id:
+        logger.error("Missing customerId in connect request")
+        return {'statusCode': 200, 'body': json.dumps({"status": "connected", "warning": "Missing customerId"})}
+    
+    # Save the connection
+    try:
+        save_connection(connection_id, customer_id)
+        logger.info(f"Saved connection {connection_id} with customer ID {customer_id}")
+    except Exception as e:
+        logger.error(f"Error saving connection: {str(e)}")
+        return {'statusCode': 500, 'body': json.dumps({"error": f"Error saving connection: {str(e)}"})}
+    
+    # Send a welcome message
+    try:
+        endpoint_url = f"https://{event['requestContext']['domainName']}/{event['requestContext']['stage']}"
+        welcome_message = {"type": "welcome", "message": f"Welcome! You are connected with customer ID: {customer_id}"}
+        send_message(connection_id, welcome_message, endpoint_url)
+        logger.info(f"Welcome message sent to connection {connection_id}")
+    except Exception as e:
+        logger.error(f"Error sending welcome message: {str(e)}")
+    
+    return {'statusCode': 200, 'body': json.dumps({"status": "connected", "customerId": customer_id})}
+
+def handle_message(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    """
+    Handle WebSocket message event
+    
+    Args:
+        event: The WebSocket event
+        context: The Lambda context
+        
+    Returns:
+        API Gateway response
+    """
+    connection_id = event['requestContext']['connectionId']
+    logger.info(f"Message event received for connection ID: {connection_id}")
+    
+    # Create endpoint URL for sending messages
+    endpoint_url = f"https://{event['requestContext']['domainName']}/{event['requestContext']['stage']}"
+    
+    # Parse the message body first
+    try:
+        body = json.loads(event.get('body', '{}'))
+        message = body.get('message')
+        body_customer_id = body.get('customerId')
+        
+        logger.info(f"Parsed message body: {json.dumps(body)}")
+        logger.info(f"Message content: {message}")
+        logger.info(f"Customer ID from message body: {body_customer_id}")
+        
+        if not message:
+            logger.error("Missing message in request")
+            send_message(connection_id, {"error": "Missing message"}, endpoint_url)
+            return {'statusCode': 400, 'body': json.dumps({"error": "Missing message"})}
+    except Exception as e:
+        logger.error(f"Error parsing message body: {str(e)}")
+        send_message(connection_id, {"error": f"Invalid message format: {str(e)}"}, endpoint_url)
+        return {'statusCode': 400, 'body': json.dumps({"error": f"Invalid message format: {str(e)}"})}
+    
+    # Get the customer ID for this connection
+    customer_id = get_customer_id_for_connection(connection_id)
+    logger.info(f"Retrieved customer ID for connection {connection_id}: {customer_id}")
+    
+    # If no customer ID found in connection table, use the one from the message body
+    if not customer_id and body_customer_id:
+        logger.info(f"Using customer ID from message body: {body_customer_id}")
+        customer_id = body_customer_id
+        
+        # Save the connection with this customer ID for future messages
+        try:
+            save_connection(connection_id, customer_id)
+            logger.info(f"Saved connection {connection_id} with customer ID {customer_id}")
+        except Exception as e:
+            logger.error(f"Error saving connection: {str(e)}")
+    
+    # If still no customer ID, return an error
+    if not customer_id:
+        logger.error("No customer ID found in connection or message")
+        send_message(connection_id, {"error": "Missing customerId"}, endpoint_url)
+        return {'statusCode': 400, 'body': json.dumps({"error": "Missing customerId"})}
+    
+    # Process the request
+    try:
+        # Send an acknowledgment
+        ack_sent = send_message(connection_id, {"status": "processing", "message": "Processing your request..."}, endpoint_url)
+        if not ack_sent:
+            logger.warning(f"Failed to send acknowledgment to connection {connection_id}")
+        
+        # Process the request
+        response_text = process_request(customer_id, message)
+        logger.info(f"Generated response: {response_text}")
+        
+        # Send the response
+        response_sent = send_message(connection_id, {"message": response_text}, endpoint_url)
+        if not response_sent:
+            logger.warning(f"Failed to send response to connection {connection_id}")
+        
+        return {'statusCode': 200, 'body': json.dumps({"status": "Message processed"})}
+    except Exception as e:
+        logger.error(f"Error processing message: {str(e)}")
+        logger.error(f"Event: {json.dumps(event)}")
+        send_message(connection_id, {"error": f"Error processing message: {str(e)}"}, endpoint_url)
+        return {'statusCode': 500, 'body': json.dumps({"error": f"Error processing message: {str(e)}"})}
+
+def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    """
+    Lambda handler for WebSocket and HTTP events
+    
+    Args:
+        event: The event data
         context: The Lambda context
         
     Returns:
@@ -319,6 +581,24 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     logger.info(f"Event: {json.dumps(event)}")
     
+    # Check if this is a WebSocket event
+    if 'requestContext' in event and 'connectionId' in event['requestContext']:
+        route_key = event['requestContext'].get('routeKey')
+        
+        if route_key == '$connect':
+            return handle_connect(event, context)
+        elif route_key == '$disconnect':
+            # Simple disconnect handler
+            connection_id = event['requestContext']['connectionId']
+            logger.info(f"Disconnect event received for connection ID: {connection_id}")
+            return {'statusCode': 200, 'body': 'Disconnected'}
+        elif route_key == 'message':
+            return handle_message(event, context)
+        else:
+            # Default route
+            return handle_message(event, context)
+    
+    # If not a WebSocket event, handle as HTTP request (for backward compatibility)
     # Handle OPTIONS request (CORS preflight)
     if event.get('httpMethod') == 'OPTIONS':
         return {

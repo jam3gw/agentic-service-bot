@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        #messages {
+            border: 1px solid #ccc;
+            padding: 10px;
+            height: 300px;
+            overflow-y: auto;
+            margin-bottom: 10px;
+            background-color: #f9f9f9;
+        }
+
+        .message {
+            margin-bottom: 5px;
+            padding: 5px;
+            border-radius: 5px;
+        }
+
+        .sent {
+            background-color: #e3f2fd;
+            text-align: right;
+        }
+
+        .received {
+            background-color: #f1f1f1;
+        }
+
+        .error {
+            background-color: #ffebee;
+            color: #c62828;
+        }
+
+        .system {
+            background-color: #e8f5e9;
+            color: #2e7d32;
+            font-style: italic;
+        }
+
+        input,
+        button {
+            padding: 8px;
+            margin-right: 5px;
+        }
+
+        #messageInput {
+            width: 70%;
+        }
+
+        .controls {
+            display: flex;
+            margin-bottom: 10px;
+        }
+
+        .controls input {
+            flex-grow: 1;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>WebSocket Test</h1>
+
+    <div class="controls">
+        <input type="text" id="wsUrl" placeholder="WebSocket URL (wss://...)" value="">
+        <input type="text" id="customerId" placeholder="Customer ID" value="customer123">
+        <button id="connectBtn">Connect</button>
+        <button id="disconnectBtn" disabled>Disconnect</button>
+    </div>
+
+    <div id="messages"></div>
+
+    <div>
+        <input type="text" id="messageInput" placeholder="Type a message...">
+        <button id="sendBtn" disabled>Send</button>
+    </div>
+
+    <script>
+        let socket = null;
+
+        const messagesDiv = document.getElementById('messages');
+        const messageInput = document.getElementById('messageInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const wsUrlInput = document.getElementById('wsUrl');
+        const customerIdInput = document.getElementById('customerId');
+
+        function addMessage(text, type) {
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('message', type);
+            messageDiv.textContent = text;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function connect() {
+            const wsUrl = wsUrlInput.value.trim();
+            const customerId = customerIdInput.value.trim();
+
+            if (!wsUrl) {
+                addMessage('Please enter a WebSocket URL', 'error');
+                return;
+            }
+
+            if (!customerId) {
+                addMessage('Please enter a Customer ID', 'error');
+                return;
+            }
+
+            // Add customerId as a query parameter
+            const fullUrl = `${wsUrl}?customerId=${encodeURIComponent(customerId)}`;
+
+            addMessage(`Using customer ID: ${customerId}`, 'system');
+            addMessage(`Connection URL: ${fullUrl}`, 'system');
+
+            try {
+                addMessage(`Connecting to ${fullUrl}...`, 'system');
+                socket = new WebSocket(fullUrl);
+
+                socket.onopen = function (e) {
+                    addMessage('Connection established', 'system');
+
+                    // Send an initial message with the customer ID to ensure it's registered
+                    const initialPayload = {
+                        message: "Hello, I'm connecting",
+                        customerId: customerId
+                    };
+
+                    setTimeout(() => {
+                        socket.send(JSON.stringify(initialPayload));
+                        addMessage(`Sent initial connection message with customer ID: ${customerId}`, 'system');
+                    }, 500);
+
+                    sendBtn.disabled = false;
+                    connectBtn.disabled = true;
+                    disconnectBtn.disabled = false;
+                };
+
+                socket.onmessage = function (event) {
+                    console.log('Raw message received:', event.data);
+                    try {
+                        const data = JSON.parse(event.data);
+                        const message = JSON.stringify(data, null, 2);
+                        addMessage(`Received message:\n${message}`, 'received');
+                    } catch (e) {
+                        addMessage(`Received non-JSON message: ${event.data}`, 'error');
+                    }
+                };
+
+                socket.onclose = function (event) {
+                    if (event.wasClean) {
+                        addMessage(`Connection closed cleanly, code=${event.code} reason=${event.reason}`, 'system');
+                    } else {
+                        addMessage('Connection died', 'error');
+                    }
+                    sendBtn.disabled = true;
+                    connectBtn.disabled = false;
+                    disconnectBtn.disabled = true;
+                };
+
+                socket.onerror = function (error) {
+                    addMessage(`Error: ${error.message}`, 'error');
+                };
+            } catch (e) {
+                addMessage(`Error creating WebSocket: ${e.message}`, 'error');
+            }
+        }
+
+        function disconnect() {
+            if (socket) {
+                socket.close();
+                socket = null;
+            }
+        }
+
+        function sendMessage() {
+            const message = messageInput.value.trim();
+            if (!message) return;
+
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                const payload = {
+                    message: message,
+                    customerId: customerIdInput.value.trim()
+                };
+
+                socket.send(JSON.stringify(payload));
+                addMessage(`Sent: ${message}`, 'sent');
+                messageInput.value = '';
+            } else {
+                addMessage('Not connected', 'error');
+            }
+        }
+
+        connectBtn.addEventListener('click', connect);
+        disconnectBtn.addEventListener('click', disconnect);
+        sendBtn.addEventListener('click', sendMessage);
+
+        messageInput.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+
+</html>
