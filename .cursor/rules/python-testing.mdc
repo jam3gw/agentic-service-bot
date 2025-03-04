@@ -43,6 +43,12 @@ actions:
       # If mocking at the wrong level
       - pattern: "@patch\\(['\"](boto3|aws_sdk|requests)['\"]\\)"
         message: "Consider mocking at a more direct level instead of high-level libraries"
+      # If testing WebSocket connections
+      - pattern: "websocket|WebSocket|ws:|wss:"
+        message: "Ensure WebSocket tests handle connection lifecycle and message validation properly"
+      # If testing service level permissions
+      - pattern: "permission|authorize|role|policy"
+        message: "Ensure service level permission tests verify both positive and negative access scenarios"
     message: |
       ## Python Testing Best Practices
 
@@ -101,22 +107,45 @@ actions:
          - Document your mocking strategy for complex tests
          - Use setup methods to establish common mocks across multiple tests
       
-      9. Include docstrings for all test functions that explain:
+      9. **WebSocket Testing Best Practices**
+         - Test the full WebSocket lifecycle (connection, message exchange, disconnection)
+         - Verify connection establishment with proper headers and authentication
+         - Test message serialization/deserialization for both sending and receiving
+         - Implement timeout handling for asynchronous WebSocket operations
+         - Test reconnection logic and error handling for dropped connections
+         - Verify proper cleanup of resources when connections are closed
+         - Use mock WebSocket servers to simulate various server behaviors
+         - Test handling of different message types (text, binary, ping/pong)
+         - Verify proper handling of concurrent connections and messages
+      
+      10. **Service Level Permission Testing**
+         - Test both positive and negative permission scenarios
+         - Verify that authorized users can access protected resources
+         - Confirm that unauthorized users receive appropriate error responses
+         - Test permission inheritance and role hierarchies
+         - Verify that permission changes take effect immediately
+         - Test cross-service permission boundaries
+         - Validate that permission checks are applied consistently across all access points
+         - Test permission caching and expiration behavior
+         - Verify proper logging of permission-related events
+         - Test permission delegation and temporary access scenarios
+      
+      11. Include docstrings for all test functions that explain:
          - What is being tested
          - Why it matters (business value)
          - Any special test conditions
       
-      10. Follow the Arrange-Act-Assert (AAA) pattern
+      12. Follow the Arrange-Act-Assert (AAA) pattern
       
-      11. Test one concept per test function
+      13. Test one concept per test function
       
-      12. Use descriptive assertion messages
+      14. Use descriptive assertion messages
       
-      13. Use fixtures for test setup and teardown
+      15. Use fixtures for test setup and teardown
       
-      14. Parameterize tests for multiple input scenarios
+      16. Parameterize tests for multiple input scenarios
       
-      15. Aim for high test coverage of critical paths, not 100% coverage
+      17. Aim for high test coverage of critical paths, not 100% coverage
 
       ### Example of Flexible Text Assertion:
       ```python
@@ -276,6 +305,117 @@ actions:
               self.assertEqual(user['id'], 'user-123')
               self.mock_conn.execute.assert_called_once()
       ```
+      
+      ### Example of WebSocket Testing:
+      ```python
+      @pytest.fixture
+      def mock_websocket_server():
+          """Fixture to create a mock WebSocket server for testing."""
+          server = MockWebSocketServer('localhost', 8765)
+          server.start()
+          yield server
+          server.stop()
+      
+      def test_websocket_connection_lifecycle(mock_websocket_server):
+          """Test the full lifecycle of a WebSocket connection.
+          
+          This test verifies our client can properly establish, maintain,
+          and close WebSocket connections, which is critical for real-time
+          communication with devices.
+          """
+          # Arrange
+          client = WebSocketClient('ws://localhost:8765')
+          
+          # Act - Connect
+          connected = client.connect()
+          
+          # Assert - Connection successful
+          assert connected is True, "Client should connect successfully to the WebSocket server"
+          
+          # Act - Send message
+          success = client.send_message({"type": "command", "action": "start"})
+          
+          # Assert - Message sent successfully
+          assert success is True, "Client should send message successfully"
+          
+          # Act - Receive response
+          response = client.receive_message(timeout=2.0)
+          
+          # Assert - Response received and valid
+          assert response is not None, "Client should receive a response"
+          assert response.get("status") == "ok", f"Response should have 'ok' status, got: {response}"
+          
+          # Act - Disconnect
+          disconnected = client.disconnect()
+          
+          # Assert - Disconnection successful
+          assert disconnected is True, "Client should disconnect cleanly"
+          
+          # Verify server side received expected messages
+          messages = mock_websocket_server.get_received_messages()
+          assert len(messages) == 1, "Server should have received exactly one message"
+          assert messages[0].get("type") == "command", "Message should have correct type"
+      ```
+      
+      ### Example of Service Level Permission Testing:
+      ```python
+      def test_service_level_permission_access_allowed():
+          """Test that users with appropriate permissions can access protected resources.
+          
+          This test ensures our permission system correctly grants access to authorized users,
+          which is critical for maintaining proper security boundaries while allowing
+          legitimate access.
+          """
+          # Arrange
+          user_id = "user-with-admin-role"
+          resource_id = "protected-resource-123"
+          permission_service = PermissionService()
+          
+          # Mock the permission lookup
+          with patch('services.permission_service.get_user_roles') as mock_get_roles:
+              mock_get_roles.return_value = ["admin", "editor"]
+              
+              # Act
+              has_permission = permission_service.check_access(user_id, resource_id, "read")
+              
+              # Assert
+              assert has_permission is True, "User with admin role should have read access"
+              mock_get_roles.assert_called_once_with(user_id)
+      
+      def test_service_level_permission_access_denied():
+          """Test that users without appropriate permissions cannot access protected resources.
+          
+          This test verifies our permission system correctly denies access to unauthorized users,
+          which is essential for maintaining security and data isolation between customers.
+          """
+          # Arrange
+          user_id = "user-with-viewer-role"
+          resource_id = "protected-resource-123"
+          permission_service = PermissionService()
+          
+          # Mock the permission lookup
+          with patch('services.permission_service.get_user_roles') as mock_get_roles:
+              mock_get_roles.return_value = ["viewer"]
+              
+              # Act
+              has_permission = permission_service.check_access(user_id, resource_id, "write")
+              
+              # Assert
+              assert has_permission is False, "User with viewer role should not have write access"
+              mock_get_roles.assert_called_once_with(user_id)
+              
+          # Verify proper error response when attempting to access
+          with patch('services.permission_service.get_user_roles') as mock_get_roles:
+              mock_get_roles.return_value = ["viewer"]
+              
+              # Act
+              response = permission_service.attempt_resource_operation(user_id, resource_id, "write")
+              
+              # Assert
+              assert response.get("success") is False, "Operation should not succeed"
+              assert "permission denied" in response.get("error", "").lower(), \
+                     f"Error should indicate permission denied, got: {response.get('error')}"
+      ```
 
 examples:
   - input: |
@@ -378,8 +518,99 @@ examples:
           args, kwargs = mock_table.update_item.call_args
           assert kwargs['Key'] == {'id': 'item-123'}, "Key should match the item ID"
           assert 'UpdateExpression' in kwargs, "Update should include UpdateExpression"
+  
+  - input: |
+      # Bad: WebSocket test without proper lifecycle testing
+      def test_websocket():
+          client = WebSocketClient('ws://localhost:8765')
+          client.connect()
+          client.send_message({"type": "command"})
+          assert client.is_connected()
+    output: |
+      # Good: Complete WebSocket lifecycle testing
+      def test_websocket_connection_lifecycle():
+          """Test the full lifecycle of a WebSocket connection.
+          
+          This test verifies our client can properly establish, maintain,
+          and close WebSocket connections, which is critical for real-time
+          communication with devices.
+          """
+          # Arrange
+          client = WebSocketClient('ws://localhost:8765')
+          
+          # Act - Connect
+          connected = client.connect()
+          
+          # Assert - Connection successful
+          assert connected is True, "Client should connect successfully"
+          
+          # Act - Send message
+          success = client.send_message({"type": "command", "action": "start"})
+          
+          # Assert - Message sent successfully
+          assert success is True, "Client should send message successfully"
+          
+          # Act - Receive response (with timeout)
+          response = client.receive_message(timeout=2.0)
+          
+          # Assert - Response received and valid
+          assert response is not None, "Client should receive a response"
+          assert response.get("status") == "ok", "Response should have 'ok' status"
+          
+          # Act - Disconnect
+          disconnected = client.disconnect()
+          
+          # Assert - Disconnection successful
+          assert disconnected is True, "Client should disconnect cleanly"
+          
+          # Verify resources were cleaned up
+          assert client.connection is None, "Connection should be properly cleaned up"
+  
+  - input: |
+      # Bad: Permission test that only checks positive case
+      def test_user_permissions():
+          user = User(role="admin")
+          assert user.can_access_admin_panel() is True
+    output: |
+      # Good: Permission tests for both positive and negative cases
+      def test_user_permission_positive_case():
+          """Test that admin users can access the admin panel.
+          
+          This test verifies that our permission system correctly grants
+          access to users with admin privileges, which is essential for
+          administrative functions.
+          """
+          # Arrange
+          user = User(role="admin")
+          
+          # Act
+          can_access = user.can_access_admin_panel()
+          
+          # Assert
+          assert can_access is True, "Admin users should be able to access the admin panel"
+      
+      def test_user_permission_negative_case():
+          """Test that non-admin users cannot access the admin panel.
+          
+          This test ensures our permission system correctly prevents
+          unauthorized access to administrative functions, which is
+          critical for security.
+          """
+          # Arrange
+          user = User(role="regular")
+          
+          # Act
+          can_access = user.can_access_admin_panel()
+          
+          # Assert
+          assert can_access is False, "Regular users should not be able to access the admin panel"
+          
+          # Verify proper error response when attempting to access
+          response = user.attempt_admin_panel_access()
+          assert response.status_code == 403, "Should return 403 Forbidden status code"
+          assert "not authorized" in response.text.lower(), "Should indicate authorization failure"
 
 metadata:
   priority: high
-  version: 1.6
+  version: 1.7
 </rule> 
