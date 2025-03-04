@@ -1,0 +1,120 @@
+---
+description: Python Large Files Best Practices
+globs: "*.py"
+---
+# Python Large Files Best Practices
+
+This rule provides guidance on how to handle and refactor large Python files.
+
+<rule>
+name: python_large_files
+description: Enforce best practices for handling large Python files
+filters:
+  - type: file_extension
+    pattern: "\\.py$"
+  - type: file_size
+    min_size: 50000  # 50KB
+
+actions:
+  - type: suggest
+    message: |
+      ## Python Large Files Best Practices
+
+      This file is quite large. Consider the following strategies for managing large Python files:
+
+      1. **Incremental Refactoring**:
+         - Focus on one section or class at a time
+         - Make small, testable changes
+         - Commit frequently
+      
+      2. **Modularization**:
+         - Split the file into multiple smaller modules
+         - Group related functionality together
+         - Use proper imports between modules
+      
+      3. **Targeted Improvements**:
+         - Prioritize critical sections for improvement
+         - Focus on one type of improvement at a time (docstrings, type hints, error handling, etc.)
+         - Use automated tools like Black, isort, and mypy
+      
+      4. **Documentation First**:
+         - Start by adding or improving docstrings
+         - Add type hints to function signatures
+         - Document complex logic with comments
+      
+      5. **Testing**:
+         - Ensure tests exist before refactoring
+         - Add tests for any untested functionality
+         - Run tests after each small change
+
+      ### Recommended Approach for This File:
+      
+      1. First pass: Add proper docstrings and type hints
+      2. Second pass: Improve error handling
+      3. Third pass: Extract classes and functions into separate modules
+      4. Fourth pass: Optimize performance bottlenecks
+
+examples:
+  - input: |
+      # Large file with multiple classes and functions
+      import os
+      import json
+      import time
+      
+      def function1():
+          # Complex logic
+          pass
+          
+      class BigClass:
+          def __init__(self):
+              pass
+              
+          def method1(self):
+              pass
+              
+          def method2(self):
+              pass
+    output: |
+      # First, improve docstrings and type hints
+      import os
+      import json
+      import time
+      from typing import Dict, List, Optional
+      
+      def function1() -> None:
+          """Perform complex operation.
+          
+          This function does X, Y, and Z.
+          """
+          # Complex logic
+          pass
+          
+      class BigClass:
+          """Handle operations for X domain.
+          
+          This class is responsible for managing X operations
+          and coordinating between Y and Z.
+          """
+          
+          def __init__(self) -> None:
+              """Initialize the BigClass instance."""
+              pass
+              
+          def method1(self) -> None:
+              """Perform operation 1.
+              
+              This method does A and B.
+              """
+              pass
+              
+          def method2(self) -> None:
+              """Perform operation 2.
+              
+              This method does C and D.
+              """
+              pass
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 

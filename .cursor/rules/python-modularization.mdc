@@ -1,0 +1,150 @@
+---
+description: Python Modularization Best Practices
+globs: "*.py"
+---
+# Python Modularization Best Practices
+
+This rule provides guidance on how to effectively modularize Python code by breaking large files into smaller, more focused modules.
+
+<rule>
+name: python_modularization
+description: Enforce best practices for modularizing Python code
+filters:
+  - type: file_extension
+    pattern: "\\.py$"
+  - type: file_size
+    min_size: 30000  # 30KB
+
+actions:
+  - type: suggest
+    message: |
+      ## Python Modularization Best Practices
+
+      This file is quite large and would benefit from being split into multiple modules. Consider the following modularization strategy:
+
+      ### 1. Identify Logical Components
+
+      Break down the file into logical components based on:
+      
+      - **Functionality**: Group related functions and classes
+      - **Domain concepts**: Separate different business domains
+      - **Abstraction levels**: Separate high-level and low-level code
+      
+      ### 2. Create a Package Structure
+
+      ```
+      my_package/
+      ├── __init__.py           # Exports public API
+      ├── models/               # Data models
+      │   ├── __init__.py
+      │   └── customer.py       # Customer class
+      ├── analyzers/            # Analysis components
+      │   ├── __init__.py
+      │   └── request_analyzer.py
+      ├── services/             # Service integrations
+      │   ├── __init__.py
+      │   ├── anthropic_service.py
+      │   └── dynamodb_service.py
+      ├── handlers/             # Request handlers
+      │   ├── __init__.py
+      │   ├── websocket_handler.py
+      │   └── http_handler.py
+      └── utils/                # Utility functions
+          ├── __init__.py
+          └── helpers.py
+      ```
+
+      ### 3. Modularization Steps
+
+      1. **Create the package structure** first
+      2. **Move classes one at a time**, starting with the most independent ones
+      3. **Update imports** in all affected files
+      4. **Test after each move** to ensure functionality is preserved
+      5. **Refactor the main file** to import and use the modularized components
+
+      ### 4. Specific Recommendations for This File
+
+      Based on common patterns, consider these modules:
+
+      - **models.py**: Data models like `Customer`
+      - **analyzers.py**: Analysis logic like `RequestAnalyzer`
+      - **services.py**: External service integrations (DynamoDB, Anthropic)
+      - **handlers.py**: Request handling logic
+      - **utils.py**: Helper functions and utilities
+      - **main.py**: Entry point that ties everything together
+
+      ### 5. Maintain a Clean Public API
+
+      Use `__init__.py` files to control what's exposed:
+
+      ```python
+      # __init__.py example
+      from .models.customer import Customer
+      from .analyzers.request_analyzer import RequestAnalyzer
+      from .handlers.websocket_handler import handler
+
+      __all__ = ['Customer', 'RequestAnalyzer', 'handler']
+      ```
+
+examples:
+  - input: |
+      # Large monolithic file
+      import json
+      import boto3
+      
+      class Customer:
+          def __init__(self, id, name):
+              self.id = id
+              self.name = name
+              
+      class RequestAnalyzer:
+          def analyze(self, text):
+              # Analysis logic
+              pass
+              
+      def handle_request(event, context):
+          # Request handling
+          pass
+          
+      def save_to_db(item):
+          # Database operations
+          pass
+    output: |
+      # models/customer.py
+      class Customer:
+          def __init__(self, id, name):
+              self.id = id
+              self.name = name
+      
+      # analyzers/request_analyzer.py
+      class RequestAnalyzer:
+          def analyze(self, text):
+              # Analysis logic
+              pass
+      
+      # handlers/request_handler.py
+      from ..models.customer import Customer
+      from ..analyzers.request_analyzer import RequestAnalyzer
+      
+      def handle_request(event, context):
+          # Request handling
+          pass
+      
+      # services/database.py
+      import boto3
+      
+      def save_to_db(item):
+          # Database operations
+          pass
+      
+      # main.py (entry point)
+      import json
+      from .handlers.request_handler import handle_request
+      
+      def lambda_handler(event, context):
+          return handle_request(event, context)
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 

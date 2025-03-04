@@ -1,0 +1,322 @@
+---
+description: Python Lambda Import Best Practices
+globs: "*.py"
+---
+# Python Lambda Import Best Practices
+
+This rule provides guidance on structuring imports in Python Lambda functions to ensure compatibility and maintainability.
+
+<rule>
+name: python_lambda_imports
+description: Enforce best practices for imports in Python Lambda functions
+filters:
+  - type: file_extension
+    pattern: "\\.py$"
+  - type: content
+    pattern: "(?i)(lambda|aws|handler|event|context)"
+
+actions:
+  - type: suggest
+    conditions:
+      # If using absolute imports that might not work in Lambda
+      - pattern: "from\\s+[a-zA-Z0-9_]+\\.[a-zA-Z0-9_]+\\s+import"
+        message: "Consider using relative imports or adding the current directory to sys.path for Lambda functions"
+      # If missing sys.path setup for Lambda
+      - pattern: "def\\s+handler\\s*\\([^)]*\\)"
+        message: "Consider adding the current directory to sys.path to ensure imports work in Lambda"
+      # If using relative imports without proper package structure
+      - pattern: "from\\s+\\.\\."
+        message: "Be cautious with relative imports beyond parent level; they may cause 'ImportError: attempted relative import beyond top-level package'"
+      # If using environment variables without defaults
+      - pattern: "os\\.environ\\.get\\(['\"][A-Z_]+['\"]\\)"
+        message: "Consider providing default values for environment variables or setting defaults for local development"
+    message: |
+      ## Python Lambda Import Best Practices
+
+      When structuring imports for AWS Lambda functions, follow these guidelines:
+
+      ### 1. Path Management for Lambda Functions
+
+      ```python
+      import sys
+      import os
+
+      # Add the current directory to the path so we can import our modules
+      current_dir = os.path.dirname(os.path.abspath(__file__))
+      sys.path.append(current_dir)  # or sys.path.insert(0, current_dir)
+      ```
+
+      ### 2. Import Structure
+
+      1. **Standard Library Imports**:
+         ```python
+         import json
+         import logging
+         import os
+         import sys
+         from datetime import datetime
+         ```
+
+      2. **Third-Party Imports**:
+         ```python
+         import boto3
+         import anthropic
+         ```
+
+      3. **Local Module Imports**:
+         ```python
+         # For Lambda handler files
+         from handlers.websocket_handler import handle_connect
+         from services.request_processor import process_request
+
+         # For module files
+         from .customer import Customer  # Relative import within a package
+         ```
+
+      ### 3. Lambda-Specific Import Strategies
+
+      - **Handler File**: Use direct imports from subdirectories
+        ```python
+        from models.customer import Customer
+        ```
+
+      - **Module Files**: Use relative imports for sibling modules
+        ```python
+        from .dynamodb_service import get_customer  # Same directory
+        ```
+
+      - **Avoiding "Beyond Top-Level Package" Errors**:
+        When using relative imports in subdirectories, ensure proper package structure or use this pattern:
+        ```python
+        # Add the parent directory to sys.path to enable absolute imports
+        current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if current_dir not in sys.path:
+            sys.path.insert(0, current_dir)
+            
+        # Then use absolute imports
+        from services.request_processor import process_request
+        ```
+
+      - **Lazy Imports**: For rarely used functionality, import inside functions
+        ```python
+        def process_special_request():
+            from services.special_service import special_function
+            return special_function()
+        ```
+
+      ### 4. Environment Variables Management
+
+      Always handle missing environment variables gracefully for local development:
+
+      ```python
+      # Set default environment variables for local development
+      def set_default_env_vars():
+          """Set default environment variables for local development if they're not already set."""
+          defaults = {
+              'TABLE_NAME': 'my-default-table-name',
+              'REGION': 'us-east-1',
+              'LOG_LEVEL': 'INFO',
+          }
+          
+          for key, value in defaults.items():
+              if not os.environ.get(key):
+                  print(f"Setting default environment variable {key}={value}")
+                  os.environ[key] = value
+
+      # Call this function early in your module
+      set_default_env_vars()
+      ```
+
+      For external services that require API keys:
+
+      ```python
+      # Check if API_KEY is set
+      if not os.environ.get('API_KEY'):
+          logger.warning("API_KEY environment variable is not set. Using mock responses for local development.")
+          
+      # Initialize client only if API key is available
+      if os.environ.get('API_KEY'):
+          client = ExternalService(api_key=os.environ.get('API_KEY'))
+      else:
+          # Provide a mock implementation for local development
+          client = MockExternalService()
+      ```
+
+      ### 5. Package Structure for Lambda Functions
+
+      ```
+      lambda_function/
+      ├── __init__.py
+      ├── index.py (main handler)
+      ├── models/
+      │   ├── __init__.py
+      │   └── customer.py
+      ├── services/
+      │   ├── __init__.py
+      │   └── dynamodb_service.py
+      └── utils/
+          ├── __init__.py
+          └── helpers.py
+      ```
+
+      ### 6. Testing Imports
+
+      Always test your imports with a simple script before deployment:
+      ```python
+      #!/usr/bin/env python3
+      import os
+      import sys
+      
+      # Add the current directory to the path
+      current_dir = os.path.dirname(os.path.abspath(__file__))
+      sys.path.insert(0, current_dir)
+      
+      # Test imports
+      try:
+          from handlers.websocket_handler import handle_connect
+          from services.request_processor import process_request
+          print("Imports successful!")
+      except ImportError as e:
+          print(f"Import error: {str(e)}")
+      ```
+
+examples:
+  - input: |
+      # Bad: Imports that might not work in Lambda
+      import json
+      import boto3
+      
+      from myproject.models.customer import Customer
+      from myproject.services.dynamodb import get_item
+      
+      def handler(event, context):
+          customer_id = event.get('customerId')
+          customer = get_item(customer_id)
+          return {
+              'statusCode': 200,
+              'body': json.dumps({'customer': customer.name})
+          }
+    output: |
+      # Good: Lambda-friendly imports
+      import json
+      import sys
+      import os
+      import boto3
+      
+      # Add the current directory to the path
+      current_dir = os.path.dirname(os.path.abspath(__file__))
+      sys.path.append(current_dir)
+      
+      from models.customer import Customer
+      from services.dynamodb import get_item
+      
+      def handler(event, context):
+          customer_id = event.get('customerId')
+          customer = get_item(customer_id)
+          return {
+              'statusCode': 200,
+              'body': json.dumps({'customer': customer.name})
+          }
+  
+  - input: |
+      # Bad: Module with problematic relative imports
+      from ..models.customer import Customer
+      from ..utils.helpers import format_response
+      
+      def process_request(request_data):
+          customer = Customer(request_data['id'], request_data['name'])
+          return format_response(customer)
+    output: |
+      # Good: Module with proper import handling
+      import os
+      import sys
+      
+      # Add the parent directory to sys.path to enable absolute imports
+      current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+      if current_dir not in sys.path:
+          sys.path.insert(0, current_dir)
+      
+      # Use absolute imports instead of relative imports
+      from models.customer import Customer
+      from utils.helpers import format_response
+      
+      def process_request(request_data):
+          """
+          Process a customer request.
+          
+          Args:
+              request_data: Dictionary containing request data
+              
+          Returns:
+              Formatted response with customer information
+          """
+          customer = Customer(request_data['id'], request_data['name'])
+          return format_response(customer)
+
+  - input: |
+      # Bad: No import error handling
+      def handler(event, context):
+          from services.processor import process_request
+          return process_request(event)
+    output: |
+      # Good: With import error handling
+      def handler(event, context):
+          try:
+              from services.processor import process_request
+              return process_request(event)
+          except ImportError as e:
+              import logging
+              logging.error(f"Import error: {str(e)}")
+              return {
+                  'statusCode': 500,
+                  'body': json.dumps({'error': f'Configuration error: {str(e)}'})
+              }
+              
+  - input: |
+      # Bad: Using environment variables without defaults
+      import os
+      import boto3
+      
+      dynamodb = boto3.resource('dynamodb')
+      table = dynamodb.Table(os.environ.get('TABLE_NAME'))
+      
+      def handler(event, context):
+          # Function implementation
+          pass
+    output: |
+      # Good: Setting default environment variables for local development
+      import os
+      import boto3
+      import logging
+      
+      # Configure logging
+      logger = logging.getLogger()
+      
+      # Set default environment variables for local development
+      def set_default_env_vars():
+          """Set default environment variables for local development if they're not already set."""
+          defaults = {
+              'TABLE_NAME': 'my-default-table-name',
+              'REGION': 'us-east-1',
+          }
+          
+          for key, value in defaults.items():
+              if not os.environ.get(key):
+                  logger.info(f"Setting default environment variable {key}={value}")
+                  os.environ[key] = value
+      
+      # Set default environment variables
+      set_default_env_vars()
+      
+      # Initialize DynamoDB client
+      dynamodb = boto3.resource('dynamodb')
+      table = dynamodb.Table(os.environ.get('TABLE_NAME'))
+      
+      def handler(event, context):
+          # Function implementation
+          pass
+
+metadata:
+  priority: high
+  version: 1.3
+</rule> 
