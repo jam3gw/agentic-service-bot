@@ -487,4 +487,79 @@ The application uses Chakra UI's theming system with:
 1. User navigates to the Capabilities tab
 2. Capabilities are displayed based on service levels
 3. Current customer's service level is highlighted
-4. User can expand categories to view detailed capabilities 
+4. User can expand categories to view detailed capabilities
+
+## API Integration
+
+### Backend Communication
+
+The frontend communicates with the backend through REST API endpoints and WebSocket connections. The following integration points are implemented:
+
+#### REST API Endpoints
+
+- **GET /api/customers/{customerId}/devices**: Retrieve a customer's devices
+- **PATCH /api/customers/{customerId}/devices/{deviceId}**: Update a device's state
+- **GET /api/capabilities**: Retrieve service capabilities
+
+#### WebSocket API
+
+- **connect**: Establish a WebSocket connection
+- **disconnect**: Close a WebSocket connection
+- **sendMessage**: Send a message to the bot
+- **receiveMessage**: Receive a message from the bot
+
+### Integration Requirements
+
+To ensure proper communication between the frontend and backend, the following requirements must be met:
+
+1. **Environment Configuration**
+   - The frontend must use the `REACT_APP_API_URL` environment variable to determine the API endpoint
+   - Different environments (dev, staging, prod) should have different API endpoints
+   - The `.env` files should be configured for each environment
+
+2. **CORS Configuration**
+   - The API Gateway must allow requests from the frontend domain
+   - The Lambda functions must return the appropriate CORS headers
+   - The frontend must include the necessary credentials in requests
+
+3. **Authentication**
+   - API requests must include authentication tokens
+   - The frontend must handle token acquisition and renewal
+   - Unauthorized requests must be redirected to the login page
+
+4. **Error Handling**
+   - The frontend must handle API errors gracefully
+   - Network errors should trigger retry logic
+   - User-friendly error messages should be displayed
+
+5. **WebSocket Connection Management**
+   - The frontend must handle WebSocket connection establishment
+   - Connection failures should trigger reconnection attempts
+   - The connection status should be displayed to the user
+
+### Implementation Steps
+
+1. **Configure Environment Variables**
+   - Create `.env.development`, `.env.staging`, and `.env.production` files
+   - Set `REACT_APP_API_URL` in each environment file
+   - Update the build pipeline to use the correct environment file
+
+2. **Update API Service**
+   - Enhance the `apiService.ts` to handle authentication
+   - Add retry logic for failed requests
+   - Implement proper error handling
+
+3. **Implement WebSocket Service**
+   - Create a `websocketService.ts` file
+   - Implement connection management
+   - Add message handling functions
+
+4. **Update UI Components**
+   - Modify components to use the API and WebSocket services
+   - Add loading states and error handling
+   - Display connection status
+
+5. **Testing**
+   - Test API integration with mock endpoints
+   - Test WebSocket integration with mock server
+   - Perform end-to-end testing with the actual backend 

@@ -1,0 +1,422 @@
+---
+description: Frontend-Backend Integration Best Practices
+globs: "**/apiService.ts,**/websocketService.ts,**/api-stack.ts"
+alwaysApply: true
+---
+# Frontend-Backend Integration Best Practices
+
+This rule enforces best practices for integrating frontend applications with backend services, focusing on API communication, error handling, and testing.
+
+<rule>
+name: frontend_backend_integration
+description: Enforce best practices for frontend-backend integration
+filters:
+  - type: file_extension
+    pattern: "\\.(ts|tsx|js|jsx)$"
+  - type: content
+    pattern: "(?:fetch|axios|WebSocket|API|http)"
+
+actions:
+  - type: suggest
+    conditions:
+      # If using hardcoded API URLs
+      - pattern: "(fetch|axios\\.get|axios\\.post|axios\\.put|axios\\.delete|axios\\.patch)\\s*\\(\\s*['\"]https?://[^'\"]+['\"]"
+        message: "Use environment variables for API URLs instead of hardcoding them"
+      # If missing error handling in API calls
+      - pattern: "(fetch|axios\\.get|axios\\.post|axios\\.put|axios\\.delete|axios\\.patch)\\s*\\([^)]+\\)\\s*\\.then\\s*\\([^)]+\\)(?!\\s*\\.catch)"
+        message: "Add error handling to API calls with .catch() or try/catch"
+      # If not using typed responses
+      - pattern: "\\bany\\b.*?\\bResponse\\b"
+        message: "Use typed responses instead of 'any' for better type safety"
+      # If not handling loading states
+      - pattern: "\\buseEffect\\b.*?\\bfetch\\b.*?\\bsetState\\b"
+        message: "Handle loading states in API calls to improve user experience"
+      # If not using proper CORS headers in API responses
+      - pattern: "'Access-Control-Allow-Origin'\\s*:\\s*'\\*'"
+        message: "Use specific origins in CORS headers instead of wildcard '*' for better security"
+    message: |
+      ## Frontend-Backend Integration Best Practices
+
+      Follow these guidelines for integrating frontend applications with backend services:
+
+      1. **Environment Configuration**
+         - Use environment variables for API URLs
+         - Configure different environments (dev, staging, prod)
+         - Never hardcode API URLs in the code
+
+      2. **API Service Structure**
+         - Create dedicated API service modules
+         - Use typed requests and responses
+         - Implement consistent error handling
+         - Add retry logic for transient failures
+
+      3. **Authentication**
+         - Implement secure token handling
+         - Refresh tokens when they expire
+         - Store tokens securely
+         - Include authentication headers in all requests
+
+      4. **Error Handling**
+         - Handle network errors gracefully
+         - Provide user-friendly error messages
+         - Log errors for debugging
+         - Implement global error handling
+
+      5. **Loading States**
+         - Show loading indicators during API calls
+         - Disable form submissions while loading
+         - Handle partial loading states
+         - Provide feedback for long-running operations
+
+      6. **CORS Configuration**
+         - Configure CORS properly on the backend
+         - Use specific origins instead of wildcards
+         - Include necessary CORS headers in responses
+         - Handle preflight requests correctly
+
+      7. **WebSocket Management**
+         - Implement connection management
+         - Handle reconnection attempts
+         - Show connection status to users
+         - Properly close connections when not needed
+
+      8. **Testing**
+         - Mock API responses in unit tests
+         - Test error handling scenarios
+         - Implement integration tests
+         - Use environment-specific configurations for tests
+
+      ### Example of API Service with Best Practices:
+      ```typescript
+      // apiService.ts
+      import { Device, Capability } from '../types';
+
+      // Use environment variables for API URL
+      const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
+
+      // Define error types
+      export class ApiError extends Error {
+        status: number;
+        
+        constructor(message: string, status: number) {
+          super(message);
+          this.status = status;
+          this.name = 'ApiError';
+        }
+      }
+
+      // Helper function for API calls with error handling
+      async function apiCall<T>(url: string, options?: RequestInit): Promise<T> {
+        try {
+          const response = await fetch(url, {
+            ...options,
+            headers: {
+              'Content-Type': 'application/json',
+              ...(options?.headers || {}),
+              // Add authentication if available
+              ...(getAuthToken() ? { 'Authorization': `Bearer ${getAuthToken()}` } : {})
+            }
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new ApiError(
+              errorData.message || `API error: ${response.status} ${response.statusText}`,
+              response.status
+            );
+          }
+
+          return await response.json();
+        } catch (error) {
+          if (error instanceof ApiError) {
+            // Handle specific HTTP errors
+            if (error.status === 401) {
+              // Handle authentication errors
+              logout();
+              window.location.href = '/login';
+            }
+            throw error;
+          }
+          
+          // Handle network errors
+          throw new ApiError('Network error. Please check your connection.', 0);
+        }
+      }
+
+      // Get auth token from storage
+      function getAuthToken(): string | null {
+        return localStorage.getItem('auth_token');
+      }
+
+      // Logout function
+      function logout(): void {
+        localStorage.removeItem('auth_token');
+      }
+
+      /**
+       * Fetches user devices from the backend
+       * @param customerId - The ID of the customer whose devices to fetch
+       * @returns Promise containing array of Device objects
+       */
+      export const fetchUserDevices = async (customerId: string): Promise<Device[]> => {
+        const data = await apiCall<{ devices: Device[] }>(
+          `${API_BASE_URL}/customers/${customerId}/devices`
+        );
+        return data.devices;
+      };
+
+      /**
+       * Updates the state of a device
+       * @param deviceId - The ID of the device to update
+       * @param newState - The new state to set for the device
+       * @param customerId - The ID of the customer who owns the device
+       * @returns Promise containing the updated Device object
+       */
+      export const updateDeviceState = async (
+        deviceId: string,
+        newState: string,
+        customerId: string
+      ): Promise<Device> => {
+        const data = await apiCall<{ device: Device }>(
+          `${API_BASE_URL}/customers/${customerId}/devices/${deviceId}`,
+          {
+            method: 'PATCH',
+            body: JSON.stringify({ state: newState })
+          }
+        );
+        return data.device;
+      };
+      ```
+
+      ### Example of React Component Using API Service:
+      ```tsx
+      import React, { useState, useEffect } from 'react';
+      import { fetchUserDevices, ApiError } from '../utils/apiService';
+      import { Device } from '../types';
+
+      interface DevicesListProps {
+        customerId: string;
+      }
+
+      const DevicesList: React.FC<DevicesListProps> = ({ customerId }) => {
+        const [devices, setDevices] = useState<Device[]>([]);
+        const [isLoading, setIsLoading] = useState<boolean>(true);
+        const [error, setError] = useState<string | null>(null);
+
+        useEffect(() => {
+          const loadDevices = async () => {
+            try {
+              setIsLoading(true);
+              setError(null);
+              const data = await fetchUserDevices(customerId);
+              setDevices(data);
+            } catch (err) {
+              console.error('Failed to load devices:', err);
+              setError(
+                err instanceof ApiError 
+                  ? err.message 
+                  : 'An unexpected error occurred. Please try again.'
+              );
+            } finally {
+              setIsLoading(false);
+            }
+          };
+
+          loadDevices();
+        }, [customerId]);
+
+        if (isLoading) {
+          return <div>Loading devices...</div>;
+        }
+
+        if (error) {
+          return (
+            <div>
+              <p>Error: {error}</p>
+              <button onClick={() => window.location.reload()}>Retry</button>
+            </div>
+          );
+        }
+
+        return (
+          <div>
+            <h2>Your Devices</h2>
+            {devices.length === 0 ? (
+              <p>No devices found.</p>
+            ) : (
+              <ul>
+                {devices.map(device => (
+                  <li key={device.id}>
+                    {device.name} - {device.state}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        );
+      };
+
+      export default DevicesList;
+      ```
+
+      ### Example of Backend CORS Configuration:
+      ```typescript
+      // API Gateway CORS configuration
+      const api = new apigateway.RestApi(this, 'ServiceBotApi', {
+        restApiName: `${config.environment}-service-bot-api`,
+        description: 'API for the Agentic Service Bot',
+        defaultCorsPreflightOptions: {
+          allowOrigins: config.environment === 'prod'
+            ? ['https://agentic-service-bot.example.com']
+            : ['http://localhost:3000', 'https://dev.agentic-service-bot.example.com'],
+          allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+          allowHeaders: ['Content-Type', 'Authorization'],
+          allowCredentials: true
+        }
+      });
+      ```
+
+examples:
+  - input: |
+      // Bad: Hardcoded API URL
+      const fetchDevices = async (customerId) => {
+        try {
+          const response = await fetch(`https://api.example.com/customers/${customerId}/devices`);
+          const data = await response.json();
+          return data.devices;
+        } catch (error) {
+          console.error('Error:', error);
+        }
+      };
+    output: |
+      // Good: Using environment variables and proper error handling
+      const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
+      
+      const fetchDevices = async (customerId: string): Promise<Device[]> => {
+        try {
+          const response = await fetch(`${API_BASE_URL}/customers/${customerId}/devices`, {
+            headers: {
+              'Authorization': `Bearer ${getAuthToken()}`
+            }
+          });
+          
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.message || `API error: ${response.status}`);
+          }
+          
+          const data = await response.json();
+          return data.devices;
+        } catch (error) {
+          console.error('Error fetching devices:', error);
+          // Rethrow for component to handle
+          throw error;
+        }
+      };
+  
+  - input: |
+      // Bad: No loading state or proper error handling
+      function DeviceList({ customerId }) {
+        const [devices, setDevices] = useState([]);
+        
+        useEffect(() => {
+          fetch(`/api/customers/${customerId}/devices`)
+            .then(res => res.json())
+            .then(data => setDevices(data.devices));
+        }, [customerId]);
+        
+        return (
+          <div>
+            <h2>Devices</h2>
+            <ul>
+              {devices.map(device => (
+                <li key={device.id}>{device.name}</li>
+              ))}
+            </ul>
+          </div>
+        );
+      }
+    output: |
+      // Good: With loading state and error handling
+      function DeviceList({ customerId }: { customerId: string }) {
+        const [devices, setDevices] = useState<Device[]>([]);
+        const [isLoading, setIsLoading] = useState<boolean>(true);
+        const [error, setError] = useState<string | null>(null);
+        
+        useEffect(() => {
+          const loadDevices = async () => {
+            try {
+              setIsLoading(true);
+              setError(null);
+              const fetchedDevices = await fetchUserDevices(customerId);
+              setDevices(fetchedDevices);
+            } catch (err) {
+              console.error('Failed to load devices:', err);
+              setError(err instanceof Error ? err.message : 'Failed to load devices');
+            } finally {
+              setIsLoading(false);
+            }
+          };
+          
+          loadDevices();
+        }, [customerId]);
+        
+        if (isLoading) {
+          return <div>Loading devices...</div>;
+        }
+        
+        if (error) {
+          return (
+            <div>
+              <p>Error: {error}</p>
+              <button onClick={() => window.location.reload()}>Retry</button>
+            </div>
+          );
+        }
+        
+        return (
+          <div>
+            <h2>Devices</h2>
+            {devices.length === 0 ? (
+              <p>No devices found.</p>
+            ) : (
+              <ul>
+                {devices.map(device => (
+                  <li key={device.id}>{device.name} - {device.state}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        );
+      }
+  
+  - input: |
+      // Bad: Insecure CORS configuration
+      const api = new apigateway.RestApi(this, 'ServiceBotApi', {
+        restApiName: 'service-bot-api',
+        description: 'API for the Agentic Service Bot',
+        defaultCorsPreflightOptions: {
+          allowOrigins: ['*'],
+          allowMethods: ['*'],
+          allowHeaders: ['*']
+        }
+      });
+    output: |
+      // Good: Secure CORS configuration
+      const api = new apigateway.RestApi(this, 'ServiceBotApi', {
+        restApiName: `${config.environment}-service-bot-api`,
+        description: 'API for the Agentic Service Bot',
+        defaultCorsPreflightOptions: {
+          allowOrigins: config.environment === 'prod'
+            ? ['https://agentic-service-bot.example.com']
+            : ['http://localhost:3000', 'https://dev.agentic-service-bot.example.com'],
+          allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+          allowHeaders: ['Content-Type', 'Authorization'],
+          allowCredentials: true
+        }
+      });
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 
