@@ -419,188 +419,104 @@ actions:
 
 ## Business-Critical Testing
 
-Tests should focus on verifying business-critical functionality that delivers value to users, not just implementation details. This means prioritizing tests that:
+Tests should focus on verifying functionality that delivers business value to users, rather than just testing implementation details. This means:
 
-1. Verify end-to-end flows that users care about
-2. Test actual API endpoints and interfaces rather than just internal functions
-3. Validate that business rules and permissions are correctly enforced
-4. Ensure that the system behaves correctly under real-world conditions
+1. **Test Real User Flows**: Design tests around actual user scenarios and business-critical paths.
+2. **Focus on Value Delivery**: Each test should verify functionality that delivers value to users or protects revenue.
+3. **End-to-End Testing**: Where possible, tests should verify complete user flows rather than isolated components.
+4. **Test Service Boundaries**: Always verify that service level permissions are correctly enforced, as this is critical to business models with tiered pricing.
+5. **Use Real APIs When Possible**: Prefer testing against real APIs over excessive mocking for integration tests.
 
-### Bad Example: Testing Implementation Details Only
-
+### Bad Example:
 ```python
-def test_customer_service_get_customer():
-    # This test only verifies internal implementation details
-    customer_service = CustomerService()
-    customer_service._db_client = MagicMock()
-    customer_service._db_client.get_item.return_value = {'Item': {'id': '123', 'name': 'Test'}}
+def test_dynamodb_service_get_customer():
+    # This test focuses too much on implementation details
+    mock_table = MagicMock()
+    mock_table.get_item.return_value = {'Item': {'id': 'customer-123', 'name': 'Test User'}}
     
-    customer = customer_service.get_customer('123')
+    with patch('boto3.resource') as mock_boto3:
+        mock_boto3.return_value.Table.return_value = mock_table
+        result = get_customer('customer-123')
     
-    assert customer.id == '123'
-    assert customer.name == 'Test'
-    customer_service._db_client.get_item.assert_called_once()
+    assert result.id == 'customer-123'
+    assert result.name == 'Test User'
+    assert mock_table.get_item.call_count == 1
 ```
 
-### Good Example: Testing Business Functionality
-
+### Good Example:
 ```python
-def test_premium_customer_can_access_premium_features():
-    # This test verifies actual business functionality that matters to users
-    api_client = APIClient()
+def test_premium_customer_can_relocate_devices():
+    """
+    Test that premium customers can relocate devices.
     
-    # Log in as a premium customer
-    api_client.login('premium-customer@example.com', 'password')
+    This test verifies a key differentiator for the premium tier,
+    which is critical for our tiered pricing model and revenue.
+    """
+    # Set up a premium customer
+    customer = Customer('premium-customer', 'Premium User', 'premium', [
+        {'id': 'device-1', 'type': 'speaker', 'location': 'living_room'}
+    ])
     
-    # Attempt to use a premium feature
-    response = api_client.post('/api/devices/relocate', json={
-        'device_id': 'device-1',
-        'new_location': 'kitchen'
-    })
+    # Verify the customer can perform the premium action
+    assert is_action_allowed(customer, 'device_relocation') == True
     
-    # Verify the premium feature is accessible
+    # Test the actual request processing with a real user request
+    response = process_request('premium-customer', 'Move my speaker to the kitchen')
+    
+    # Verify the response indicates success, not a service level restriction
+    assert "not allowed" not in response.lower()
+    assert "upgrade" not in response.lower()
+```
+
+## Integration Testing with Real APIs
+
+For business-critical functionality, integration tests that hit real APIs provide more confidence than unit tests with mocks. These tests should:
+
+1. **Verify End-to-End Flows**: Test complete user journeys from request to response.
+2. **Test Against Real Endpoints**: Use actual API endpoints rather than mocks when possible.
+3. **Verify Business Rules**: Confirm that business rules like service level permissions are enforced.
+4. **Include Both Positive and Negative Scenarios**: Test both allowed and disallowed actions.
+
+### Bad Example:
+```python
+def test_api_endpoint_structure():
+    # This test focuses on implementation details rather than business value
+    response = requests.get(f"{API_URL}/health")
     assert response.status_code == 200
-    assert 'success' in response.json()
     
-    # Verify the device was actually relocated in the system
-    device = api_client.get('/api/devices/device-1').json()
-    assert device['location'] == 'kitchen'
+    data = response.json()
+    assert 'status' in data
+    assert 'version' in data
 ```
 
-## Integration Testing vs. Unit Testing
-
-While unit tests are valuable for testing individual components, integration tests that verify how components work together are essential for ensuring business functionality works correctly.
-
-### Bad Example: Excessive Mocking
-
+### Good Example:
 ```python
-def test_request_processor_with_mocks():
-    # This test mocks everything and doesn't test actual integration
-    customer = MagicMock()
-    customer.service_level = 'premium'
+def test_basic_customer_cannot_access_premium_features():
+    """
+    Test that basic customers cannot access premium features.
     
-    request_analyzer = MagicMock()
-    request_analyzer.identify_request_type.return_value = 'device_control'
-    request_analyzer.get_required_actions.return_value = ['device_control']
+    This test verifies our service tier boundaries, which are
+    critical for our business model and revenue protection.
+    """
+    # Send a request to relocate a device (premium feature)
+    response = requests.post(
+        f"{API_URL}/chat",
+        json={
+            'customerId': 'test-basic-customer',
+            'message': 'Move my speaker to the kitchen'
+        }
+    )
     
-    permission_service = MagicMock()
-    permission_service.is_action_allowed.return_value = True
+    # Verify the response
+    assert response.status_code == 200
+    data = response.json()
     
-    processor = RequestProcessor(request_analyzer, permission_service)
-    result = processor.process('customer-123', 'Turn on the lights')
+    # The response should indicate this action is not allowed and suggest an upgrade
+    assert "not allowed with basic service level" in data['message'].lower()
+    assert "upgrade" in data['message'].lower()
     
-    assert result.success is True
-```
-
-### Good Example: Testing Real Integration Points
-
-```python
-def test_end_to_end_request_processing():
-    # This test verifies the actual integration between components
-    # Set up test environment with minimal mocking
-    setup_test_database()
-    
-    # Create a real customer in the test database
-    create_test_customer('customer-123', 'premium')
-    
-    # Process an actual request through the real system
-    response = process_request('customer-123', 'Turn on the living room lights')
-    
-    # Verify the response indicates success
-    assert "turning on" in response.lower()
-    
-    # Verify the device state was actually changed in the system
-    device_state = get_device_state('customer-123', 'living_room_lights')
-    assert device_state == 'on'
-```
-
-## WebSocket Testing Best Practices
-
-When testing WebSocket connections, focus on verifying the actual business functionality rather than just the connection mechanics:
-
-### Bad Example: Testing Only Connection Setup
-
-```python
-def test_websocket_connection():
-    # This only tests that a connection can be established
-    client = WebSocketClient()
-    connected = client.connect('wss://api.example.com/ws')
-    assert connected is True
-    client.disconnect()
-```
-
-### Good Example: Testing WebSocket Business Functionality
-
-```python
-def test_websocket_device_control():
-    # This tests the actual business functionality over WebSockets
-    client = WebSocketClient()
-    client.connect('wss://api.example.com/ws?customerId=customer-123')
-    
-    # Send a device control command
-    client.send_message({
-        'message': 'Turn on the kitchen lights',
-        'customerId': 'customer-123'
-    })
-    
-    # Wait for and verify the response
-    response = client.wait_for_response(timeout=5)
-    assert response is not None
-    assert "turning on" in response.get('message', '').lower()
-    
-    # Verify the device state was actually changed
-    device_state = get_device_state('customer-123', 'kitchen_lights')
-    assert device_state == 'on'
-    
-    client.disconnect()
-```
-
-## Service Level Permission Testing Best Practices
-
-When testing service level permissions, verify that the business rules are correctly enforced across different customer tiers:
-
-### Bad Example: Testing Permission Logic in Isolation
-
-```python
-def test_permission_check_function():
-    # This only tests the permission check function in isolation
-    customer = Customer('123', 'Test', 'basic', [])
-    result = is_action_allowed(customer, 'device_relocation')
-    assert result is False
-```
-
-### Good Example: Testing Permission Enforcement in Business Flows
-
-```python
-def test_service_level_permission_enforcement():
-    # This tests that permissions are actually enforced in business flows
-    api_client = APIClient()
-    
-    # Test with basic customer
-    api_client.login('basic-customer@example.com', 'password')
-    
-    # Attempt to use a premium feature
-    basic_response = api_client.post('/api/devices/relocate', json={
-        'device_id': 'device-1',
-        'new_location': 'kitchen'
-    })
-    
-    # Verify the premium feature is not accessible
-    assert basic_response.status_code == 403
-    assert 'upgrade' in basic_response.json().get('message', '').lower()
-    
-    # Test with premium customer
-    api_client.login('premium-customer@example.com', 'password')
-    
-    # Attempt to use the same premium feature
-    premium_response = api_client.post('/api/devices/relocate', json={
-        'device_id': 'device-1',
-        'new_location': 'kitchen'
-    })
-    
-    # Verify the premium feature is accessible
-    assert premium_response.status_code == 200
-    assert 'success' in premium_response.json()
+    # Verify that the interaction was logged in the database
+    # (This could be a separate verification step)
 ```
 
 examples:

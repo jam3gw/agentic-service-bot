@@ -1,3 +1,8 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
 # Agentic Service Bot Architecture
 
 This rule documents the key architectural patterns and requirements for the Agentic Service Bot project.
@@ -15,7 +20,7 @@ actions:
   - type: suggest
     conditions:
       # If missing environment variables
-      - pattern: "os\\.environ\\.get\\(['\"](MESSAGES_TABLE|CUSTOMERS_TABLE|SERVICE_LEVELS_TABLE|CONNECTIONS_TABLE|ANTHROPIC_API_KEY|ANTHROPIC_MODEL)['\"]\\)"
+      - pattern: "os\\.environ\\.get\\(['\"](mdc:MESSAGES_TABLE|CUSTOMERS_TABLE|SERVICE_LEVELS_TABLE|CONNECTIONS_TABLE|ANTHROPIC_API_KEY|ANTHROPIC_MODEL)['\"]\\)"
         message: "Ensure all required environment variables are set for the application to function properly"
       # If modifying request analyzer
       - pattern: "class\\s+RequestAnalyzer"

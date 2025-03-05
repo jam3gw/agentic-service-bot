@@ -1,3 +1,8 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
 # Test Optimization Best Practices
 
 This rule documents best practices for optimizing test execution times while maintaining reliability.

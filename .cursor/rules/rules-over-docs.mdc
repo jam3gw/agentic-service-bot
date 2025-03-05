@@ -1,3 +1,8 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
 # Rules Over Documentation Rule
 
 This rule enforces the practice of creating Cursor rules instead of standalone documentation files.

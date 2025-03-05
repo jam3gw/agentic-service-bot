@@ -1,3 +1,8 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
 # AWS CDK Deployment Rule
 
 This rule enforces the use of AWS CDK for all AWS deployments instead of shell scripts or other deployment methods.
