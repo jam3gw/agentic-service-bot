@@ -1,0 +1,470 @@
+# Service Level Change Process
+
+This rule enforces best practices for making changes to service levels and permissions, ensuring a well-documented and consistent process.
+
+<rule>
+name: service_level_change_process
+description: Enforce best practices for the process of changing service levels and permissions
+filters:
+  - type: file_extension
+    pattern: "\\.(py|md|json|ts|js)$"
+  - type: content
+    pattern: "(?:service_level|permission|allowed_actions)"
+
+actions:
+  - type: suggest
+    conditions:
+      # If modifying service level documentation
+      - pattern: "^# Service Levels|^## Permission Matrix"
+        message: "Follow the service level change process when updating service level documentation"
+      # If modifying service level constants
+      - pattern: "(SERVICE_LEVELS|SERVICE_LEVEL_PERMISSIONS)\\s*=\\s*\\{"
+        message: "Ensure all service level changes follow the documented process"
+      # If adding or removing permissions
+      - pattern: "(PERMISSIONS|allowed_actions)\\s*=\\s*\\{|\\[[^\\]]*?['\"]([a-zA-Z_]+)['\"]"
+        message: "Document permission changes and update all relevant files"
+    message: |
+      ## Service Level Change Process
+
+      Based on our experience with the service level simplification process, follow these guidelines when making changes to service levels and permissions:
+
+      1. **Follow a Consistent Change Process**
+         - Document the change first in service-levels.md
+         - Update constants in constants.py
+         - Update implementation code
+         - Update tests
+         - Update sample data
+         - Verify changes
+         - Communicate changes to stakeholders
+
+      2. **Consider Backward Compatibility**
+         - Avoid removing permissions from existing service levels if possible
+         - If permissions must be removed, plan for a transition period
+         - Consider how changes will affect existing customers
+         - Document migration paths for affected customers
+
+      3. **Update All References**
+         - When adding or removing a permission, update all files that reference it
+         - Use grep or other tools to find all references
+         - Don't forget to update tests and sample data
+
+      4. **Monitor Impact**
+         - Add logging to track permission usage before and after changes
+         - Monitor for unexpected permission denials
+         - Be prepared to roll back changes if necessary
+         - Collect feedback from users and stakeholders
+
+      5. **Review Changes**
+         - Have changes reviewed by multiple team members
+         - Verify that all references have been updated
+         - Test changes thoroughly before deploying
+         - Consider security implications of permission changes
+
+      6. **Maintain a Changelog**
+         - Document all changes to service levels and permissions
+         - Include the date, reason, and impact of each change
+         - Make the changelog accessible to all team members
+         - Reference the changelog in commit messages
+
+      7. **Implement Feature Flags**
+         - Consider using feature flags for major permission changes
+         - This allows for gradual rollout and easy rollback
+         - Test changes with a subset of users before full deployment
+         - Monitor the impact of changes during rollout
+
+      8. **Plan for Edge Cases**
+         - Consider how changes will affect users at service level boundaries
+         - Plan for users who have custom permissions
+         - Consider how changes will affect integrations
+         - Test edge cases thoroughly
+
+      9. **Communicate Changes**
+         - Notify users of upcoming changes
+         - Provide clear documentation of what is changing and why
+         - Offer support for users affected by changes
+         - Collect feedback and be prepared to make adjustments
+
+      10. **Automate Testing**
+          - Automate testing of permission changes
+          - Include permission tests in CI/CD pipelines
+          - Test all service levels and permission combinations
+          - Verify that permission changes take effect as expected
+
+      ### Service Level Change Checklist:
+
+      1. **Documentation Updates**
+         - [ ] Update service-levels.md with new permission matrix
+         - [ ] Document the reason for the change
+         - [ ] Update API documentation if applicable
+         - [ ] Update user documentation if applicable
+
+      2. **Code Updates**
+         - [ ] Update constants.py with new service level definitions
+         - [ ] Update permission checking code if necessary
+         - [ ] Update error messages and upgrade information
+         - [ ] Update feature discovery code if applicable
+
+      3. **Test Updates**
+         - [ ] Update test data with new service level definitions
+         - [ ] Add tests for new permissions
+         - [ ] Update existing tests to reflect changes
+         - [ ] Test upgrade and downgrade scenarios
+
+      4. **Sample Data Updates**
+         - [ ] Update sample customers with new service levels
+         - [ ] Update sample requests with new permissions
+         - [ ] Verify that sample data works with new code
+
+      5. **Implementation Verification**
+         - [ ] Verify that permission checks work correctly
+         - [ ] Verify that error messages are clear and helpful
+         - [ ] Verify that upgrade paths are correctly communicated
+         - [ ] Verify that feature discovery works correctly
+
+      6. **Communication**
+         - [ ] Notify team members of changes
+         - [ ] Notify users of changes if applicable
+         - [ ] Provide documentation and support
+         - [ ] Collect feedback and make adjustments if necessary
+
+      7. **Monitoring**
+         - [ ] Add logging for new permissions
+         - [ ] Monitor permission usage
+         - [ ] Monitor for unexpected permission denials
+         - [ ] Collect metrics on upgrade conversions if applicable
+
+      ### Example of Adding a New Permission:
+
+      ```python
+      # 1. Update service-levels.md
+      """
+      # Service Levels
+      
+      ## Permission Matrix
+      
+      | Action | Basic | Premium | Enterprise |
+      |--------|-------|---------|------------|
+      | device_power | ✅ | ✅ | ✅ |
+      | volume_control | ❌ | ✅ | ✅ |
+      | song_changes | ❌ | ❌ | ✅ |
+      | playlist_creation | ❌ | ✅ | ✅ | # New permission
+      
+      ## Action Definitions
+      
+      - **device_power**: Control power state of devices (on/off)
+      - **volume_control**: Adjust volume levels of devices
+      - **song_changes**: Change songs or playlists on devices
+      - **playlist_creation**: Create and manage playlists # New permission
+      """
+      
+      # 2. Update constants.py
+      # Add new permission
+      PERMISSIONS = {
+          'DEVICE_POWER': 'device_power',
+          'VOLUME_CONTROL': 'volume_control',
+          'SONG_CHANGES': 'song_changes',
+          'PLAYLIST_CREATION': 'playlist_creation'  # New permission
+      }
+      
+      # Update service level permissions
+      SERVICE_LEVEL_PERMISSIONS = {
+          SERVICE_LEVELS['BASIC']: [
+              PERMISSIONS['DEVICE_POWER']
+          ],
+          SERVICE_LEVELS['PREMIUM']: [
+              PERMISSIONS['DEVICE_POWER'],
+              PERMISSIONS['VOLUME_CONTROL'],
+              PERMISSIONS['PLAYLIST_CREATION']  # New permission
+          ],
+          SERVICE_LEVELS['ENTERPRISE']: [
+              PERMISSIONS['DEVICE_POWER'],
+              PERMISSIONS['VOLUME_CONTROL'],
+              PERMISSIONS['SONG_CHANGES'],
+              PERMISSIONS['PLAYLIST_CREATION']  # New permission
+          ]
+      }
+      
+      # Update required service level
+      REQUIRED_SERVICE_LEVEL = {
+          PERMISSIONS['DEVICE_POWER']: SERVICE_LEVELS['BASIC'],
+          PERMISSIONS['VOLUME_CONTROL']: SERVICE_LEVELS['PREMIUM'],
+          PERMISSIONS['SONG_CHANGES']: SERVICE_LEVELS['ENTERPRISE'],
+          PERMISSIONS['PLAYLIST_CREATION']: SERVICE_LEVELS['PREMIUM']  # Required level for new permission
+      }
+      
+      # 3. Update tests
+      def test_playlist_creation_permission():
+          """Test playlist creation permission for different service levels."""
+          test_cases = [
+              (SERVICE_LEVELS['BASIC'], False),
+              (SERVICE_LEVELS['PREMIUM'], True),
+              (SERVICE_LEVELS['ENTERPRISE'], True)
+          ]
+          
+          for service_level, expected_result in test_cases:
+              customer = {'service_level': service_level}
+              result = is_action_allowed(customer, PERMISSIONS['PLAYLIST_CREATION'])
+              assert result == expected_result, f"Playlist creation should be {'allowed' if expected_result else 'denied'} at {service_level} level"
+      ```
+
+      ### Example of Removing a Permission:
+
+      ```python
+      # 1. Update service-levels.md
+      """
+      # Service Levels
+      
+      ## Permission Matrix
+      
+      | Action | Basic | Premium | Enterprise |
+      |--------|-------|---------|------------|
+      | device_power | ✅ | ✅ | ✅ |
+      | volume_control | ❌ | ✅ | ✅ |
+      | song_changes | ❌ | ❌ | ✅ |
+      # playlist_creation permission removed
+      
+      ## Action Definitions
+      
+      - **device_power**: Control power state of devices (on/off)
+      - **volume_control**: Adjust volume levels of devices
+      - **song_changes**: Change songs or playlists on devices
+      # playlist_creation definition removed
+      
+      ## Changelog
+      
+      - 2023-06-01: Removed playlist_creation permission (reason: feature deprecated)
+      """
+      
+      # 2. Update constants.py
+      # Remove permission
+      PERMISSIONS = {
+          'DEVICE_POWER': 'device_power',
+          'VOLUME_CONTROL': 'volume_control',
+          'SONG_CHANGES': 'song_changes'
+          # PLAYLIST_CREATION removed
+      }
+      
+      # Update service level permissions
+      SERVICE_LEVEL_PERMISSIONS = {
+          SERVICE_LEVELS['BASIC']: [
+              PERMISSIONS['DEVICE_POWER']
+          ],
+          SERVICE_LEVELS['PREMIUM']: [
+              PERMISSIONS['DEVICE_POWER'],
+              PERMISSIONS['VOLUME_CONTROL']
+              # PLAYLIST_CREATION removed
+          ],
+          SERVICE_LEVELS['ENTERPRISE']: [
+              PERMISSIONS['DEVICE_POWER'],
+              PERMISSIONS['VOLUME_CONTROL'],
+              PERMISSIONS['SONG_CHANGES']
+              # PLAYLIST_CREATION removed
+          ]
+      }
+      
+      # Update required service level
+      REQUIRED_SERVICE_LEVEL = {
+          PERMISSIONS['DEVICE_POWER']: SERVICE_LEVELS['BASIC'],
+          PERMISSIONS['VOLUME_CONTROL']: SERVICE_LEVELS['PREMIUM'],
+          PERMISSIONS['SONG_CHANGES']: SERVICE_LEVELS['ENTERPRISE']
+          # PLAYLIST_CREATION removed
+      }
+      
+      # 3. Update implementation
+      # Add handling for deprecated permission
+      def is_action_allowed(customer, action):
+          """Check if a customer is allowed to perform an action.
+          
+          Args:
+              customer: The customer object
+              action: The action to check
+              
+          Returns:
+              bool: True if the action is allowed, False otherwise
+          """
+          # Handle deprecated permissions
+          if action == 'playlist_creation':
+              logger.warning(f"Deprecated permission check: {action}")
+              return False
+              
+          service_level = customer.get('service_level', SERVICE_LEVELS['BASIC'])
+          allowed_actions = SERVICE_LEVEL_PERMISSIONS.get(service_level, [])
+          
+          return action in allowed_actions
+      
+      # 4. Update tests
+      # Remove or update tests for deprecated permission
+      # def test_playlist_creation_permission(): # Test removed or updated
+      ```
+
+examples:
+  - input: |
+      # Bad: Adding a permission without following the process
+      # In constants.py
+      PERMISSIONS = {
+          'DEVICE_POWER': 'device_power',
+          'VOLUME_CONTROL': 'volume_control',
+          'SONG_CHANGES': 'song_changes',
+          'PLAYLIST_CREATION': 'playlist_creation'  # New permission added without documentation
+      }
+      
+      # Service level permissions not updated
+      SERVICE_LEVEL_PERMISSIONS = {
+          'basic': [
+              'device_power'
+          ],
+          'premium': [
+              'device_power',
+              'volume_control'
+          ],
+          'enterprise': [
+              'device_power',
+              'volume_control',
+              'song_changes'
+          ]
+      }
+    output: |
+      # Good: Following the process for adding a permission
+      # 1. First update service-levels.md (not shown here)
+      
+      # 2. Then update constants.py
+      # Define constants for service levels
+      SERVICE_LEVELS = {
+          'BASIC': 'basic',
+          'PREMIUM': 'premium',
+          'ENTERPRISE': 'enterprise'
+      }
+      
+      # Define constants for permissions
+      PERMISSIONS = {
+          'DEVICE_POWER': 'device_power',
+          'VOLUME_CONTROL': 'volume_control',
+          'SONG_CHANGES': 'song_changes',
+          'PLAYLIST_CREATION': 'playlist_creation'  # New permission
+      }
+      
+      # Update service level permissions
+      SERVICE_LEVEL_PERMISSIONS = {
+          SERVICE_LEVELS['BASIC']: [
+              PERMISSIONS['DEVICE_POWER']
+          ],
+          SERVICE_LEVELS['PREMIUM']: [
+              PERMISSIONS['DEVICE_POWER'],
+              PERMISSIONS['VOLUME_CONTROL'],
+              PERMISSIONS['PLAYLIST_CREATION']  # New permission added to Premium
+          ],
+          SERVICE_LEVELS['ENTERPRISE']: [
+              PERMISSIONS['DEVICE_POWER'],
+              PERMISSIONS['VOLUME_CONTROL'],
+              PERMISSIONS['SONG_CHANGES'],
+              PERMISSIONS['PLAYLIST_CREATION']  # New permission added to Enterprise
+          ]
+      }
+      
+      # Update required service level
+      REQUIRED_SERVICE_LEVEL = {
+          PERMISSIONS['DEVICE_POWER']: SERVICE_LEVELS['BASIC'],
+          PERMISSIONS['VOLUME_CONTROL']: SERVICE_LEVELS['PREMIUM'],
+          PERMISSIONS['SONG_CHANGES']: SERVICE_LEVELS['ENTERPRISE'],
+          PERMISSIONS['PLAYLIST_CREATION']: SERVICE_LEVELS['PREMIUM']  # Required level for new permission
+      }
+      
+      # 3. Update tests (not shown here)
+      # 4. Update implementation code (not shown here)
+  
+  - input: |
+      # Bad: Removing a permission without proper handling
+      # In constants.py
+      PERMISSIONS = {
+          'DEVICE_POWER': 'device_power',
+          'VOLUME_CONTROL': 'volume_control',
+          # 'SONG_CHANGES': 'song_changes' - Removed without any transition plan
+      }
+      
+      # Service level permissions updated but no handling for existing users
+      SERVICE_LEVEL_PERMISSIONS = {
+          'basic': [
+              'device_power'
+          ],
+          'premium': [
+              'device_power',
+              'volume_control'
+          ],
+          'enterprise': [
+              'device_power',
+              'volume_control'
+              # 'song_changes' removed
+          ]
+      }
+    output: |
+      # Good: Properly handling permission removal
+      # 1. First update service-levels.md with changelog (not shown here)
+      
+      # 2. Then update constants.py
+      SERVICE_LEVELS = {
+          'BASIC': 'basic',
+          'PREMIUM': 'premium',
+          'ENTERPRISE': 'enterprise'
+      }
+      
+      PERMISSIONS = {
+          'DEVICE_POWER': 'device_power',
+          'VOLUME_CONTROL': 'volume_control',
+          # 'SONG_CHANGES': 'song_changes' - Removed but handled in code
+      }
+      
+      # Keep track of deprecated permissions for transition
+      DEPRECATED_PERMISSIONS = {
+          'SONG_CHANGES': 'song_changes'
+      }
+      
+      SERVICE_LEVEL_PERMISSIONS = {
+          SERVICE_LEVELS['BASIC']: [
+              PERMISSIONS['DEVICE_POWER']
+          ],
+          SERVICE_LEVELS['PREMIUM']: [
+              PERMISSIONS['DEVICE_POWER'],
+              PERMISSIONS['VOLUME_CONTROL']
+          ],
+          SERVICE_LEVELS['ENTERPRISE']: [
+              PERMISSIONS['DEVICE_POWER'],
+              PERMISSIONS['VOLUME_CONTROL']
+              # 'song_changes' removed but handled in code
+          ]
+      }
+      
+      # 3. Update implementation with transition handling
+      def is_action_allowed(customer, action):
+          """Check if a customer is allowed to perform an action.
+          
+          Args:
+              customer: The customer object
+              action: The action to check
+              
+          Returns:
+              bool: True if the action is allowed, False otherwise
+          """
+          # Handle deprecated permissions
+          if action == DEPRECATED_PERMISSIONS.get('SONG_CHANGES'):
+              logger.warning(f"Deprecated permission check: {action}")
+              
+              # Check if customer has grandfathered access
+              if customer.get('has_legacy_song_changes', False):
+                  logger.info(f"Customer {customer['id']} using grandfathered song_changes permission")
+                  return True
+                  
+              # For all other customers, permission is denied
+              return False
+              
+          service_level = customer.get('service_level', SERVICE_LEVELS['BASIC'])
+          allowed_actions = SERVICE_LEVEL_PERMISSIONS.get(service_level, [])
+          
+          return action in allowed_actions
+      
+      # 4. Add monitoring for deprecated permission usage
+      # 5. Communicate changes to users (not shown here)
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 

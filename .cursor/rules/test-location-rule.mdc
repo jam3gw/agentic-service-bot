@@ -1,0 +1,82 @@
+# Test Location Rule
+
+This rule enforces that all test files for the agentic-service-bot project must be placed in the `tests` directory.
+
+<rule>
+name: test_location
+description: Enforce that all test files are created in the tests directory
+filters:
+  - type: file_name
+    pattern: "test_.*\\.py$"
+  - type: content
+    pattern: "(?:import\\s+(?:unittest|pytest)|def\\s+test_)"
+
+actions:
+  - type: suggest
+    conditions:
+      # If test file is not in tests directory
+      - pattern: "^(?!tests/)"
+        message: "Test files should be placed in the tests directory"
+    message: |
+      ## Test Location Rule
+
+      All test files must be placed in the `tests` directory, following the structure defined in `tests/README.md`.
+
+      ### Directory Structure
+
+      ```
+      tests/
+      └── e2e/                  # End-to-end tests for complete workflows
+      ```
+
+      ### Testing Rules
+
+      1. **All test files must be placed in the `tests` directory**
+         - No test files should be created in the main application directories
+         - This ensures consistent test discovery and organization
+
+      2. **Test file naming**
+         - All test files must be named with the prefix `test_`
+         - Example: `test_user_workflow.py`
+
+      3. **Test organization**
+         - End-to-end tests go in the `e2e/` directory
+         - Additional test categories can be added as the project evolves
+
+      ### Please move this test file to the appropriate location in the tests directory.
+
+examples:
+  - input: |
+      # File: lambda/api/test_api.py
+      import unittest
+      
+      def test_api_endpoint():
+          # Test implementation
+          assert True
+    output: |
+      # This file should be moved to tests/e2e/test_api.py
+      import unittest
+      
+      def test_api_endpoint():
+          # Test implementation
+          assert True
+  
+  - input: |
+      # File: test_main.py
+      import pytest
+      
+      def test_main_function():
+          # Test implementation
+          assert True
+    output: |
+      # This file should be moved to tests/e2e/test_main.py
+      import pytest
+      
+      def test_main_function():
+          # Test implementation
+          assert True
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 
