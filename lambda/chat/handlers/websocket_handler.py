@@ -24,7 +24,8 @@ from services.dynamodb_service import (
     get_customer_id_for_connection,
     delete_connection,
     update_connection_status,
-    store_message
+    store_message,
+    get_customer
 )
 from services.request_processor import process_request
 
@@ -254,7 +255,8 @@ def handle_message(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Process the request
         logger.info(f"Processing request for customer {customer_id} (service level: {get_customer(customer_id).service_level}): '{message}'")
         start_time = time.time()
-        response_text = process_request(customer_id, message)
+        response = process_request(customer_id=customer_id, user_input=message)
+        response_text = response.get("message", "No response generated")
         processing_time = time.time() - start_time
         logger.info(f"Generated response in {processing_time:.2f} seconds: {response_text}")
         

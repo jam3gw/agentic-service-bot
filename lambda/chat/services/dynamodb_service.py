@@ -28,10 +28,10 @@ logger = logging.getLogger()
 def set_default_env_vars():
     """Set default environment variables for local development if they're not already set."""
     defaults = {
-        'MESSAGES_TABLE': 'agentic-service-bot-messages',
-        'CUSTOMERS_TABLE': 'agentic-service-bot-customers',
-        'SERVICE_LEVELS_TABLE': 'agentic-service-bot-service-levels',
-        'CONNECTIONS_TABLE': 'agentic-service-bot-connections',
+        'MESSAGES_TABLE': 'dev-messages',
+        'CUSTOMERS_TABLE': 'dev-customers',
+        'SERVICE_LEVELS_TABLE': 'dev-service-levels',
+        'CONNECTIONS_TABLE': 'dev-connections',
     }
     
     for key, value in defaults.items():
@@ -243,4 +243,57 @@ def store_message(conversation_id: str, customer_id: str, message: str,
         return True
     except Exception as e:
         logger.error(f"Error storing message: {str(e)}")
+        return False
+
+def update_device_state(customer_id: str, device_id: str, state_updates: Dict[str, Any]) -> bool:
+    """
+    Update the state of a device in DynamoDB.
+    
+    Args:
+        customer_id: The ID of the customer who owns the device
+        device_id: The ID of the device to update
+        state_updates: Dictionary of state attributes to update
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        # Get the customer to find the device
+        response = customers_table.get_item(Key={'id': customer_id})
+        if 'Item' not in response:
+            logger.error(f"Customer {customer_id} not found")
+            return False
+            
+        customer_data = response['Item']
+        devices = customer_data.get('devices', [])
+        
+        # Find the device in the customer's devices
+        device_index = None
+        for i, device in enumerate(devices):
+            if device.get('id') == device_id:
+                device_index = i
+                break
+                
+        if device_index is None:
+            logger.error(f"Device {device_id} not found for customer {customer_id}")
+            return False
+            
+        # Update the device state
+        for key, value in state_updates.items():
+            devices[device_index][key] = value
+            
+        # Save the updated customer data
+        update_response = customers_table.update_item(
+            Key={'id': customer_id},
+            UpdateExpression='SET devices = :devices',
+            ExpressionAttributeValues={':devices': devices},
+            ReturnValues='UPDATED_NEW'
+        )
+        
+        logger.info(f"Updated device {device_id} for customer {customer_id}: {state_updates}")
+        logger.debug(f"Update response: {update_response}")
+        
+        return update_response['ResponseMetadata']['HTTPStatusCode'] == 200
+    except Exception as e:
+        logger.error(f"Error updating device state: {str(e)}")
         return False 

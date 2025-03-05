@@ -2,203 +2,298 @@
 Request processor for the Agentic Service Bot.
 
 This module provides functions for processing user requests, analyzing them,
-and generating appropriate responses.
+and generating appropriate responses based on service level permissions.
+
+Service Levels:
+- Basic: Can control device power (on/off)
+- Premium: Basic + volume control
+- Enterprise: Premium + light control
 """
 
 import time
 import os
 import sys
 import logging
+import re
+import json
 from datetime import datetime
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 
 # Add the parent directory to sys.path to enable absolute imports
-current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if current_dir not in sys.path:
-    sys.path.insert(0, current_dir)
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
 
-# Import DynamoDB table for storing messages
-import boto3
-
-# Local imports using absolute imports
+from analyzers.request_analyzer_simplified import RequestAnalyzer
+from services.dynamodb_service import (
+    get_customer, 
+    get_service_level_permissions, 
+    update_device_state,
+    store_message
+)
+from services.llm_service import generate_response
 from models.customer import Customer
-from analyzers.request_analyzer import RequestAnalyzer
-from services.dynamodb_service import get_customer, get_service_level_permissions, store_message
-from services.anthropic_service import generate_response
 
 # Configure logging
-logger = logging.getLogger()
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Initialize DynamoDB resources
-dynamodb = boto3.resource('dynamodb')
-messages_table = dynamodb.Table(os.environ.get('MESSAGES_TABLE'))
-
-def is_action_allowed(customer: Customer, action: str) -> bool:
+def is_action_allowed(service_level, action: str) -> bool:
     """
-    Check if an action is allowed for a customer's service level.
+    Check if an action is allowed for a given service level.
     
     Args:
-        customer: The customer to check permissions for
+        service_level: The service level to check (can be a string or a Customer object)
         action: The action to check
         
     Returns:
         True if the action is allowed, False otherwise
     """
-    permissions = get_service_level_permissions(customer.service_level)
-    return action in permissions.get("allowed_actions", [])
+    # Extract service level string if a Customer object was passed
+    if hasattr(service_level, 'service_level'):
+        service_level = service_level.service_level
+    
+    # Handle None or empty service level
+    if not service_level:
+        return False
+    
+    # Get permissions from DynamoDB
+    permissions = get_service_level_permissions(service_level.lower())
+    
+    # Get the allowed actions for the service level
+    service_level_info = permissions.get("allowed_actions", [])
+    
+    return action in service_level_info
 
-def process_request(customer_id: str, user_input: str) -> str:
+def process_request(request=None, **kwargs) -> Dict[str, Any]:
     """
     Process a user request and generate a response.
     
     Args:
-        customer_id: The ID of the customer making the request
-        user_input: The text of the user's request
-        
+        request: A dictionary containing the request details
+            - customer_id: The ID of the customer
+            - user_input: The text input from the user
+            - connection_id: The WebSocket connection ID (optional)
+        **kwargs: Alternative way to pass parameters directly:
+            - customer_id: The ID of the customer
+            - user_input: The text input from the user
+            - connection_id: The WebSocket connection ID (optional)
+            
     Returns:
-        The generated response text
+        A dictionary containing the response details
     """
+    # Handle both dictionary and keyword arguments
+    if request is None:
+        request = {}
+    
+    # Extract request details (prioritize kwargs over request dict)
+    customer_id = kwargs.get("customer_id", request.get("customer_id"))
+    user_input = kwargs.get("user_input", request.get("user_input", ""))
+    connection_id = kwargs.get("connection_id", request.get("connection_id"))
+    
     # Get customer data
     customer = get_customer(customer_id)
     if not customer:
-        return "Error: Customer not found."
+        return {
+            "success": False,
+            "message": f"Customer with ID {customer_id} not found"
+        }
     
-    # Identify request type
+    # Get service level permissions
+    service_level = customer.service_level
+    
+    # Analyze the request to determine the type
     request_type = RequestAnalyzer.identify_request_type(user_input)
-    if not request_type:
-        # If request type can't be determined, just have the LLM respond generically
-        return generate_response(user_input, {"customer": customer})
     
-    # Determine required actions for this request
-    required_actions = RequestAnalyzer.get_required_actions(request_type)
-    
-    # Check if all required actions are allowed for this customer's service level
-    all_actions_allowed = all(
-        is_action_allowed(customer, action)
-        for action in required_actions
-    )
-    
-    # Extract source and destination locations if this is a relocation request
-    source_location, destination_location = None, None
-    if request_type == "device_relocation":
-        source_location, destination_location = RequestAnalyzer.extract_locations(user_input)
-    
-    # Extract device groups for multi-room audio requests
-    device_groups = None
-    if request_type == "multi_room_setup":
-        device_groups = RequestAnalyzer.extract_device_groups(user_input)
-    
-    # Extract routine details for custom action requests
-    routine_details = None
-    if request_type == "custom_routine":
-        routine_details = RequestAnalyzer.extract_routine_details(user_input)
-    
-    # Build context for the LLM
+    # Build context for LLM
     context = {
         "customer": customer,
-        "devices": customer.devices,
-        "permissions": get_service_level_permissions(customer.service_level),
-        "action_allowed": all_actions_allowed,
-        "request_type": request_type
+        "request_type": request_type,
+        "service_level": service_level,
+        "permissions": get_service_level_permissions(service_level),
+        "devices": [customer.get_device()],
+        "action_executed": False,
+        "timestamp": datetime.now().isoformat()
     }
     
-    # For relocation requests, add additional context
-    if request_type == "device_relocation" and destination_location:
-        context["destination"] = destination_location
-        
-        # Add specific explanation for relocation requests
-        if all_actions_allowed:
-            prompt = (
-                f"Move device to {destination_location.replace('_', ' ')}. "
-                f"This is allowed with {customer.service_level} service level."
-            )
+    # If a device is mentioned in the request, identify it
+    device = customer.get_device()
+    device_id = device.get("id")
+    
+    # Process based on request type
+    if request_type == "device_power":
+        if is_action_allowed(service_level, "device_control"):
+            # Determine if turning on or off
+            turn_on = any(keyword in user_input.lower() for keyword in ["on", "start", "activate"])
+            turn_off = any(keyword in user_input.lower() for keyword in ["off", "stop", "deactivate"])
+            
+            new_state = "on" if turn_on else "off" if turn_off else None
+            
+            if new_state:
+                # Update device state
+                update_device_state(customer_id, device_id, {"power": new_state})
+                context["action_executed"] = True
+                context["device_state"] = new_state
         else:
-            prompt = (
-                f"Customer wants to move device to {destination_location.replace('_', ' ')}. "
-                f"Not allowed with {customer.service_level} service level. "
-                f"Suggest upgrade options."
-            )
-    # For multi-room audio requests, add additional context
-    elif request_type == "multi_room_setup" and device_groups:
-        context["device_groups"] = device_groups
-        
-        if all_actions_allowed:
-            if "all" in device_groups:
-                prompt = (
-                    f"Set up multi-room audio across all devices. "
-                    f"Allowed with {customer.service_level} service level."
-                )
-            else:
-                group_str = ", ".join([loc.replace("_", " ") for loc in device_groups])
-                prompt = (
-                    f"Set up multi-room audio in {group_str}. "
-                    f"Allowed with {customer.service_level} service level."
-                )
+            context["error"] = "This action requires a higher service level"
+    
+    elif request_type == "volume_control":
+        if is_action_allowed(service_level, "volume_control"):
+            # Determine volume change
+            current_volume = device.get("volume", 50)
+            
+            # Check for volume up/down
+            volume_up = any(keyword in user_input.lower() for keyword in ["up", "increase", "louder", "higher"])
+            volume_down = any(keyword in user_input.lower() for keyword in ["down", "decrease", "lower", "quieter"])
+            
+            # Check for specific volume level
+            volume_match = re.search(r"(?:set|change|make|to)\s+(?:the\s+)?volume\s+(?:to\s+)?(\d+)", user_input.lower())
+            
+            new_volume = current_volume
+            if volume_up:
+                new_volume = min(100, current_volume + 10)
+            elif volume_down:
+                new_volume = max(0, current_volume - 10)
+            elif volume_match:
+                requested_volume = int(volume_match.group(1))
+                new_volume = max(0, min(100, requested_volume))
+            
+            if new_volume != current_volume:
+                # Update device volume
+                update_device_state(customer_id, device_id, {"volume": new_volume})
+                context["action_executed"] = True
+                context["volume_change"] = {
+                    "previous": current_volume,
+                    "new": new_volume
+                }
         else:
-            prompt = (
-                f"Multi-room audio setup requested. "
-                f"Not allowed with {customer.service_level} service level. "
-                f"Suggest upgrade options."
-            )
-    # For custom action requests, add additional context
-    elif request_type == "custom_routine" and routine_details:
-        context["routine"] = routine_details
-        
-        if all_actions_allowed:
-            routine_name = routine_details["name"] or "the new routine"
-            prompt = (
-                f"Create custom routine '{routine_name}'. "
-                f"Allowed with {customer.service_level} service level."
-            )
+            context["error"] = "Volume control requires Premium or Enterprise service level"
+    
+    elif request_type == "light_control":
+        if is_action_allowed(service_level, "light_control"):
+            # Determine light action
+            turn_on = any(keyword in user_input.lower() for keyword in ["on", "brighten", "illuminate"])
+            turn_off = any(keyword in user_input.lower() for keyword in ["off", "dim", "darken"])
+            toggle = "toggle" in user_input.lower()
+            
+            current_state = device.get("light", "off")
+            new_state = None
+            
+            if turn_on:
+                new_state = "on"
+            elif turn_off:
+                new_state = "off"
+            elif toggle:
+                new_state = "off" if current_state == "on" else "on"
+            
+            if new_state and new_state != current_state:
+                # Update device light state
+                update_device_state(customer_id, device_id, {"light": new_state})
+                context["action_executed"] = True
+                context["light_state"] = new_state
         else:
-            prompt = (
-                f"Custom routine creation requested. "
-                f"Not allowed with {customer.service_level} service level. "
-                f"Suggest upgrade options."
-            )
+            context["error"] = "Light control requires Enterprise service level"
+    
+    # Generate response using LLM
+    response_text = generate_response(user_input, context)
+    
+    # Store the message
+    message_data = {
+        "customer_id": customer_id,
+        "user_input": user_input,
+        "response": response_text,
+        "request_type": request_type,
+        "timestamp": context["timestamp"],
+        "connection_id": connection_id
+    }
+    
+    # Generate a conversation ID (using connection_id as fallback)
+    conversation_id = connection_id or f"conv-{customer_id}-{context['timestamp']}"
+    
+    # Store the user message and bot response
+    store_message(
+        conversation_id=conversation_id,
+        customer_id=customer_id,
+        message=user_input,
+        sender="user",
+        request_type=request_type
+    )
+    
+    store_message(
+        conversation_id=conversation_id,
+        customer_id=customer_id,
+        message=response_text,
+        sender="bot",
+        request_type=request_type,
+        actions_allowed=context.get("action_executed", False)
+    )
+    
+    return {
+        "success": True,
+        "message": response_text,
+        "request_type": request_type,
+        "action_executed": context.get("action_executed", False)
+    }
+
+def execute_action(action: str, context: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Execute an action based on the request type and context.
+    
+    Args:
+        action: The action to execute
+        context: The context containing request details
+        
+    Returns:
+        Updated context with action results
+    """
+    # This is a simplified version that only handles our three main actions
+    customer = context.get("customer")
+    service_level = customer.service_level if isinstance(customer, Customer) else customer.get("service_level")
+    
+    # Check if the action is allowed for the service level
+    if not is_action_allowed(service_level, action):
+        context["error"] = f"The {action} action is not allowed with your service level"
+        return context
+    
+    # Get the device
+    device = None
+    if isinstance(customer, Customer):
+        device = customer.get_device()
     else:
-        # Generic prompt for other request types
-        prompt = user_input
+        devices = context.get("devices", [])
+        if devices:
+            device = devices[0]
     
-    # Generate and return the response
-    response = generate_response(prompt, context)
+    if not device:
+        context["error"] = "No device found"
+        return context
     
-    # Store the interaction in conversation history
-    # FIX: Generate a unique conversation ID for each message to ensure they're stored separately
-    # The previous implementation used the same conversation ID for both user and bot messages
-    # which could cause race conditions in high-volume scenarios
-    timestamp_ms = int(time.time() * 1000)
-    user_conversation_id = f"conv_{customer_id}_user_{timestamp_ms}"
-    bot_conversation_id = f"conv_{customer_id}_bot_{timestamp_ms}"
+    device_id = device.get("id")
+    customer_id = customer.id if isinstance(customer, Customer) else customer.get("customer_id")
     
-    try:
-        # Store user message
-        logger.info(f"Storing user message in DynamoDB for customer {customer_id}")
-        user_stored = store_message(
-            conversation_id=user_conversation_id,
-            customer_id=customer_id,
-            message=user_input,
-            sender='user',
-            request_type=request_type,
-            actions_allowed=all_actions_allowed
-        )
-        if not user_stored:
-            logger.error("Failed to store user message in DynamoDB")
-        
-        # Store bot response
-        logger.info(f"Storing bot message in DynamoDB for customer {customer_id}")
-        bot_stored = store_message(
-            conversation_id=bot_conversation_id,
-            customer_id=customer_id,
-            message=response,
-            sender='bot',
-            request_type=request_type,
-            actions_allowed=all_actions_allowed
-        )
-        if not bot_stored:
-            logger.error("Failed to store bot message in DynamoDB")
-    except Exception as e:
-        logger.error(f"Error storing messages in DynamoDB: {str(e)}")
-        # Continue even if message storage fails - don't impact user experience
+    # Execute the appropriate action
+    if action == "device_power":
+        # Handle device power control
+        power_state = context.get("power_state")
+        if power_state:
+            update_device_state(customer_id, device_id, {"power": power_state})
+            context["action_executed"] = True
     
-    return response 
+    elif action == "volume_control":
+        # Handle volume control
+        volume_change = context.get("volume_change")
+        if volume_change:
+            new_volume = volume_change.get("new")
+            update_device_state(customer_id, device_id, {"volume": new_volume})
+            context["action_executed"] = True
+    
+    elif action == "song_changes":
+        # Handle song changes
+        song_change = context.get("song_change")
+        if song_change:
+            new_song = song_change.get("new")
+            update_device_state(customer_id, device_id, {"current_song": new_song})
+            context["action_executed"] = True
+    
+    return context

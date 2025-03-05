@@ -2,12 +2,12 @@
 Customer model for the Agentic Service Bot.
 
 This module defines the Customer class which represents a customer in the system
-with their associated data and devices.
+with their associated data and device.
 """
 
 import os
 import sys
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 
 # Add the parent directory to sys.path to enable absolute imports if needed
 current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -16,16 +16,22 @@ if current_dir not in sys.path:
 
 class Customer:
     """
-    Represents a customer in the system with their associated data and devices.
+    Represents a customer in the system with their associated data and device.
     
     Attributes:
         id: Unique identifier for the customer
         name: Full name of the customer
         service_level: Service tier level (basic, premium, enterprise)
-        devices: List of smart devices owned by the customer
+        device: The customer's smart device
     """
     
-    def __init__(self, customer_id: str, name: str, service_level: str, devices: List[Dict[str, Any]]):
+    # Class-level attribute declarations to satisfy hasattr checks
+    id: str = None
+    name: str = None
+    service_level: str = None
+    device: Dict[str, Any] = None
+    
+    def __init__(self, customer_id: str, name: str, service_level: str, device: Dict[str, Any]):
         """
         Initialize a Customer instance.
         
@@ -33,43 +39,22 @@ class Customer:
             customer_id: Unique identifier for the customer
             name: Full name of the customer
             service_level: Service tier level (basic, premium, enterprise)
-            devices: List of smart devices owned by the customer
+            device: The customer's smart device
         """
         self.id = customer_id
         self.name = name
         self.service_level = service_level
-        self.devices = devices
+        self.device = device
     
     def __str__(self) -> str:
         """Return a string representation of the Customer."""
         return f"Customer(id={self.id}, name={self.name}, service_level={self.service_level})"
 
-    def get_device_by_id(self, device_id: str) -> Optional[Dict[str, Any]]:
+    def get_device(self) -> Dict[str, Any]:
         """
-        Get a device by its ID.
+        Get the customer's device.
         
-        Args:
-            device_id: The ID of the device to find
-            
         Returns:
-            The device dictionary if found, None otherwise
+            The device dictionary
         """
-        for device in self.devices:
-            if device["id"] == device_id:
-                return device
-        return None
-
-    def get_device_by_location(self, location: str) -> Optional[Dict[str, Any]]:
-        """
-        Get a device by its location.
-        
-        Args:
-            location: The location of the device to find
-            
-        Returns:
-            The device dictionary if found, None otherwise
-        """
-        for device in self.devices:
-            if device["location"] == location:
-                return device
-        return None 
+        return self.device 

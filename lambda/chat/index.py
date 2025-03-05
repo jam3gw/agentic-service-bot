@@ -91,7 +91,8 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         # Process the request
         from services.request_processor import process_request
-        response_text = process_request(customer_id, message)
+        response = process_request(customer_id=customer_id, user_input=message)
+        response_text = response.get("message", "No response generated")
         
         # Return the response
         return {
