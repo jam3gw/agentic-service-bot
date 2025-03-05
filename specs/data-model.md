@@ -60,16 +60,18 @@ The Agentic Service Bot uses DynamoDB as its primary data store. The data model 
 {
   "level": "premium",
   "allowed_actions": [
-    "status_check",
-    "volume_control",
-    "device_info",
-    "device_relocation",
-    "music_services"
+    "device_power",
+    "volume_control"
   ],
   "max_devices": 3,
   "support_priority": "priority"
 }
 ```
+
+**Service Level Permissions**:
+- `basic`: Allows `device_power` actions
+- `premium`: Allows `device_power` and `volume_control` actions
+- `enterprise`: Allows `device_power`, `volume_control`, and `song_changes` actions
 
 ### Messages Table
 

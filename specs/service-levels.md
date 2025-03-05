@@ -11,16 +11,13 @@ The Agentic Service Bot implements a tiered service level system that determines
 **Description**: Entry-level service for customers with basic needs and a single device.
 
 **Features**:
-- Status checks for devices
-- Volume control
-- Device information retrieval
+- Device power control
+- Limited to 1 device
 
 **Limitations**:
-- Maximum of 1 device
-- No device relocation
-- No music services
-- No multi-room audio
-- No custom actions
+- No volume control
+- No song changes
+- No advanced features
 
 **Support Priority**: Standard
 
@@ -30,13 +27,11 @@ The Agentic Service Bot implements a tiered service level system that determines
 
 **Features**:
 - All Basic tier features
-- Device relocation
-- Music services
+- Volume control
 - Up to 3 devices
 
 **Limitations**:
-- No multi-room audio
-- No custom actions
+- No song changes
 
 **Support Priority**: Priority
 
@@ -46,8 +41,7 @@ The Agentic Service Bot implements a tiered service level system that determines
 
 **Features**:
 - All Premium tier features
-- Multi-room audio
-- Custom actions
+- Song changes
 - Up to 10 devices
 
 **Limitations**:
@@ -59,50 +53,26 @@ The Agentic Service Bot implements a tiered service level system that determines
 
 | Action | Basic | Premium | Enterprise |
 |--------|-------|---------|------------|
-| Status Check | ✅ | ✅ | ✅ |
-| Volume Control | ✅ | ✅ | ✅ |
-| Device Info | ✅ | ✅ | ✅ |
-| Device Relocation | ❌ | ✅ | ✅ |
-| Music Services | ❌ | ✅ | ✅ |
-| Multi-Room Audio | ❌ | ❌ | ✅ |
-| Custom Actions | ❌ | ❌ | ✅ |
+| Device Power | ✅ | ✅ | ✅ |
+| Volume Control | ❌ | ✅ | ✅ |
+| Song Changes | ❌ | ❌ | ✅ |
 
 ## Action Definitions
 
-### Status Check
-- **Description**: Check if a device is online, offline, or experiencing issues
-- **Example Request**: "Is my smart speaker working?"
-- **Required Permission**: `status_check`
+### Device Power
+- **Description**: Control device power (on/off)
+- **Example Request**: "Turn on my living room speaker"
+- **Required Permission**: `device_power`
 
 ### Volume Control
 - **Description**: Adjust the volume of a device
 - **Example Request**: "Turn up the volume on my kitchen speaker"
 - **Required Permission**: `volume_control`
 
-### Device Info
-- **Description**: Retrieve information about a device
-- **Example Request**: "What is my smart display?"
-- **Required Permission**: `device_info`
-
-### Device Relocation
-- **Description**: Move a device from one location to another
-- **Example Request**: "Move my smart speaker to the bedroom"
-- **Required Permission**: `device_relocation`
-
-### Music Services
-- **Description**: Play music on a device
-- **Example Request**: "Play jazz music on my living room speaker"
-- **Required Permission**: `music_services`
-
-### Multi-Room Audio
-- **Description**: Synchronize audio across multiple devices
-- **Example Request**: "Play the same music on all my speakers"
-- **Required Permission**: `multi_room_audio`
-
-### Custom Actions
-- **Description**: Create and execute custom routines or automations
-- **Example Request**: "Create a routine to turn on my speaker at 7 AM"
-- **Required Permission**: `custom_actions`
+### Song Changes
+- **Description**: Change songs on a speaker device
+- **Example Request**: "Skip to the next song on my living room speaker"
+- **Required Permission**: `song_changes`
 
 ## Permission Enforcement
 
@@ -123,12 +93,12 @@ The Agentic Service Bot implements a tiered service level system that determines
 Customers can upgrade their service level to gain access to additional features:
 
 1. **Basic to Premium**:
-   - Gains device relocation and music services
+   - Gains volume control
    - Increases device limit from 1 to 3
    - Improves support priority
 
 2. **Premium to Enterprise**:
-   - Gains multi-room audio and custom actions
+   - Gains song changes
    - Increases device limit from 3 to 10
    - Provides dedicated support
 
@@ -140,12 +110,37 @@ Service levels are stored in the `service_levels_table` in DynamoDB with the fol
 {
   "level": "basic",
   "allowed_actions": [
-    "status_check",
-    "volume_control",
-    "device_info"
+    "device_power"
   ],
   "max_devices": 1,
   "support_priority": "standard"
+}
+```
+
+For the Premium tier:
+```json
+{
+  "level": "premium",
+  "allowed_actions": [
+    "device_power",
+    "volume_control"
+  ],
+  "max_devices": 3,
+  "support_priority": "priority"
+}
+```
+
+For the Enterprise tier:
+```json
+{
+  "level": "enterprise",
+  "allowed_actions": [
+    "device_power",
+    "volume_control",
+    "song_changes"
+  ],
+  "max_devices": 10,
+  "support_priority": "dedicated"
 }
 ```
 
