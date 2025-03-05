@@ -1,132 +1,96 @@
-# End-to-End Tests
+# End-to-End API Tests
 
-This directory contains end-to-end (E2E) tests for the Agentic Service Bot project. E2E tests focus on testing complete user journeys in a real AWS environment.
+This directory contains end-to-end tests for the Agentic Service Bot API endpoints.
 
-## Test Files
+## Available Tests
 
-- `test_e2e.py`: Tests for complete user journeys across different service tiers
-- `prepare_test_data.py`: Script to populate test data in the development environment
+The tests verify the functionality of the following API endpoints:
 
-## Running E2E Tests
+- `GET /api/customers/{customerId}/devices` - Retrieves a customer's devices
+- `PATCH /api/customers/{customerId}/devices/{deviceId}` - Updates a device's state
+- `GET /api/capabilities` - Retrieves available service capabilities
 
-To run all E2E tests:
+## Setting Up Test Data
 
-```bash
-python -m unittest discover -s tests/e2e
-```
-
-Or using pytest:
+Before running the tests, you need to set up test data in the database. Use the provided script:
 
 ```bash
-pytest tests/e2e/
-```
-
-To run a specific test method:
-
-```bash
-python -m unittest tests/e2e/test_e2e.py:AgenticServiceBotE2ETest.test_basic_customer_allowed_action
-```
-
-Or using pytest:
-
-```bash
-pytest tests/e2e/test_e2e.py::AgenticServiceBotE2ETest::test_basic_customer_allowed_action
-```
-
-## Prerequisites
-
-E2E tests require:
-
-1. AWS credentials with appropriate permissions
-2. The AWS CDK stack deployed to the development environment
-3. Test data populated in the DynamoDB tables
-
-## Preparing Test Data
-
-Before running the E2E tests, you need to populate the development environment with test data:
-
-```bash
-python tests/e2e/prepare_test_data.py
+python tests/e2e/setup_test_data.py
 ```
 
 This script will:
+1. List all available DynamoDB tables
+2. Create a test customer with devices in the `dev-customers` table
+3. Output the customer and device IDs to use in your tests
 
-1. Create service level definitions in the `dev-service-levels` table
-2. Create test customers with different service levels in the `dev-customers` table
-3. Set up test devices for each customer
+After running the script, update the `TEST_CUSTOMER_ID` and `TEST_DEVICE_ID` variables in `test_api_endpoints.py` with the values provided by the script.
 
-## WebSocket Testing
+## Running the Tests
 
-The E2E tests include WebSocket connection testing. These tests:
+### Option 1: Using the run_api_tests.py script
 
-1. Connect to the WebSocket API in the development environment
-2. Send messages to the bot
-3. Verify that responses are received
-4. Check that service level permissions are enforced
-
-The WebSocket connection is managed by the `connect_websocket` and `send_message` methods in the `AgenticServiceBotE2ETest` class.
-
-## Test Timeouts
-
-E2E tests involve real AWS services, which can sometimes be slow to respond, especially during Lambda cold starts. The tests include appropriate timeouts to handle these delays:
-
-- Connection timeout: 10 seconds
-- Initial response timeout: 10 seconds
-- Maximum wait time for response: 60 seconds
-
-If tests are timing out, you may need to increase these values in the test code.
-
-## Writing E2E Tests
-
-When writing E2E tests, follow these guidelines:
-
-1. Test complete user journeys
-2. Include setup and teardown to create and clean up test resources
-3. Use descriptive test method names that explain what is being tested
-4. Include docstrings explaining the purpose of the test
-5. Use flexible assertions for text validation to handle variations in wording
-6. Include proper error handling and logging
-
-Example:
-
-```python
-def test_premium_customer_allowed_action(self):
-    """Test a premium customer requesting an allowed action.
-    
-    This test verifies that customers with premium service level
-    can perform actions that are allowed for their service level,
-    such as device relocation.
-    """
-    # Send a message for a premium customer requesting device relocation (allowed)
-    response = self.send_message(self.premium_customer_id, "Move my speaker to the bedroom")
-    
-    # Verify response
-    self.assertIn('message', response, f"Response does not contain 'message' field: {response}")
-    
-    # Check for various ways the success might be expressed
-    success_phrases = ["moved", "relocated", "now in", "placed in"]
-    message_text = response['message'].lower()
-    
-    self.assertTrue(
-        any(phrase in message_text for phrase in success_phrases),
-        f"Response should indicate successful relocation, but got: {response['message']}"
-    )
-    
-    # Verify that the response does not indicate the action was disallowed
-    self.assertNotIn("not allowed", message_text)
-    self.assertNotIn("don't have permission", message_text)
-    self.assertNotIn("service level doesn't allow", message_text)
-```
-
-## Logging
-
-The E2E tests include comprehensive logging to help diagnose issues. You can increase the log level for more detailed output:
+The easiest way to run the tests is to use the provided script:
 
 ```bash
-export LOG_LEVEL=DEBUG
-python -m unittest tests/e2e/test_e2e.py
+python tests/e2e/run_api_tests.py
 ```
 
-## Cleanup
+This script will run all the tests and provide a summary of the results, showing which endpoints are working correctly and which are failing.
 
-The E2E tests include cleanup code in the `tearDown` method to remove test data from the development environment. This helps prevent test data from accumulating over time. 
+### Option 2: Using pytest
+
+You can also run the tests using pytest:
+
+```bash
+pytest tests/e2e/test_api_endpoints.py -v
+```
+
+### Option 3: Running individual tests
+
+You can run the test file directly to execute all tests:
+
+```bash
+python tests/e2e/test_api_endpoints.py
+```
+
+## API Configuration
+
+The tests are configured to use the following API endpoints:
+
+- REST API URL: `https://dehqrpqs4i.execute-api.us-west-2.amazonaws.com/dev`
+- WebSocket URL: `wss://ig3bth930d.execute-api.us-west-2.amazonaws.com/dev`
+
+If you need to test against different endpoints, update the `REST_API_URL` and `WEBSOCKET_URL` variables in the `test_api_endpoints.py` file.
+
+## Troubleshooting
+
+If the tests are failing, check the following:
+
+1. Ensure the API is running and accessible
+2. Verify that the test data exists in the database
+3. Check that the API URLs are correct
+4. Examine the error messages for specific issues
+
+### Common Issues
+
+- **"Customer not found" error**: Run the setup script again to create a new test customer and update the IDs in the test file.
+- **"Device not found" error**: Ensure the device ID in the test file matches one of the devices created by the setup script.
+- **Connection errors**: Verify that the API URLs are correct and the API is running.
+
+## Adding New Tests
+
+To add new tests:
+
+1. Add new test functions to `test_api_endpoints.py`
+2. Follow the existing pattern of making API requests and asserting on the responses
+3. Update the `run_api_tests.py` script to include your new tests
+
+## Checking Existing Data
+
+If you want to check what data already exists in the database without creating new test data, use:
+
+```bash
+python tests/e2e/check_existing_data.py
+```
+
+This script will attempt to discover existing customers by trying common customer IDs. 
