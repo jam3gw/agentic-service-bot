@@ -1,0 +1,233 @@
+# State Management Rule
+
+This rule enforces best practices for state management in the agentic bot, ensuring that all state changes are properly persisted and retrievable.
+
+<rule>
+name: state_management
+description: Ensure proper state management in the agentic bot
+filters:
+  - type: file_extension
+    pattern: "\\.py$"
+  - type: content
+    pattern: "(?:update_device_state|get_customer|execute_action|dynamodb)"
+
+actions:
+  - type: suggest
+    conditions:
+      # If updating state without error handling
+      - pattern: "def\\s+update_[a-zA-Z_]+\\([^)]*\\):[^\\n]*\\n(?:\\s+[^\\n]*\\n)*(?!\\s+try:)"
+        message: "State update functions should include error handling"
+      # If retrieving state without validation
+      - pattern: "def\\s+get_[a-zA-Z_]+\\([^)]*\\):[^\\n]*\\n(?:\\s+[^\\n]*\\n)*(?!\\s+if\\s+not)"
+        message: "State retrieval functions should validate the returned data"
+      # If modifying state without updating database
+      - pattern: "context\\[['\"][a-zA-Z_]+['\"]\\]\\s*=\\s*[^\\n]*(?!.*update_[a-zA-Z_]+)"
+        message: "State changes in context should be persisted to the database"
+    message: |
+      ## State Management Best Practices
+
+      When managing state in the agentic bot, follow these guidelines to ensure consistency and reliability:
+
+      ### Core Principles:
+
+      1. **Single Source of Truth**: DynamoDB should be the single source of truth for all state.
+      
+      2. **Atomic Updates**: State updates should be atomic to prevent race conditions.
+      
+      3. **Validation**: Always validate state before and after updates.
+      
+      4. **Error Handling**: Implement proper error handling for all state operations.
+      
+      5. **Idempotency**: State update operations should be idempotent when possible.
+
+      ### Implementation Guidelines:
+
+      1. **State Retrieval**:
+         - Always check if the retrieved state exists
+         - Validate the structure of retrieved state
+         - Handle missing or invalid state gracefully
+      
+      2. **State Updates**:
+         - Use try/except blocks for all database operations
+         - Log all state changes
+         - Return success/failure status
+         - Include before/after values for debugging
+      
+      3. **Context Management**:
+         - Include state changes in the context for response generation
+         - Always update the database before updating the context
+         - Include both previous and new state values in the context
+
+      ### Example Implementation Pattern:
+
+      ```python
+      # State retrieval with validation
+      def get_device_state(customer_id, device_id):
+          try:
+              customer = get_customer(customer_id)
+              if not customer:
+                  logging.error(f"Customer {customer_id} not found")
+                  return None
+                  
+              devices = customer.get("devices", [])
+              device = next((d for d in devices if d.get("id") == device_id), None)
+              
+              if not device:
+                  logging.error(f"Device {device_id} not found for customer {customer_id}")
+                  return None
+                  
+              return device
+          except Exception as e:
+              logging.error(f"Error retrieving device state: {str(e)}")
+              return None
+      
+      # State update with error handling
+      def update_device_state(customer_id, device_id, updates):
+          try:
+              # Get current state
+              device = get_device_state(customer_id, device_id)
+              if not device:
+                  return False, "Device not found"
+              
+              # Store previous state for context
+              previous_state = copy.deepcopy(device)
+              
+              # Update state
+              for key, value in updates.items():
+                  device[key] = value
+              
+              # Persist to database
+              success = update_customer_device(customer_id, device_id, device)
+              
+              if success:
+                  return True, {
+                      "previous_state": previous_state,
+                      "new_state": device
+                  }
+              else:
+                  return False, "Failed to update device state"
+          except Exception as e:
+              logging.error(f"Error updating device state: {str(e)}")
+              return False, str(e)
+      ```
+
+examples:
+  - input: |
+      # Bad: State update without error handling
+      def update_device_volume(customer_id, device_id, volume):
+          customer = get_customer(customer_id)
+          devices = customer.get("devices", [])
+          device = next((d for d in devices if d.get("id") == device_id), None)
+          device["volume"] = volume
+          update_customer_device(customer_id, device_id, device)
+          return True
+    output: |
+      # Good: State update with error handling and validation
+      def update_device_volume(customer_id, device_id, volume):
+          try:
+              # Get current state
+              customer = get_customer(customer_id)
+              if not customer:
+                  logging.error(f"Customer {customer_id} not found")
+                  return False, "Customer not found"
+                  
+              devices = customer.get("devices", [])
+              device = next((d for d in devices if d.get("id") == device_id), None)
+              
+              if not device:
+                  logging.error(f"Device {device_id} not found for customer {customer_id}")
+                  return False, "Device not found"
+              
+              # Store previous state for context
+              previous_volume = device.get("volume", 0)
+              
+              # Update state
+              device["volume"] = volume
+              
+              # Persist to database
+              success = update_customer_device(customer_id, device_id, device)
+              
+              if success:
+                  return True, {
+                      "previous_volume": previous_volume,
+                      "new_volume": volume
+                  }
+              else:
+                  return False, "Failed to update device volume"
+          except Exception as e:
+              logging.error(f"Error updating device volume: {str(e)}")
+              return False, str(e)
+  
+  - input: |
+      # Bad: State retrieval without validation
+      def get_device_location(customer_id, device_id):
+          customer = get_customer(customer_id)
+          devices = customer.get("devices", [])
+          device = next((d for d in devices if d.get("id") == device_id), None)
+          return device.get("location")
+    output: |
+      # Good: State retrieval with validation
+      def get_device_location(customer_id, device_id):
+          try:
+              customer = get_customer(customer_id)
+              if not customer:
+                  logging.error(f"Customer {customer_id} not found")
+                  return None
+                  
+              devices = customer.get("devices", [])
+              if not devices:
+                  logging.error(f"No devices found for customer {customer_id}")
+                  return None
+                  
+              device = next((d for d in devices if d.get("id") == device_id), None)
+              if not device:
+                  logging.error(f"Device {device_id} not found for customer {customer_id}")
+                  return None
+                  
+              location = device.get("location")
+              if not location:
+                  logging.warning(f"Location not set for device {device_id}")
+                  
+              return location
+          except Exception as e:
+              logging.error(f"Error retrieving device location: {str(e)}")
+              return None
+  
+  - input: |
+      # Bad: Context update without database persistence
+      def execute_action(customer_id, request_type, user_input, context):
+          if request_type == "volume_change":
+              volume = extract_volume(user_input)
+              device_id = extract_device_id(user_input)
+              
+              # Update context without updating database
+              context["volume_changed"] = True
+              context["new_volume"] = volume
+              
+              return context
+    output: |
+      # Good: Database update before context update
+      def execute_action(customer_id, request_type, user_input, context):
+          if request_type == "volume_change":
+              volume = extract_volume(user_input)
+              device_id = extract_device_id(user_input)
+              
+              # Update database first
+              success, result = update_device_volume(customer_id, device_id, volume)
+              
+              # Then update context with result
+              context["volume_changed"] = success
+              if success:
+                  context["previous_volume"] = result["previous_volume"]
+                  context["new_volume"] = result["new_volume"]
+                  context["action_executed"] = True
+              else:
+                  context["error"] = result
+                  context["action_executed"] = False
+              
+              return context
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 

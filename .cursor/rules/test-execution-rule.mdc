@@ -1,0 +1,50 @@
+# Test Execution Rule
+
+This rule guides the AI to avoid unnecessary test execution when the user has already confirmed test success.
+
+<rule>
+name: test_execution_rule
+description: Avoid unnecessary test execution when user has confirmed test success
+filters:
+  - type: content
+    pattern: "test|unittest|pytest"
+
+actions:
+  - type: suggest
+    conditions:
+      - pattern: "run.*test"
+        message: "User has already confirmed test success, no need to run tests again"
+    message: |
+      ## Test Execution Guidelines
+
+      When the user has already confirmed that tests are running successfully, follow these guidelines:
+
+      1. **Trust User Confirmation**: If the user states that tests have succeeded, trust this information and don't run the tests again.
+      
+      2. **Focus on Next Steps**: Instead of re-running tests, focus on the next steps in the development process.
+      
+      3. **Ask for Clarification**: If you need more information about test results, ask specific questions rather than running tests.
+      
+      4. **Suggest Improvements**: Offer suggestions for improving tests or adding new test cases if relevant.
+      
+      5. **Document Test Coverage**: Help document what the tests are covering and any potential gaps.
+
+examples:
+  - input: |
+      User: "The tests are running fine now."
+      AI: "Let me run the tests to verify."
+    output: |
+      User: "The tests are running fine now."
+      AI: "Great! Since the tests are running successfully, let's move on to the next step. Would you like to implement additional features or improve the existing code?"
+
+  - input: |
+      User: "Those prompting tests appear to have succeeded."
+      AI: "Let me run the tests with verbose output to see the details."
+    output: |
+      User: "Those prompting tests appear to have succeeded."
+      AI: "That's excellent news! The successful tests confirm that our improvements to the system prompt and response generation are working as expected. Would you like to make any additional enhancements to the prompting system or shall we focus on another area of the application?"
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 

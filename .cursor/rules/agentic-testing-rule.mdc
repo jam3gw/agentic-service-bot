@@ -1,0 +1,309 @@
+# Agentic Testing Rule
+
+This rule enforces best practices for testing agentic capabilities in the smart bot, ensuring that all capabilities are thoroughly tested.
+
+<rule>
+name: agentic_testing
+description: Ensure comprehensive testing of agentic capabilities
+filters:
+  - type: file_extension
+    pattern: "\\.py$"
+  - type: file_path
+    pattern: "tests/"
+
+actions:
+  - type: suggest
+    conditions:
+      # If adding a test class without mocking dependencies
+      - pattern: "class\\s+Test[a-zA-Z]+\\([^)]*\\):[^\\n]*\\n(?:\\s+[^\\n]*\\n)*(?!\\s+@patch)"
+        message: "Test classes should mock external dependencies"
+      # If testing action execution without verifying database updates
+      - pattern: "def\\s+test_[a-zA-Z_]+\\([^)]*\\):[^\\n]*\\n(?:\\s+[^\\n]*\\n)*(?!.*assert.*update_)"
+        message: "Tests for actions should verify database updates"
+      # If testing response generation without verifying context usage
+      - pattern: "def\\s+test_[a-zA-Z_]+\\([^)]*\\):[^\\n]*\\n(?:\\s+[^\\n]*\\n)*(?!.*assert.*context)"
+        message: "Tests for response generation should verify context usage"
+    message: |
+      ## Agentic Testing Best Practices
+
+      When testing agentic capabilities in the smart bot, follow these guidelines to ensure comprehensive test coverage:
+
+      ### Core Principles:
+
+      1. **Complete Lifecycle Testing**: Test the entire lifecycle of each capability, from request identification to response generation.
+      
+      2. **Isolation**: Use mocks and patches to isolate the component being tested.
+      
+      3. **State Verification**: Verify that state changes are correctly persisted and retrieved.
+      
+      4. **Error Handling**: Test both success and failure scenarios.
+      
+      5. **Context Enrichment**: Verify that the context is properly enriched with action results.
+
+      ### Implementation Guidelines:
+
+      1. **Test Setup**:
+         - Mock external dependencies (DynamoDB, Anthropic API, etc.)
+         - Create test fixtures with realistic data
+         - Use `setUp` and `tearDown` methods for common setup and cleanup
+      
+      2. **Action Testing**:
+         - Verify that the correct database update functions are called with the right parameters
+         - Test that the context is properly updated with action results
+         - Test error handling and edge cases
+      
+      3. **Response Testing**:
+         - Verify that the system prompt includes action execution information
+         - Test that the response generation uses the context correctly
+         - Verify that the response reflects the action results
+
+      ### Example Implementation Pattern:
+
+      ```python
+      @patch('services.dynamodb_service.get_customer')
+      @patch('services.dynamodb_service.update_device_state')
+      @patch('services.anthropic_service.generate_response')
+      def test_volume_change(self, mock_generate_response, mock_update_device_state, mock_get_customer):
+          # Setup test data
+          customer = create_test_customer()
+          mock_get_customer.return_value = customer
+          mock_update_device_state.return_value = (True, {
+              "previous_volume": 50,
+              "new_volume": 70
+          })
+          
+          # Execute the action
+          result = process_request(
+              customer_id="test_customer",
+              user_input="Turn up the volume in the living room"
+          )
+          
+          # Verify database update
+          mock_update_device_state.assert_called_once()
+          args, kwargs = mock_update_device_state.call_args
+          self.assertEqual(args[0], "test_customer")
+          self.assertEqual(args[1], "living_room_speaker")
+          self.assertEqual(args[2], {"volume": 70})
+          
+          # Verify context enrichment
+          mock_generate_response.assert_called_once()
+          args, kwargs = mock_generate_response.call_args
+          context = kwargs.get('context', {})
+          self.assertTrue(context['action_executed'])
+          self.assertEqual(context['previous_volume'], 50)
+          self.assertEqual(context['new_volume'], 70)
+      ```
+
+examples:
+  - input: |
+      # Bad: Test without mocking dependencies
+      class TestVolumeControl(unittest.TestCase):
+          def test_decrease_volume(self):
+              # Direct call to actual services
+              result = process_request(
+                  customer_id="test_customer",
+                  user_input="Turn down the volume in the living room"
+              )
+              
+              self.assertIn("volume", result.lower())
+    output: |
+      # Good: Test with proper mocking and verification
+      @patch('services.dynamodb_service.get_customer')
+      @patch('services.dynamodb_service.get_service_level_permissions')
+      @patch('services.dynamodb_service.update_device_state')
+      @patch('services.anthropic_service.generate_response')
+      class TestVolumeControl(unittest.TestCase):
+          def setUp(self):
+              # Create test customer with devices
+              self.customer = {
+                  "id": "test_customer",
+                  "service_level": "premium",
+                  "devices": [
+                      {
+                          "id": "living_room_speaker",
+                          "type": "smart_speaker",
+                          "name": "Living Room Speaker",
+                          "location": "living room",
+                          "volume": 50
+                      }
+                  ]
+              }
+              
+              # Setup mock returns
+              self.mock_get_customer = self.patch_get_customer.start()
+              self.mock_get_customer.return_value = self.customer
+              
+              self.mock_get_permissions = self.patch_get_service_level_permissions.start()
+              self.mock_get_permissions.return_value = ["control_volume"]
+              
+              self.mock_update_device = self.patch_update_device_state.start()
+              self.mock_update_device.return_value = (True, {
+                  "previous_volume": 50,
+                  "new_volume": 30
+              })
+              
+              self.mock_generate_response = self.patch_generate_response.start()
+              self.mock_generate_response.return_value = "I've lowered the volume for you."
+          
+          def tearDown(self):
+              # Stop all patches
+              self.patch_get_customer.stop()
+              self.patch_get_service_level_permissions.stop()
+              self.patch_update_device_state.stop()
+              self.patch_generate_response.stop()
+          
+          def test_decrease_volume(self):
+              # Execute the action
+              result = process_request(
+                  customer_id="test_customer",
+                  user_input="Turn down the volume in the living room"
+              )
+              
+              # Verify database update
+              self.mock_update_device.assert_called_once()
+              args, kwargs = self.mock_update_device.call_args
+              self.assertEqual(args[0], "test_customer")
+              self.assertEqual(args[1], "living_room_speaker")
+              self.assertEqual(args[2], {"volume": 30})
+              
+              # Verify context enrichment
+              self.mock_generate_response.assert_called_once()
+              args, kwargs = self.mock_generate_response.call_args
+              context = kwargs.get('context', {})
+              self.assertTrue(context['action_executed'])
+              self.assertEqual(context['previous_volume'], 50)
+              self.assertEqual(context['new_volume'], 30)
+              
+              # Verify response
+              self.assertEqual(result, "I've lowered the volume for you.")
+  
+  - input: |
+      # Bad: Test without verifying database updates
+      @patch('services.anthropic_service.generate_response')
+      def test_relocate_device(self, mock_generate_response):
+          mock_generate_response.return_value = "I've moved the device for you."
+          
+          result = process_request(
+              customer_id="test_customer",
+              user_input="Move the speaker to the bedroom"
+          )
+          
+          self.assertEqual(result, "I've moved the device for you.")
+    output: |
+      # Good: Test with database update verification
+      @patch('services.dynamodb_service.get_customer')
+      @patch('services.dynamodb_service.get_service_level_permissions')
+      @patch('services.dynamodb_service.update_device_state')
+      @patch('services.anthropic_service.generate_response')
+      def test_relocate_device(self, mock_generate_response, mock_update_device_state, 
+                              mock_get_service_level_permissions, mock_get_customer):
+          # Setup test data
+          customer = {
+              "id": "test_customer",
+              "service_level": "premium",
+              "devices": [
+                  {
+                      "id": "living_room_speaker",
+                      "type": "smart_speaker",
+                      "name": "Living Room Speaker",
+                      "location": "living room"
+                  }
+              ]
+          }
+          mock_get_customer.return_value = customer
+          mock_get_service_level_permissions.return_value = ["relocate_device"]
+          mock_update_device_state.return_value = (True, {
+              "previous_location": "living room",
+              "new_location": "bedroom"
+          })
+          mock_generate_response.return_value = "I've moved the speaker to the bedroom for you."
+          
+          # Execute the action
+          result = process_request(
+              customer_id="test_customer",
+              user_input="Move the speaker to the bedroom"
+          )
+          
+          # Verify database update
+          mock_update_device_state.assert_called_once()
+          args, kwargs = mock_update_device_state.call_args
+          self.assertEqual(args[0], "test_customer")
+          self.assertEqual(args[1], "living_room_speaker")
+          self.assertEqual(args[2], {"location": "bedroom"})
+          
+          # Verify context enrichment
+          mock_generate_response.assert_called_once()
+          args, kwargs = mock_generate_response.call_args
+          context = kwargs.get('context', {})
+          self.assertTrue(context['action_executed'])
+          self.assertEqual(context['previous_location'], "living room")
+          self.assertEqual(context['new_location'], "bedroom")
+          
+          # Verify response
+          self.assertEqual(result, "I've moved the speaker to the bedroom for you.")
+  
+  - input: |
+      # Bad: Test without error handling
+      def test_volume_change_error(self):
+          result = process_request(
+              customer_id="nonexistent_customer",
+              user_input="Turn up the volume"
+          )
+          
+          self.assertIn("error", result.lower())
+    output: |
+      # Good: Test with proper error handling verification
+      @patch('services.dynamodb_service.get_customer')
+      @patch('services.anthropic_service.generate_response')
+      def test_volume_change_error(self, mock_generate_response, mock_get_customer):
+          # Setup test data - customer not found
+          mock_get_customer.return_value = None
+          mock_generate_response.return_value = "I'm sorry, I couldn't find your account. Please contact support."
+          
+          # Execute the action
+          result = process_request(
+              customer_id="nonexistent_customer",
+              user_input="Turn up the volume"
+          )
+          
+          # Verify error handling
+          mock_generate_response.assert_called_once()
+          args, kwargs = mock_generate_response.call_args
+          context = kwargs.get('context', {})
+          self.assertFalse(context.get('action_executed', False))
+          self.assertIn('error', context)
+          self.assertEqual(context['error'], "Customer not found")
+          
+          # Verify response
+          self.assertEqual(result, "I'm sorry, I couldn't find your account. Please contact support.")
+          
+          # Test another error case - permission denied
+          mock_get_customer.reset_mock()
+          mock_generate_response.reset_mock()
+          
+          # Setup test data - customer found but no permissions
+          mock_get_customer.return_value = {
+              "id": "test_customer",
+              "service_level": "basic"
+          }
+          mock_generate_response.return_value = "I'm sorry, your service level doesn't allow volume control."
+          
+          # Execute the action
+          result = process_request(
+              customer_id="test_customer",
+              user_input="Turn up the volume"
+          )
+          
+          # Verify error handling
+          mock_generate_response.assert_called_once()
+          args, kwargs = mock_generate_response.call_args
+          context = kwargs.get('context', {})
+          self.assertFalse(context.get('action_allowed', False))
+          
+          # Verify response
+          self.assertEqual(result, "I'm sorry, your service level doesn't allow volume control.")
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 

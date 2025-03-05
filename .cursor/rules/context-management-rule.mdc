@@ -1,0 +1,74 @@
+# Context Management Rule
+
+This rule provides guidelines for managing context to improve processing speeds and efficiency.
+
+<rule>
+name: context_management_rule
+description: Guidelines for managing context to improve processing speeds
+
+actions:
+  - type: suggest
+    message: |
+      ## Context Management Guidelines
+
+      When processing speeds are impacted, follow these guidelines to manage context efficiently:
+
+      1. **Focus on Current Task**: Limit context to information directly relevant to the current task.
+      
+      2. **Summarize Previous Information**: Instead of keeping all details from previous interactions, maintain concise summaries.
+      
+      3. **Clear Irrelevant Context**: Discard context that is no longer needed for the current task.
+      
+      4. **Chunk Large Operations**: Break down large operations into smaller, manageable chunks.
+      
+      5. **Prioritize Recent Information**: Give precedence to the most recent and relevant information.
+      
+      6. **Limit Tool Calls**: Make focused tool calls that retrieve only the necessary information.
+      
+      7. **Avoid Redundant Information**: Don't repeat information that's already been processed.
+      
+      8. **Use Efficient Search Patterns**: When searching codebases, use specific patterns rather than broad searches.
+      
+      9. **Maintain Testing Context**: When working with tests, always maintain context about:
+         - The components/handlers being tested
+         - The expected functionality of these components
+         - The structure and parameters of the components
+         - The relationships between different components
+      
+      10. **Preserve API Signatures**: When testing functions or classes, maintain context about:
+          - Required parameters and their types
+          - Return values and their types
+          - Error handling patterns
+          - Dependencies between components
+
+examples:
+  - input: |
+      User: "Can we clear some of the context? Is it impacting your processing speeds?"
+    output: |
+      I'll focus on managing context more efficiently. Let me summarize what we've learned so far and focus only on the current task:
+
+      Summary of previous work:
+      - We've improved the system prompt and response generation
+      - We've created example responses for different service levels
+      - We've successfully tested these improvements with unit tests
+
+      For our current task of integration testing, I'll make focused tool calls and only retrieve the essential information needed.
+  
+  - input: |
+      User: "Looks like we got an error in our tests. Maybe we should make sure that we also maintain context of lambda handlers and their functionalities?"
+    output: |
+      I see the error in our tests. You're right that we need to maintain better context about the components we're testing.
+
+      Let me check the Customer class structure to understand the correct initialization parameters:
+
+      Summary of what we know:
+      - We're testing the improved prompting system with different service levels
+      - The error indicates an issue with the Customer class initialization parameters
+      - We need to understand the correct structure of the Customer class before proceeding
+
+      I'll make a focused search to understand the Customer class structure and then fix our tests accordingly.
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 

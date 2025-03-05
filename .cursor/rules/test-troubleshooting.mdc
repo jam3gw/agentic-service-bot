@@ -1,0 +1,181 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Test Troubleshooting Rule
+
+This rule provides guidance for troubleshooting test failures, with a focus on examining test setup, test execution, and Lambda/CDK configuration.
+
+<rule>
+name: test_troubleshooting
+description: Comprehensive approach to troubleshooting test failures
+filters:
+  - type: file_extension
+    pattern: "\\.py$"
+  - type: content
+    pattern: "(?:import\\s+(?:unittest|pytest)|def\\s+test_)"
+
+actions:
+  - type: suggest
+    conditions:
+      # If test has "Customer not found" error
+      - pattern: "Customer\\s+not\\s+found"
+        message: "Verify that the customer exists in the database before using it in tests or create test customers during setup"
+      # If test has "not found" error
+      - pattern: "not\\s+found"
+        message: "Ensure test data exists before running tests that depend on it"
+      # If test is failing with import or undefined errors
+      - pattern: "(?:ImportError|NameError|name\\s+'[^']+'\\s+is\\s+not\\s+defined)"
+        message: "Check import statements and ensure all required functions are properly imported"
+      # If test is an E2E or integration test
+      - pattern: "(?:E2E|end.to.end|integration)"
+        message: "For E2E tests, ensure the stack is deployed with the latest code changes before running tests"
+    message: |
+      ## Comprehensive Test Troubleshooting
+
+      When tests fail, follow this systematic approach to identify and fix the issue:
+
+      ### 1. Test Setup Issues
+
+      - **Environment Variables**: Verify all required environment variables are set correctly
+      - **Test Data**: Ensure necessary test data exists in the database
+        - For customer-related tests, verify the customer exists or create it in the setup
+        - For DynamoDB tests, check that tables exist and have the expected schema
+      - **Mocks and Stubs**: Confirm mocks are correctly configured and return expected values
+      - **Dependencies**: Check that all required dependencies are installed and accessible
+      - **Permissions**: Verify the test has appropriate permissions to access resources
+      - **Network Configuration**: Ensure connectivity to required services
+
+      ### 2. Test Execution Problems
+
+      - **Test Logic**: Review the test logic for correctness
+      - **Assertions**: Ensure assertions match the actual implementation behavior
+      - **Timeouts**: Check if asynchronous operations need longer timeouts
+      - **Race Conditions**: Look for potential race conditions in concurrent operations
+      - **Resource Contention**: Verify tests aren't competing for the same resources
+      - **Error Handling**: Improve error handling to provide more diagnostic information
+      - **Import Errors**: Ensure all required functions and classes are properly imported
+
+      ### 3. Lambda and CDK Configuration Issues
+
+      - **IAM Roles/Policies**: Verify Lambda functions have the necessary permissions
+      - **Resource Configuration**: Check that resources are correctly configured
+      - **Environment Variables**: Ensure Lambda functions have the correct environment variables
+      - **Deployment Status**: Verify that the latest code is deployed to the Lambda function
+        - **For E2E and Integration Tests**: Always deploy the stack with the latest code changes before running tests
+        - For dev stack, use: `cd infrastructure && npx cdk deploy AgenticServiceBotDevApi AgenticServiceBotDevFrontend --require-approval never`
+        - Use `cd infrastructure && npm run deploy` for general deployment
+      - **Resource Limits**: Check for Lambda timeout or memory limitations
+      - **CDK Deployment Issues**: Review CDK deployment logs for errors
+      - **CloudFormation Stack Status**: Verify the CloudFormation stack is in a stable state
+
+      ### Diagnostic Approaches
+
+      - **Detailed Logging**: Add comprehensive logging to identify where failures occur
+      - **Tracing Tools**: Use AWS X-Ray or similar tools to trace request flows
+      - **CloudWatch Logs**: Examine Lambda function logs for errors
+      - **Component Isolation**: Test components in isolation to identify the failing part
+
+      ### Documentation
+
+      - **Document Root Causes**: Record the root cause of each test failure
+      - **Document Solutions**: Document how each issue was resolved
+      - **Update Test Documentation**: Update test documentation with new requirements or edge cases
+
+      ### Example Implementation
+
+      #### Before:
+      ```python
+      def test_service_level_permissions():
+          # This test might fail if the customer doesn't exist
+          response = process_request('customer-123', 'Move my speaker to the kitchen')
+          assert "not allowed with your service level" in response.lower()
+      ```
+
+      #### After:
+      ```python
+      def test_service_level_permissions():
+          # First verify or create the test customer
+          customer_id = 'customer-123'
+          service_level = 'basic'
+          
+          # Ensure test customer exists
+          customer = get_customer(customer_id)
+          if not customer:
+              # Create test customer if it doesn't exist
+              create_test_customer(customer_id, service_level)
+              logger.info(f"Created test customer {customer_id} with {service_level} service level")
+          
+          # Now run the test with confidence that the customer exists
+          response = process_request(customer_id, 'Move my speaker to the kitchen')
+          
+          # Use flexible phrase matching for more robust tests
+          restriction_phrases = [
+              "not allowed with your service level",
+              "not available with basic",
+              "not permitted with your current basic service plan",
+              "upgrade to premium"
+          ]
+          
+          assert any(phrase in response.lower() for phrase in restriction_phrases), \
+                 f"Response should indicate service level restriction, but got: {response}"
+      ```
+
+examples:
+  - input: |
+      # Failing test with "Customer not found" error
+      def test_premium_features():
+          response = process_request('premium-customer', 'Move my speaker to the kitchen')
+          assert "not allowed" not in response.lower()
+    output: |
+      # Fixed test with customer verification
+      def test_premium_features():
+          customer_id = 'premium-customer'
+          
+          # Ensure test customer exists
+          customer = get_customer(customer_id)
+          if not customer:
+              # Create test customer if it doesn't exist
+              create_test_customer(customer_id, 'premium')
+              logger.info(f"Created test premium customer {customer_id}")
+          
+          response = process_request(customer_id, 'Move my speaker to the kitchen')
+          assert "not allowed" not in response.lower()
+  
+  - input: |
+      # E2E test failing after code changes
+      def test_service_level_permissions_via_api():
+          response = requests.post(
+              f"{API_ENDPOINT}/chat",
+              json={'customerId': 'test-basic-customer', 'message': 'Move my speaker'}
+          )
+          assert "not allowed with basic service level" in response.json()['message'].lower()
+    output: |
+      # E2E test with proper documentation about deployment
+      def test_service_level_permissions_via_api():
+          """Test service level permissions through the API.
+          
+          Note: This is an E2E test that requires the latest code to be deployed.
+          Run 'cd infrastructure && npm run deploy' before running this test.
+          """
+          response = requests.post(
+              f"{API_ENDPOINT}/chat",
+              json={'customerId': 'test-basic-customer', 'message': 'Move my speaker'}
+          )
+          
+          # Use flexible phrase matching
+          restriction_phrases = [
+              "not allowed with basic service level",
+              "not available with basic",
+              "not permitted with your current basic service plan"
+          ]
+          
+          message = response.json()['message'].lower()
+          assert any(phrase in message for phrase in restriction_phrases), \
+                 f"Response should indicate service level restriction, but got: {message}"
+
+metadata:
+  priority: high
+  version: 1.1
+</rule>

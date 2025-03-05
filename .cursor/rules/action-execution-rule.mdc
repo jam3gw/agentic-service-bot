@@ -1,0 +1,159 @@
+# Action Execution Rule
+
+This rule enforces the principle that any action claimed in a response must be actually executed in the code.
+
+<rule>
+name: action_execution
+description: Ensure that actions claimed in responses are actually executed in the code
+filters:
+  - type: file_extension
+    pattern: "\\.py$"
+  - type: content
+    pattern: "(?:process_request|generate_response|execute_action)"
+
+actions:
+  - type: suggest
+    conditions:
+      # If generating a response without checking action execution status
+      - pattern: "generate_response\\s*\\([^)]*\\)(?!.*action_executed)"
+        message: "Ensure actions are executed before generating responses that claim to have performed them"
+      # If claiming to have performed an action in a response without executing it
+      - pattern: "(?:changed|updated|modified|set|adjusted).*(?:volume|location|state).*(?!action_executed)"
+        message: "Verify that the action has been executed before claiming it in a response"
+      # If not handling action execution errors
+      - pattern: "execute_action\\s*\\([^)]*\\)(?!.*error)"
+        message: "Handle potential errors in action execution and reflect them in responses"
+    message: |
+      ## Action Execution Best Practices
+
+      One of the most important principles for the Agentic Service Bot is that **we must actually execute the actions that we claim to perform in our responses**. This is critical for maintaining user trust and ensuring a consistent user experience.
+
+      ### Guidelines:
+
+      1. **Always Execute Before Responding**: Before generating a response that claims an action has been performed, ensure the action has actually been executed.
+      
+      2. **Verify Execution Success**: Check that the action execution was successful before confirming it in the response.
+      
+      3. **Reflect Execution Status**: If an action fails, the response should reflect that failure rather than falsely claiming success.
+      
+      4. **Maintain State Consistency**: Ensure that subsequent queries about state return the updated values.
+      
+      5. **Include Execution Results in Context**: Add execution results to the context passed to the LLM to ensure accurate responses.
+
+      ### Implementation Pattern:
+
+      ```python
+      # 1. Identify the request type
+      request_type = RequestAnalyzer.identify_request_type(user_input)
+      
+      # 2. Check if the action is allowed for this customer's service level
+      all_actions_allowed = all(is_action_allowed(customer, action) for action in required_actions)
+      
+      # 3. If allowed, execute the action
+      if all_actions_allowed:
+          context = execute_action(customer_id, request_type, user_input, context)
+          
+          # 4. Check if execution was successful
+          if context.get('action_executed'):
+              # 5. Generate response with execution results
+              return generate_response(user_input, context)
+          else:
+              # 6. Generate response indicating failure
+              context['error_response'] = True
+              return generate_response(user_input, context)
+      ```
+
+      ### Common Pitfalls:
+
+      1. **Claiming Success Without Verification**: Never claim an action was successful without verifying it.
+      
+      2. **Missing Error Handling**: Always handle potential errors in action execution.
+      
+      3. **Inconsistent State**: Ensure database state is updated to match what the response claims.
+      
+      4. **Incomplete Context**: Include all relevant execution details in the context for the LLM.
+
+examples:
+  - input: |
+      # Bad: Generating response without executing action
+      def process_request(customer_id, user_input):
+          request_type = RequestAnalyzer.identify_request_type(user_input)
+          if request_type == "volume_change":
+              return generate_response(f"I've changed the volume as requested.", context)
+    output: |
+      # Good: Executing action before generating response
+      def process_request(customer_id, user_input):
+          request_type = RequestAnalyzer.identify_request_type(user_input)
+          if request_type == "volume_change":
+              context = execute_action(customer_id, request_type, user_input, context)
+              if context.get('action_executed'):
+                  return generate_response(user_input, context)
+              else:
+                  context['error_response'] = True
+                  return generate_response(user_input, context)
+  
+  - input: |
+      # Bad: Not checking execution status
+      def execute_action(customer_id, request_type, user_input, context):
+          if request_type == "volume_change":
+              device_id = find_device_id(user_input, context)
+              new_volume = calculate_new_volume(user_input, context)
+              update_device_state(customer_id, device_id, {"volume": new_volume})
+              return context
+    output: |
+      # Good: Checking execution status and updating context
+      def execute_action(customer_id, request_type, user_input, context):
+          if request_type == "volume_change":
+              device_id = find_device_id(user_input, context)
+              if not device_id:
+                  context['error'] = "Could not identify device"
+                  return context
+                  
+              new_volume = calculate_new_volume(user_input, context)
+              update_success = update_device_state(customer_id, device_id, {"volume": new_volume})
+              
+              if update_success:
+                  context['volume_change'] = {
+                      'previous_volume': context['current_volume'],
+                      'new_volume': new_volume
+                  }
+                  context['action_executed'] = True
+              else:
+                  context['error'] = "Failed to update device state"
+              
+              return context
+  
+  - input: |
+      # Bad: Not including execution results in system prompt
+      def build_system_prompt(context):
+          prompt = "You are an AI assistant for a smart home device company."
+          if "customer" in context:
+              prompt += f"\nCustomer: {context['customer'].name}"
+          return prompt
+    output: |
+      # Good: Including execution results in system prompt
+      def build_system_prompt(context):
+          prompt = "You are an AI assistant for a smart home device company."
+          if "customer" in context:
+              prompt += f"\nCustomer: {context['customer'].name}"
+          
+          # Add information about executed actions
+          if "action_executed" in context and context["action_executed"]:
+              prompt += "\nACTION EXECUTION INFORMATION:\n"
+              
+              if "volume_change" in context:
+                  volume_info = context["volume_change"]
+                  prompt += f"- Volume change executed: Changed from {volume_info['previous_volume']}% to {volume_info['new_volume']}%\n"
+                  prompt += f"- Make sure to reference the new volume ({volume_info['new_volume']}%) in your response\n"
+          
+          # Add error information if action execution failed
+          elif "error" in context:
+              prompt += f"\nACTION EXECUTION ERROR:\n- {context['error']}\n"
+              prompt += "- Acknowledge the error in your response and suggest troubleshooting steps\n"
+              
+          return prompt
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 

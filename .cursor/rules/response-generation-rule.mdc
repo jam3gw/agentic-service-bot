@@ -1,0 +1,235 @@
+# Response Generation Rule
+
+This rule enforces best practices for response generation in the agentic bot, ensuring that responses accurately reflect the actions taken and state changes made.
+
+<rule>
+name: response_generation
+description: Ensure accurate and consistent response generation in the agentic bot
+filters:
+  - type: file_extension
+    pattern: "\\.py$"
+  - type: content
+    pattern: "(?:generate_response|build_system_prompt|anthropic)"
+
+actions:
+  - type: suggest
+    conditions:
+      # If generating response without checking action execution status
+      - pattern: "def\\s+generate_response[^{]*\\{[^}]*(?!.*action_executed)"
+        message: "Response generation should check action execution status"
+      # If building system prompt without including action results
+      - pattern: "def\\s+build_system_prompt[^{]*\\{[^}]*(?!.*ACTION EXECUTION)"
+        message: "System prompt should include action execution information"
+      # If claiming action success without verification
+      - pattern: "\"I've\\s+(?:changed|updated|modified|set)[^\"]*\""
+        message: "Responses should only claim action success if verified in context"
+    message: |
+      ## Response Generation Best Practices
+
+      When generating responses in the agentic bot, follow these guidelines to ensure accuracy and consistency:
+
+      ### Core Principles:
+
+      1. **Truth in Responses**: Responses must accurately reflect the actions taken and their results.
+      
+      2. **Context Awareness**: Responses should be generated based on the full context, including action execution status.
+      
+      3. **Error Transparency**: If an action fails, the response should clearly communicate this to the user.
+      
+      4. **State Reflection**: Responses should reflect the current state after any changes.
+      
+      5. **Consistency**: Responses should be consistent with the actual system state.
+
+      ### Implementation Guidelines:
+
+      1. **System Prompt Construction**:
+         - Include action execution information in the system prompt
+         - Provide both previous and new state values
+         - Include error information if action failed
+         - Give clear instructions to the LLM about how to reference state changes
+      
+      2. **Response Verification**:
+         - Check `action_executed` flag before claiming success
+         - Reference actual state values from the context
+         - Provide helpful error messages when actions fail
+         - Never claim to have performed an action that wasn't executed
+      
+      3. **Response Formatting**:
+         - Be specific about what changed (e.g., "I've changed the volume from 50% to 70%")
+         - Include the device name and location when relevant
+         - For errors, suggest troubleshooting steps when possible
+
+      ### Example Implementation Pattern:
+
+      ```python
+      # Building system prompt with action execution information
+      def build_system_prompt(context):
+          system_prompt = "You are a helpful assistant..."
+          
+          # Add action execution information if available
+          if "action_executed" in context:
+              system_prompt += "\n\nACTION EXECUTION INFORMATION:\n"
+              
+              if context["action_executed"]:
+                  # Include details about the successful action
+                  if "volume_changed" in context and context["volume_changed"]:
+                      system_prompt += f"- Successfully changed the volume of the {context['device_type']} "
+                      system_prompt += f"from {context['previous_volume']}% to {context['new_volume']}%.\n"
+                      system_prompt += "  Please reference this change in your response.\n"
+                  
+                  # Add other action types here...
+              else:
+                  # Include error information
+                  system_prompt += f"- Action execution failed: {context.get('error', 'Unknown error')}\n"
+                  system_prompt += "  Please acknowledge this error in your response and suggest troubleshooting steps.\n"
+          
+          return system_prompt
+      
+      # Generating response based on context
+      def generate_response(user_input, context):
+          # Build system prompt with context
+          system_prompt = build_system_prompt(context)
+          
+          # Generate response using LLM
+          response = call_llm(system_prompt, user_input)
+          
+          return response
+      ```
+
+examples:
+  - input: |
+      # Bad: System prompt without action execution information
+      def build_system_prompt(context):
+          system_prompt = "You are a helpful assistant that can control smart home devices."
+          system_prompt += "\n\nCUSTOMER INFORMATION:\n"
+          system_prompt += f"Customer ID: {context['customer']['id']}\n"
+          system_prompt += f"Service Level: {context['customer']['service_level']}\n"
+          
+          return system_prompt
+    output: |
+      # Good: System prompt with action execution information
+      def build_system_prompt(context):
+          system_prompt = "You are a helpful assistant that can control smart home devices."
+          system_prompt += "\n\nCUSTOMER INFORMATION:\n"
+          system_prompt += f"Customer ID: {context['customer']['id']}\n"
+          system_prompt += f"Service Level: {context['customer']['service_level']}\n"
+          
+          # Add action execution information if available
+          if "action_executed" in context:
+              system_prompt += "\n\nACTION EXECUTION INFORMATION:\n"
+              
+              if context["action_executed"]:
+                  # Include details about the successful action
+                  if "volume_changed" in context and context["volume_changed"]:
+                      system_prompt += f"- Successfully changed the volume of the {context.get('device_type', 'device')} "
+                      system_prompt += f"from {context['previous_volume']}% to {context['new_volume']}%.\n"
+                      system_prompt += "  Please reference this change in your response.\n"
+                  
+                  if "device_relocated" in context and context["device_relocated"]:
+                      system_prompt += f"- Successfully moved the {context.get('device_type', 'device')} "
+                      system_prompt += f"from {context['previous_location']} to {context['new_location']}.\n"
+                      system_prompt += "  Please reference this change in your response.\n"
+              else:
+                  # Include error information
+                  system_prompt += f"- Action execution failed: {context.get('error', 'Unknown error')}\n"
+                  system_prompt += "  Please acknowledge this error in your response and suggest troubleshooting steps.\n"
+          
+          return system_prompt
+  
+  - input: |
+      # Bad: Response claiming action success without verification
+      def process_request(customer_id, user_input):
+          request_type = identify_request_type(user_input)
+          context = {"customer_id": customer_id, "request_type": request_type}
+          
+          if request_type == "volume_change":
+              # No action execution or verification
+              return generate_response("I've changed the volume for you!", context)
+    output: |
+      # Good: Response based on verified action execution
+      def process_request(customer_id, user_input):
+          request_type = identify_request_type(user_input)
+          customer = get_customer(customer_id)
+          
+          context = {
+              "customer": customer,
+              "request_type": request_type
+          }
+          
+          if request_type == "volume_change":
+              # Check permissions
+              required_actions = get_required_actions(request_type)
+              all_actions_allowed = all(
+                  is_action_allowed(customer, action)
+                  for action in required_actions
+              )
+              
+              context["action_allowed"] = all_actions_allowed
+              
+              # Execute action if allowed
+              if all_actions_allowed:
+                  context = execute_action(customer_id, request_type, user_input, context)
+              
+              # Generate response based on context (which includes action execution status)
+              return generate_response(user_input, context)
+  
+  - input: |
+      # Bad: Error handling without informative response
+      def execute_action(customer_id, request_type, user_input, context):
+          if request_type == "volume_change":
+              try:
+                  volume = extract_volume(user_input)
+                  device_id = extract_device_id(user_input)
+                  update_device_volume(customer_id, device_id, volume)
+                  context["volume_changed"] = True
+              except Exception as e:
+                  logging.error(f"Error: {str(e)}")
+                  # No error information in context
+              
+              return context
+    output: |
+      # Good: Error handling with informative context for response
+      def execute_action(customer_id, request_type, user_input, context):
+          if request_type == "volume_change":
+              try:
+                  volume = extract_volume(user_input)
+                  device_id = extract_device_id(user_input)
+                  
+                  # Get device information for context
+                  device = get_device_state(customer_id, device_id)
+                  if device:
+                      context["device_type"] = device.get("type", "device")
+                      context["device_name"] = device.get("name", "device")
+                      context["device_location"] = device.get("location", "unknown location")
+                  
+                  # Update volume with proper error handling
+                  success, result = update_device_volume(customer_id, device_id, volume)
+                  
+                  # Update context with result for response generation
+                  context["action_executed"] = success
+                  context["volume_changed"] = success
+                  
+                  if success:
+                      context["previous_volume"] = result["previous_volume"]
+                      context["new_volume"] = result["new_volume"]
+                  else:
+                      context["error"] = result
+                      # Add troubleshooting information
+                      if "not found" in result:
+                          context["troubleshooting"] = "Please check if the device exists and is connected."
+                      elif "permission" in result.lower():
+                          context["troubleshooting"] = "You don't have permission to perform this action."
+                      else:
+                          context["troubleshooting"] = "Please try again later or contact support."
+              except Exception as e:
+                  logging.error(f"Error: {str(e)}")
+                  context["action_executed"] = False
+                  context["error"] = str(e)
+                  context["troubleshooting"] = "An unexpected error occurred. Please try again later."
+              
+              return context
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 

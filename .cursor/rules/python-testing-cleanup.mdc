@@ -1,0 +1,188 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Python Testing Cleanup Best Practices
+
+This rule enforces best practices for maintaining a clean and valuable test suite by removing tests that no longer provide business value or are causing issues.
+
+<rule>
+name: python_testing_cleanup
+description: Enforce best practices for cleaning up Python tests that no longer provide value
+filters:
+  - type: file_extension
+    pattern: "\\.py$"
+  - type: content
+    pattern: "(?:import\\s+(?:unittest|pytest)|def\\s+test_)"
+
+actions:
+  - type: suggest
+    conditions:
+      # If test is using real external services without proper mocking
+      - pattern: "(?:boto3|dynamodb|s3|lambda|requests\\.get).*?(?:without|missing).*?mock"
+        message: "Remove or properly mock tests that depend on external services"
+      # If test has commented out assertions
+      - pattern: "#\\s*assert"
+        message: "Remove commented out assertions or fix the test"
+      # If test is marked as skipped or with TODO comments
+      - pattern: "(?:@unittest\\.skip|@pytest\\.mark\\.skip|# TODO|FIXME)"
+        message: "Either fix skipped tests or remove them if they're not providing value"
+      # If test has hardcoded credentials or endpoints
+      - pattern: "(?:api_key|password|secret|token)\\s*=\\s*['\"][^'\"]+['\"]"
+        message: "Remove tests with hardcoded credentials or use environment variables"
+      # If test is causing DynamoDB resource not found errors
+      - pattern: "dynamodb.*?resource.*?not.*?found"
+        message: "Fix or remove tests causing DynamoDB resource not found errors"
+    message: |
+      ## Python Testing Cleanup Best Practices
+
+      Follow these guidelines for maintaining a clean and valuable test suite:
+
+      1. **Remove Tests That Don't Provide Business Value**
+         - Tests that verify implementation details rather than business functionality
+         - Tests that duplicate coverage without adding value
+         - Tests that are consistently failing without providing useful feedback
+         - Tests that rely heavily on mocks instead of testing real functionality
+      
+      2. **Fix or Remove Problematic Tests**
+         - Tests that depend on external services without proper mocking
+         - Tests with hardcoded credentials or endpoints
+         - Tests that are causing resource not found errors
+         - Tests that are skipped or marked with TODO comments
+      
+      3. **Prioritize Test Quality Over Quantity**
+         - A few well-designed tests are better than many poorly designed ones
+         - Focus on tests that verify critical business logic
+         - Ensure tests are reliable and don't produce false positives/negatives
+         - Prefer tests that interact with real APIs over excessive mocking
+      
+      4. **Regularly Review and Clean Up Test Suite**
+         - Remove obsolete tests when requirements change
+         - Update tests when APIs or interfaces change
+         - Consolidate similar tests to reduce maintenance burden
+         - Replace mock-heavy tests with real API integration tests
+      
+      5. **Document Test Removal Decisions**
+         - When removing tests, document why they were removed
+         - Consider adding comments explaining the decision
+         - Use commit messages to explain test cleanup rationale
+      
+      6. **Prefer Real API Testing Over Mocks**
+         - Use real API calls for integration tests whenever possible
+         - Only mock external dependencies when absolutely necessary
+         - Test through the same interfaces that users will interact with
+         - Verify actual business functionality rather than implementation details
+         - Use environment-specific configurations for different test environments
+
+      ### Example of Test Cleanup:
+      ```python
+      # Before cleanup:
+      
+      @unittest.skip("API endpoint no longer exists")
+      def test_legacy_api_endpoint(self):
+          """Test the legacy API endpoint."""
+          response = requests.get("https://api.example.com/v1/legacy")
+          self.assertEqual(response.status_code, 200)
+      
+      def test_dynamodb_integration(self):
+          """Test DynamoDB integration without mocking."""
+          dynamodb = boto3.resource('dynamodb')
+          table = dynamodb.Table('non-existent-table')
+          response = table.get_item(Key={'id': 'test-id'})
+          self.assertIn('Item', response)
+      
+      # After cleanup:
+      # Legacy API test removed as the endpoint no longer exists
+      # DynamoDB test replaced with properly mocked version:
+      
+      @patch('boto3.resource')
+      def test_dynamodb_integration(self, mock_boto3_resource):
+          """Test DynamoDB integration with proper mocking.
+          
+          This test verifies our data retrieval logic works correctly,
+          which is critical for customer data management.
+          """
+          # Arrange
+          mock_table = MagicMock()
+          mock_table.get_item.return_value = {
+              'Item': {'id': 'test-id', 'name': 'Test Item'}
+          }
+          mock_boto3_resource.return_value.Table.return_value = mock_table
+          
+          # Act
+          result = get_item_from_dynamodb('test-id')
+          
+          # Assert
+          self.assertEqual(result['name'], 'Test Item')
+          mock_table.get_item.assert_called_once_with(Key={'id': 'test-id'})
+      ```
+
+examples:
+  - input: |
+      # Problematic test with external dependency
+      def test_s3_upload():
+          """Test uploading a file to S3."""
+          s3 = boto3.client('s3')
+          with open('test_file.txt', 'w') as f:
+              f.write('test content')
+          s3.upload_file('test_file.txt', 'my-bucket', 'test_file.txt')
+          response = s3.get_object(Bucket='my-bucket', Key='test_file.txt')
+          self.assertEqual(response['Body'].read().decode(), 'test content')
+    output: |
+      # Properly mocked S3 test
+      @patch('boto3.client')
+      def test_s3_upload(self, mock_boto3_client):
+          """Test uploading a file to S3.
+          
+          This test verifies our file upload functionality works correctly,
+          which is critical for document storage features.
+          """
+          # Arrange
+          mock_s3 = MagicMock()
+          mock_boto3_client.return_value = mock_s3
+          mock_s3.get_object.return_value = {
+              'Body': io.BytesIO(b'test content')
+          }
+          
+          # Act
+          result = upload_file_to_s3('test content', 'test_file.txt')
+          
+          # Assert
+          self.assertTrue(result)
+          mock_s3.upload_file.assert_called_once()
+  
+  - input: |
+      # Skipped test that's no longer relevant
+      @unittest.skip("This feature was deprecated")
+      def test_deprecated_feature(self):
+          """Test the deprecated feature."""
+          result = use_deprecated_feature()
+          self.assertTrue(result)
+          
+      # TODO: Fix this test once the API is stable
+      def test_unstable_api(self):
+          """Test the unstable API."""
+          response = requests.get("https://api.example.com/unstable")
+          self.assertEqual(response.status_code, 200)
+    output: |
+      # Remove both tests and replace with a test for the new feature
+      def test_new_feature(self):
+          """Test the new feature that replaced the deprecated one.
+          
+          This test verifies our new implementation works correctly,
+          which is critical for maintaining core functionality.
+          """
+          # Arrange
+          expected_result = {"status": "success"}
+          
+          # Act
+          result = use_new_feature()
+          
+          # Assert
+          self.assertEqual(result, expected_result)
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 

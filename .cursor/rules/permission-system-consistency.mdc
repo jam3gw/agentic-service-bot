@@ -1,0 +1,375 @@
+# Permission System Consistency
+
+This rule enforces best practices for maintaining consistency in permission systems and service-level aware features, based on lessons learned from the service level simplification process.
+
+<rule>
+name: permission_system_consistency
+description: Enforce consistency in permission systems and service-level aware features
+filters:
+  - type: file_extension
+    pattern: "\\.(py|json|md|ts|js)$"
+  - type: content
+    pattern: "(?:permission|service_level|allowed_actions|can_perform)"
+
+actions:
+  - type: suggest
+    conditions:
+      # If adding new permissions without updating all relevant files
+      - pattern: "allowed_actions.*?\\[[^\\]]*?['\"]([a-zA-Z_]+)['\"]"
+        message: "Ensure this permission is consistently defined across all relevant files"
+      # If checking for permissions without proper error handling
+      - pattern: "is_action_allowed\\(.*?\\)\\s*(?!.*?if)"
+        message: "Always handle the case where an action is not allowed"
+      # If hardcoding service level names
+      - pattern: "['\"](basic|premium|enterprise)['\"]"
+        message: "Use constants for service level names to ensure consistency"
+      # If implementing a feature without service level check
+      - pattern: "def\\s+[a-zA-Z0-9_]+\\s*\\([^)]*customer[^)]*\\)\\s*(?:->\\s*[^:]+)?\\s*:\\s*(?!\\s*[\"'])\\s*\\S+"
+        message: "Check service level permissions before performing actions"
+      # If handling a request without permission validation
+      - pattern: "def\\s+process_[a-zA-Z0-9_]+\\s*\\([^)]*\\)\\s*(?:->\\s*[^:]+)?\\s*:\\s*(?!\\s*[\"'])\\s*\\S+"
+        message: "Validate customer permissions before processing requests"
+    message: |
+      ## Permission System Consistency Best Practices
+
+      Based on our experience with the service level simplification process, follow these guidelines for permission systems:
+
+      1. **Maintain Consistency Across All Components**
+         - Ensure permissions are consistently defined in:
+           - Documentation (e.g., service-levels.md)
+           - Data models (e.g., data-model.md)
+           - Sample data (e.g., sample_data.json, customers.json)
+           - Test fixtures and assertions
+           - Seed data for development and testing
+         - Any inconsistency can lead to confusing behavior where permissions work in one context but fail in another
+
+      2. **Use Clear Permission Naming**
+         - Permission names should clearly indicate the action being permitted
+         - Use consistent naming conventions (e.g., snake_case for all permissions)
+         - Document the purpose and scope of each permission
+
+      3. **Implement Proper Permission Checking**
+         - Always check permissions before performing restricted actions
+         - Provide clear error messages when permissions are denied
+         - Include upgrade paths in permission denial messages
+         - Log permission denials for auditing and analytics
+
+      4. **Test Permission Boundaries Thoroughly**
+         - Test both positive cases (allowed actions) and negative cases (denied actions)
+         - Test permission checks at all system boundaries (API, WebSocket, business logic)
+         - Include permission tests in integration and end-to-end tests
+         - Verify that permission changes take effect immediately
+
+      5. **Document Service Level Differences**
+         - Clearly document what actions are allowed at each service level
+         - Include examples of what users can and cannot do at each level
+         - Keep documentation in sync with implementation
+
+      6. **Simplify When Possible**
+         - Minimize the number of distinct permissions
+         - Group related permissions when appropriate
+         - Create clear boundaries between service tiers
+
+      7. **Use Constants for Service Levels**
+         - Define service level names as constants to prevent typos
+         - Use enums or similar constructs for type safety when available
+
+      8. **Centralize Permission Definitions**
+         - Define permissions in a single source of truth
+         - Reference this source in all permission checks
+         - Update all references when permissions change
+
+      9. **Handle Permission Changes Gracefully**
+         - Consider how permission changes affect existing users
+         - Provide migration paths for users affected by permission changes
+         - Communicate permission changes clearly to users
+
+      10. **Monitor Permission Usage**
+          - Track which permissions are used and by whom
+          - Use this data to inform future permission changes
+          - Identify permissions that could be consolidated or removed
+
+      11. **Graceful Denial**
+          - Provide helpful, informative messages when denying access to features
+          - Explain why the action is not allowed
+          - Suggest alternatives when available
+
+      12. **Feature Discovery**
+          - Only show or suggest features that are available to the customer's service level
+          - Avoid promoting features that the customer cannot access
+          - Clearly indicate which features require an upgrade
+
+      13. **Upsell Opportunities**
+          - When denying access, suggest upgrading when appropriate
+          - Provide clear information about the benefits of upgrading
+          - Make the upgrade path obvious and easy to follow
+
+      14. **Permission Caching**
+          - Cache permission results when appropriate for performance
+          - Invalidate caches when permissions change
+          - Document caching behavior
+
+      15. **Feature Flags**
+          - Use feature flags to gradually roll out new features by service level
+          - Test new features with a subset of users before full release
+          - Document feature flag behavior
+
+      ### Example of Consistent Permission Implementation:
+      ```python
+      # In constants.py
+      SERVICE_LEVELS = {
+          'BASIC': 'basic',
+          'PREMIUM': 'premium',
+          'ENTERPRISE': 'enterprise'
+      }
+
+      PERMISSIONS = {
+          'DEVICE_POWER': 'device_power',
+          'VOLUME_CONTROL': 'volume_control',
+          'SONG_CHANGES': 'song_changes'
+      }
+
+      SERVICE_LEVEL_PERMISSIONS = {
+          SERVICE_LEVELS['BASIC']: [
+              PERMISSIONS['DEVICE_POWER']
+          ],
+          SERVICE_LEVELS['PREMIUM']: [
+              PERMISSIONS['DEVICE_POWER'],
+              PERMISSIONS['VOLUME_CONTROL']
+          ],
+          SERVICE_LEVELS['ENTERPRISE']: [
+              PERMISSIONS['DEVICE_POWER'],
+              PERMISSIONS['VOLUME_CONTROL'],
+              PERMISSIONS['SONG_CHANGES']
+          ]
+      }
+
+      # In permission_service.py
+      def is_action_allowed(customer, action):
+          """Check if a customer is allowed to perform an action.
+          
+          Args:
+              customer: The customer object
+              action: The action to check
+              
+          Returns:
+              bool: True if the action is allowed, False otherwise
+          """
+          if not customer or not action:
+              return False
+              
+          service_level = customer.get('service_level', SERVICE_LEVELS['BASIC'])
+          allowed_actions = SERVICE_LEVEL_PERMISSIONS.get(service_level, [])
+          
+          return action in allowed_actions
+          
+      def handle_restricted_action(customer, action, request_context=None):
+          """Handle a request for a potentially restricted action.
+          
+          Args:
+              customer: The customer object
+              action: The action requested
+              request_context: Additional context about the request
+              
+          Returns:
+              dict: Response with success status and appropriate message
+          """
+          if is_action_allowed(customer, action):
+              # Perform the action
+              result = perform_action(action, customer, request_context)
+              return {
+                  'success': True,
+                  'message': f"Action {action} performed successfully",
+                  'result': result
+              }
+          else:
+              # Action not allowed - provide upgrade information
+              service_level = customer.get('service_level', SERVICE_LEVELS['BASIC'])
+              required_level = get_required_level_for_action(action)
+              
+              # Log the permission denial
+              logger.info(f"Permission denied: Customer {customer['id']} with {service_level} level attempted {action}")
+              
+              return {
+                  'success': False,
+                  'message': f"Your current {service_level} service level doesn't allow {action}. Please upgrade to {required_level} or higher.",
+                  'required_level': required_level,
+                  'upgrade_url': f"/upgrade?current={service_level}&required={required_level}"
+              }
+      ```
+
+      ### Example of Service Level-Aware Feature Implementation:
+      ```python
+      def process_request(customer_id, request_text):
+          """Process a customer request with service level awareness.
+          
+          Args:
+              customer_id: Unique identifier for the customer
+              request_text: The text of the customer's request
+              
+          Returns:
+              Response text appropriate for the customer's service level
+          """
+          try:
+              # Get customer data
+              customer = get_customer(customer_id)
+              
+              # Analyze the request to determine required action
+              analyzer = RequestAnalyzer()
+              request_type = analyzer.get_request_type(request_text)
+              
+              # Map request type to permission
+              if request_type == "volume_control":
+                  action = PERMISSIONS['VOLUME_CONTROL']
+              elif request_type == "song_changes":
+                  action = PERMISSIONS['SONG_CHANGES']
+              elif request_type == "device_power":
+                  action = PERMISSIONS['DEVICE_POWER']
+              else:
+                  return {"success": False, "message": "Unknown request type"}
+              
+              # Check if the action is allowed for this service level
+              return handle_restricted_action(customer, action, request_text)
+              
+          except Exception as e:
+              logger.error(f"Error processing request: {str(e)}")
+              return {
+                  "success": False,
+                  "message": "Sorry, an error occurred while processing your request."
+              }
+      ```
+
+examples:
+  - input: |
+      # Bad: Inconsistent permission checking
+      def process_request(customer_id, message):
+          customer = get_customer(customer_id)
+          request_type = analyze_request(message)
+          
+          if request_type == "volume_control":
+              # No permission check!
+              return adjust_volume(customer, message)
+          elif request_type == "multi_room_audio":
+              # Inconsistent permission checking
+              if customer["service_level"] == "enterprise":
+                  return setup_multi_room_audio(customer, message)
+              else:
+                  return "Sorry, you need to upgrade to use this feature."
+    output: |
+      # Good: Consistent permission checking
+      from constants import PERMISSIONS, SERVICE_LEVELS
+      
+      def process_request(customer_id, message):
+          """Process a customer request with consistent permission checking.
+          
+          Args:
+              customer_id: The ID of the customer
+              message: The request message
+              
+          Returns:
+              dict: Response with success status and appropriate message
+          """
+          customer = get_customer(customer_id)
+          request_type = analyze_request(message)
+          
+          # Map request type to permission
+          if request_type == "volume_control":
+              action = PERMISSIONS['VOLUME_CONTROL']
+          elif request_type == "multi_room_audio":
+              action = PERMISSIONS['MULTI_ROOM_AUDIO']
+          elif request_type == "device_power":
+              action = PERMISSIONS['DEVICE_POWER']
+          else:
+              return {"success": False, "message": "Unknown request type"}
+          
+          # Consistent permission checking for all actions
+          return handle_restricted_action(customer, action, message)
+  
+  - input: |
+      # Bad: Hardcoded service levels and permissions
+      def test_service_level_permissions():
+          basic_customer = Customer("cust_001", "Jane", "basic", [])
+          premium_customer = Customer("cust_002", "John", "premium", [])
+          
+          # Hardcoded permission checks
+          assert not is_action_allowed(basic_customer, "volume_control")
+          assert is_action_allowed(premium_customer, "volume_control")
+    output: |
+      # Good: Using constants for service levels and permissions
+      from constants import SERVICE_LEVELS, PERMISSIONS
+      
+      def test_service_level_permissions():
+          """Test service level permission enforcement."""
+          basic_customer = Customer("cust_001", "Jane", SERVICE_LEVELS['BASIC'], [])
+          premium_customer = Customer("cust_002", "John", SERVICE_LEVELS['PREMIUM'], [])
+          
+          # Permission checks using constants
+          assert is_action_allowed(basic_customer, PERMISSIONS['DEVICE_POWER'])
+          assert not is_action_allowed(basic_customer, PERMISSIONS['VOLUME_CONTROL'])
+          assert is_action_allowed(premium_customer, PERMISSIONS['DEVICE_POWER'])
+          assert is_action_allowed(premium_customer, PERMISSIONS['VOLUME_CONTROL'])
+  
+  - input: |
+      # Bad: No service level checking
+      def setup_multi_room_audio(customer, device_groups):
+          """Set up multi-room audio without checking permissions."""
+          # Directly implement feature without checking if allowed
+          for device in customer.devices:
+              if device.location in device_groups:
+                  device.sync_audio = True
+          
+          return "Multi-room audio has been set up."
+    output: |
+      # Good: Service level-aware implementation
+      from constants import PERMISSIONS, SERVICE_LEVELS
+      
+      def setup_multi_room_audio(customer, device_groups):
+          """Set up multi-room audio with service level awareness.
+          
+          Args:
+              customer: The customer object
+              device_groups: Groups of devices for multi-room audio
+              
+          Returns:
+              dict: Response with success status and appropriate message
+          """
+          # Check if the action is allowed for this service level
+          if not is_action_allowed(customer, PERMISSIONS['MULTI_ROOM_AUDIO']):
+              logger.info(f"Customer {customer.id} attempted disallowed action: {PERMISSIONS['MULTI_ROOM_AUDIO']}")
+              
+              # Get the required service level for this action
+              required_level = get_required_level_for_action(PERMISSIONS['MULTI_ROOM_AUDIO'])
+              
+              # Provide helpful message with upgrade information
+              return {
+                  "success": False,
+                  "message": f"Your current {customer.service_level} service level doesn't allow multi-room audio. Please upgrade to {required_level} or higher.",
+                  "required_level": required_level,
+                  "upgrade_url": f"/upgrade?current={customer.service_level}&required={required_level}"
+              }
+          
+          # Action is allowed, proceed with implementation
+          try:
+              for device in customer.devices:
+                  if device.location in device_groups:
+                      device.sync_audio = True
+              
+              # Log successful action
+              logger.info(f"Multi-room audio set up for customer {customer.id} in groups: {device_groups}")
+              
+              return {
+                  "success": True,
+                  "message": "Multi-room audio has been set up for your devices."
+              }
+              
+          except Exception as e:
+              logger.error(f"Error setting up multi-room audio: {str(e)}")
+              return {
+                  "success": False,
+                  "message": "Sorry, an error occurred while setting up multi-room audio."
+              }
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 

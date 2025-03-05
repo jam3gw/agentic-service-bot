@@ -1,0 +1,292 @@
+# Permission Checking Implementation
+
+This rule enforces best practices for implementing permission checks throughout the codebase.
+
+<rule>
+name: permission_checking_implementation
+description: Enforce best practices for implementing permission checks
+filters:
+  - type: file_extension
+    pattern: "\\.(py|ts|js)$"
+  - type: content
+    pattern: "(?:is_action_allowed|check_permission|has_permission|allowed_actions)"
+
+actions:
+  - type: suggest
+    conditions:
+      # Check for missing permission checks before actions
+      - pattern: "def (process|handle|execute)_([a-zA-Z_]+).*?(?!is_action_allowed|check_permission|has_permission)"
+        message: "Ensure permission is checked before performing this action"
+      # Check for proper error handling in permission checks
+      - pattern: "if not (is_action_allowed|check_permission|has_permission).*?:\\s*return"
+        message: "Consider providing a helpful error message when permission is denied"
+      # Check for hardcoded permission checks
+      - pattern: "if customer\\.(service_level|tier|plan) (==|>=) ['\"]"
+        message: "Use the permission checking system instead of hardcoded service level checks"
+      # Check for permission caching
+      - pattern: "(is_action_allowed|check_permission|has_permission).*?\\(.*?\\).*?\\1.*?\\("
+        message: "Consider caching permission check results for better performance"
+      # Check for logging permission denials
+      - pattern: "if not (is_action_allowed|check_permission|has_permission).*?:\\s*(?!.*?log)"
+        message: "Consider logging permission denials for monitoring and debugging"
+    message: |
+      ## Permission Checking Implementation Best Practices
+
+      Based on our experience with the service level simplification process, follow these guidelines for implementing permission checks:
+
+      1. **Implement Consistent Permission Checking**
+         - Use a single, consistent method for checking permissions (e.g., `is_action_allowed(customer, action)`)
+         - Implement this method in a central location and import it where needed
+         - Ensure all permission checks use the same parameters and return values
+
+      2. **Optimize Permission Checking Performance**
+         - Cache permission check results when appropriate
+         - Avoid redundant permission checks for the same action
+         - Consider batch permission checks for multiple actions
+
+      3. **Implement Proper Error Handling**
+         - Return clear, helpful error messages when permission is denied
+         - Include information about how to upgrade to gain access to the feature
+         - Use consistent error codes and formats
+
+      4. **Log Permission Denials**
+         - Log all permission denials for monitoring and debugging
+         - Include relevant context (customer ID, action, service level)
+         - Consider different log levels based on the importance of the action
+
+      5. **Implement Permission Hierarchies**
+         - Consider implementing permission hierarchies where appropriate
+         - Higher service levels should include all permissions from lower levels
+         - Document the hierarchy clearly
+
+      6. **Test Permission Boundaries**
+         - Write tests that verify permissions at each service level
+         - Test both allowed and denied actions
+         - Test edge cases and boundary conditions
+
+      7. **Implement Permission Caching**
+         - Cache permission check results when appropriate
+         - Invalidate cache when service level changes
+         - Consider time-based cache expiration
+
+      8. **Handle Permission Changes**
+         - Implement a system for handling permission changes
+         - Consider how to handle customers who lose access to features
+         - Document the process for changing permissions
+
+      9. **Implement Feature Discovery**
+         - Provide a way for customers to discover available features
+         - Show features that are available at higher service levels
+         - Make it easy to upgrade to gain access to more features
+
+      10. **Monitor Permission Usage**
+          - Track which permissions are used and by whom
+          - Use this data to inform service level changes
+          - Monitor for unusual permission patterns that might indicate security issues
+
+      ### Example Implementation:
+
+      ```python
+      from constants import SERVICE_LEVELS, PERMISSIONS, SERVICE_LEVEL_PERMISSIONS
+      import logging
+
+      # Cache for permission check results
+      _permission_cache = {}
+
+      def is_action_allowed(customer, action, use_cache=True):
+          """Check if a customer is allowed to perform an action.
+          
+          Args:
+              customer: The customer object
+              action: The action to check
+              use_cache: Whether to use the permission cache
+              
+          Returns:
+              bool: True if the action is allowed, False otherwise
+          """
+          # Generate cache key
+          cache_key = f"{customer.id}:{action}"
+          
+          # Check cache if enabled
+          if use_cache and cache_key in _permission_cache:
+              return _permission_cache[cache_key]
+          
+          # Get customer's service level
+          service_level = customer.get('service_level', SERVICE_LEVELS['BASIC'])
+          
+          # Get allowed actions for this service level
+          allowed_actions = SERVICE_LEVEL_PERMISSIONS.get(service_level, [])
+          
+          # Check if action is allowed
+          is_allowed = action in allowed_actions
+          
+          # Cache result if enabled
+          if use_cache:
+              _permission_cache[cache_key] = is_allowed
+              
+          # Log permission denial
+          if not is_allowed:
+              logging.info(f"Permission denied: Customer {customer.id} attempted {action} with service level {service_level}")
+              
+          return is_allowed
+
+      def invalidate_permission_cache(customer_id=None):
+          """Invalidate the permission cache.
+          
+          Args:
+              customer_id: If provided, only invalidate cache for this customer
+          """
+          global _permission_cache
+          
+          if customer_id:
+              # Remove all entries for this customer
+              _permission_cache = {k: v for k, v in _permission_cache.items() if not k.startswith(f"{customer_id}:")}
+          else:
+              # Clear entire cache
+              _permission_cache = {}
+              
+      def process_request(customer, request_type, request_data):
+          """Process a customer request.
+          
+          Args:
+              customer: The customer object
+              request_type: The type of request
+              request_data: The request data
+              
+          Returns:
+              dict: The response
+          """
+          # Map request type to required permission
+          permission_map = {
+              'power': PERMISSIONS['DEVICE_POWER'],
+              'volume': PERMISSIONS['VOLUME_CONTROL'],
+              'music': PERMISSIONS['SONG_CHANGES']
+          }
+          
+          required_permission = permission_map.get(request_type)
+          
+          if not required_permission:
+              return {
+                  'success': False,
+                  'error': 'Invalid request type'
+              }
+              
+          # Check permission
+          if not is_action_allowed(customer, required_permission):
+              # Get the required service level for this permission
+              from constants import REQUIRED_SERVICE_LEVEL
+              required_level = REQUIRED_SERVICE_LEVEL.get(required_permission, SERVICE_LEVELS['ENTERPRISE'])
+              
+              return {
+                  'success': False,
+                  'error': f'Permission denied: {required_permission}',
+                  'upgrade_info': f'Upgrade to {required_level} to access this feature'
+              }
+              
+          # Process the request
+          # ...
+          
+          return {
+              'success': True,
+              'data': {}
+          }
+      ```
+
+examples:
+  - input: |
+      # Bad: Inconsistent permission checking
+      def process_power_request(customer, data):
+          if customer.service_level == 'basic' or customer.service_level == 'premium' or customer.service_level == 'enterprise':
+              # Process power request
+              return {'success': True}
+          else:
+              return {'success': False}
+              
+      def process_volume_request(customer, data):
+          if customer.service_level in ['premium', 'enterprise']:
+              # Process volume request
+              return {'success': True}
+          else:
+              return {'success': False}
+    output: |
+      # Good: Consistent permission checking
+      from constants import PERMISSIONS
+      from permissions import is_action_allowed
+      
+      def process_power_request(customer, data):
+          if is_action_allowed(customer, PERMISSIONS['DEVICE_POWER']):
+              # Process power request
+              return {'success': True}
+          else:
+              return {
+                  'success': False,
+                  'error': 'Permission denied: device_power',
+                  'upgrade_info': 'This feature requires Basic service level or higher'
+              }
+              
+      def process_volume_request(customer, data):
+          if is_action_allowed(customer, PERMISSIONS['VOLUME_CONTROL']):
+              # Process volume request
+              return {'success': True}
+          else:
+              return {
+                  'success': False,
+                  'error': 'Permission denied: volume_control',
+                  'upgrade_info': 'This feature requires Premium service level or higher'
+              }
+  
+  - input: |
+      # Bad: Redundant permission checks
+      def process_request(customer, request_type, data):
+          if request_type == 'power':
+              if is_action_allowed(customer, 'device_power'):
+                  # Process power request
+                  result = do_power_action(data)
+                  if result and is_action_allowed(customer, 'device_power'):
+                      return {'success': True}
+          elif request_type == 'volume':
+              if is_action_allowed(customer, 'volume_control'):
+                  # Process volume request
+                  return {'success': True}
+    output: |
+      # Good: Optimized permission checks with caching
+      def process_request(customer, request_type, data):
+          # Map request type to required permission
+          permission_map = {
+              'power': PERMISSIONS['DEVICE_POWER'],
+              'volume': PERMISSIONS['VOLUME_CONTROL'],
+              'music': PERMISSIONS['SONG_CHANGES']
+          }
+          
+          required_permission = permission_map.get(request_type)
+          
+          if not required_permission:
+              return {
+                  'success': False,
+                  'error': 'Invalid request type'
+              }
+              
+          # Check permission once and cache the result
+          if not is_action_allowed(customer, required_permission, use_cache=True):
+              # Get the required service level for this permission
+              from constants import REQUIRED_SERVICE_LEVEL
+              required_level = REQUIRED_SERVICE_LEVEL.get(required_permission, SERVICE_LEVELS['ENTERPRISE'])
+              
+              return {
+                  'success': False,
+                  'error': f'Permission denied: {required_permission}',
+                  'upgrade_info': f'Upgrade to {required_level} to access this feature'
+              }
+              
+          # Process the request based on type
+          if request_type == 'power':
+              result = do_power_action(data)
+              return {'success': result}
+          elif request_type == 'volume':
+              result = do_volume_action(data)
+              return {'success': result}
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 

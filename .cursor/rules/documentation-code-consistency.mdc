@@ -1,0 +1,337 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Documentation-Code Consistency
+
+This rule enforces best practices for maintaining consistency between documentation and implementation, especially for permission-based features and service levels.
+
+<rule>
+name: documentation_code_consistency
+description: Enforce consistency between documentation and implementation
+filters:
+  - type: file_extension
+    pattern: "\\.(py|md|json|ts|js)$"
+
+actions:
+  - type: suggest
+    conditions:
+      # If documentation file is being edited
+      - pattern: "^# Service Levels|^## Permission Matrix|^## Action Definitions"
+        message: "Remember to update corresponding code implementations when changing service level documentation"
+      # If permission-related code is being edited
+      - pattern: "allowed_actions.*?\\[[^\\]]*?['\"](mdc:[a-zA-Z_]+)['\"]"
+        message: "Ensure this permission is documented in service-levels.md"
+      # If constants are being defined
+      - pattern: "(SERVICE_LEVELS|PERMISSIONS)\\s*=\\s*\\{"
+        message: "Ensure these constants match the documentation in service-levels.md"
+      # If hardcoding service level names
+      - pattern: "['\"](mdc:basic|premium|enterprise)['\"]"
+        message: "Use constants from constants.py for service level names"
+      # If hardcoding permission names
+      - pattern: "['\"](mdc:device_power|volume_control|song_changes)['\"]"
+        message: "Use constants from constants.py for permission names"
+      # If defining service level permissions outside constants file
+      - pattern: "allowed_actions\\s*=\\s*\\["
+        message: "Reference centralized SERVICE_LEVEL_PERMISSIONS from constants.py"
+    message: |
+      ## Documentation-Code Consistency Best Practices
+
+      Based on our experience with the service level simplification process, follow these guidelines to maintain consistency between documentation and implementation:
+
+      1. **Documentation as Source of Truth**
+         - Treat documentation (e.g., service-levels.md) as the source of truth for permission definitions
+         - Ensure code implementations match the documented permissions
+         - Update documentation first, then implement changes in code
+
+      2. **Use Consistent Terminology**
+         - Use the same terms in documentation and code
+         - Be consistent with naming conventions (e.g., snake_case for all permissions)
+         - Document the meaning of each term clearly
+
+      3. **Keep Permission Lists in Sync**
+         - Ensure that permission lists in documentation match those in code
+         - Update all references when adding, removing, or renaming permissions
+         - Document the purpose and scope of each permission
+
+      4. **Document Service Level Differences**
+         - Clearly document what actions are allowed at each service level
+         - Include examples of what users can and cannot do at each level
+         - Keep documentation in sync with implementation
+
+      5. **Document Implementation Details**
+         - Include implementation notes in documentation
+         - Explain how permissions are enforced
+         - Document any special cases or exceptions
+
+      6. **Review Documentation and Code Together**
+         - When reviewing changes, check both documentation and code
+         - Ensure that documentation and code changes are consistent
+         - Reject changes that create inconsistencies
+
+      7. **Use Constants for Service Levels and Permissions**
+         - Define service level names and permissions as constants
+         - Reference these constants in both code and documentation
+         - Update constants when service levels or permissions change
+
+      8. **Document API Responses**
+         - Document how permission denials are communicated to users
+         - Include examples of error messages
+         - Ensure error messages match documentation
+
+      9. **Document Upgrade Paths**
+         - Document how users can upgrade to access more features
+         - Include this information in error messages
+         - Ensure upgrade paths are consistent across the system
+
+      10. **Maintain a Changelog**
+          - Document changes to permissions and service levels
+          - Include the date and reason for each change
+          - Update documentation and code together
+
+      11. **Define Constants in a Central Location**
+          - Create a dedicated constants.py file for service levels and permissions
+          - Import these constants in other files rather than redefining them
+          - Update constants in a single location when changes are needed
+
+      12. **Use Descriptive Constant Names**
+          - Use uppercase for constant names (e.g., SERVICE_LEVELS, PERMISSIONS)
+          - Use descriptive names that clearly indicate the purpose of each constant
+          - Group related constants together
+
+      13. **Reference Constants Consistently**
+          - Always use the same constants throughout the codebase
+          - Avoid hardcoding values that are already defined as constants
+          - Use constants in tests to ensure consistency with implementation
+
+      14. **Document Constants**
+          - Include comments explaining the purpose and usage of each constant
+          - Document any constraints or relationships between constants
+          - Keep documentation in sync with constant definitions
+
+      15. **Avoid Magic Strings**
+          - Never hardcode service level or permission names as strings
+          - Use constants even for seemingly simple values
+          - This makes refactoring easier and prevents typos
+
+      ### Example of Consistent Documentation and Implementation:
+      
+      #### Documentation (service-levels.md):
+      ```markdown
+      # Service Levels
+      
+      ## Permission Matrix
+      
+      | Action | Basic | Premium | Enterprise |
+      |--------|-------|---------|------------|
+      | device_power | ✅ | ✅ | ✅ |
+      | volume_control | ❌ | ✅ | ✅ |
+      | song_changes | ❌ | ❌ | ✅ |
+      
+      ## Action Definitions
+      
+      - **device_power**: Control power state of devices (on/off)
+      - **volume_control**: Adjust volume levels of devices
+      - **song_changes**: Change songs or playlists on devices
+      ```
+      
+      #### Implementation (constants.py):
+      ```python
+      """
+      Centralized constants for service levels and permissions.
+      
+      This module defines all service levels and permissions used throughout the application.
+      Always import these constants rather than redefining them in other modules.
+      """
+      
+      # Service level definitions
+      SERVICE_LEVELS = {
+          'BASIC': 'basic',
+          'PREMIUM': 'premium',
+          'ENTERPRISE': 'enterprise'
+      }
+      
+      # Permission definitions - must match documentation
+      PERMISSIONS = {
+          'DEVICE_POWER': 'device_power',
+          'VOLUME_CONTROL': 'volume_control',
+          'SONG_CHANGES': 'song_changes'
+      }
+      
+      # Service level permissions - must match the permission matrix in documentation
+      SERVICE_LEVEL_PERMISSIONS = {
+          SERVICE_LEVELS['BASIC']: [
+              PERMISSIONS['DEVICE_POWER']
+          ],
+          SERVICE_LEVELS['PREMIUM']: [
+              PERMISSIONS['DEVICE_POWER'],
+              PERMISSIONS['VOLUME_CONTROL']
+          ],
+          SERVICE_LEVELS['ENTERPRISE']: [
+              PERMISSIONS['DEVICE_POWER'],
+              PERMISSIONS['VOLUME_CONTROL'],
+              PERMISSIONS['SONG_CHANGES']
+          ]
+      }
+      
+      # Required service level for each permission
+      REQUIRED_SERVICE_LEVEL = {
+          PERMISSIONS['DEVICE_POWER']: SERVICE_LEVELS['BASIC'],
+          PERMISSIONS['VOLUME_CONTROL']: SERVICE_LEVELS['PREMIUM'],
+          PERMISSIONS['SONG_CHANGES']: SERVICE_LEVELS['ENTERPRISE']
+      }
+      ```
+      
+      #### Usage in Code:
+      ```python
+      from constants import SERVICE_LEVELS, PERMISSIONS, SERVICE_LEVEL_PERMISSIONS
+      
+      def is_action_allowed(customer, action):
+          """Check if a customer is allowed to perform an action.
+          
+          Args:
+              customer: The customer object
+              action: The action to check
+              
+          Returns:
+              bool: True if the action is allowed, False otherwise
+          """
+          service_level = customer.get('service_level', SERVICE_LEVELS['BASIC'])
+          allowed_actions = SERVICE_LEVEL_PERMISSIONS.get(service_level, [])
+          
+          return action in allowed_actions
+      ```
+
+examples:
+  - input: |
+      # In service-levels.md
+      ## Permission Matrix
+      
+      | Action | Basic | Premium | Enterprise |
+      |--------|-------|---------|------------|
+      | device_power | ✅ | ✅ | ✅ |
+      | volume_control | ❌ | ✅ | ✅ |
+      | song_changes | ❌ | ❌ | ✅ |
+      
+      # In constants.py
+      SERVICE_LEVEL_PERMISSIONS = {
+          'basic': [
+              'device_power'
+          ],
+          'premium': [
+              'device_power',
+              'volume_control',
+              'device_info'  # This permission is not in the documentation
+          ],
+          'enterprise': [
+              'device_power',
+              'volume_control',
+              'song_changes'
+          ]
+      }
+    output: |
+      # In service-levels.md
+      ## Permission Matrix
+      
+      | Action | Basic | Premium | Enterprise |
+      |--------|-------|---------|------------|
+      | device_power | ✅ | ✅ | ✅ |
+      | volume_control | ❌ | ✅ | ✅ |
+      | song_changes | ❌ | ❌ | ✅ |
+      
+      # In constants.py
+      # Define constants for service levels and permissions
+      SERVICE_LEVELS = {
+          'BASIC': 'basic',
+          'PREMIUM': 'premium',
+          'ENTERPRISE': 'enterprise'
+      }
+      
+      PERMISSIONS = {
+          'DEVICE_POWER': 'device_power',
+          'VOLUME_CONTROL': 'volume_control',
+          'SONG_CHANGES': 'song_changes'
+      }
+      
+      # Service level permissions - matches the permission matrix in documentation
+      SERVICE_LEVEL_PERMISSIONS = {
+          SERVICE_LEVELS['BASIC']: [
+              PERMISSIONS['DEVICE_POWER']
+          ],
+          SERVICE_LEVELS['PREMIUM']: [
+              PERMISSIONS['DEVICE_POWER'],
+              PERMISSIONS['VOLUME_CONTROL']
+          ],
+          SERVICE_LEVELS['ENTERPRISE']: [
+              PERMISSIONS['DEVICE_POWER'],
+              PERMISSIONS['VOLUME_CONTROL'],
+              PERMISSIONS['SONG_CHANGES']
+          ]
+      }
+  
+  - input: |
+      # Bad: Hardcoded service levels and permissions
+      def is_action_allowed(customer, action):
+          service_level = customer.get('service_level', 'basic')
+          
+          if service_level == 'basic':
+              return action == 'device_power'
+          elif service_level == 'premium':
+              return action in ['device_power', 'volume_control']
+          elif service_level == 'enterprise':
+              return action in ['device_power', 'volume_control', 'song_changes']
+          return False
+    output: |
+      # Good: Using centralized constants
+      from constants import SERVICE_LEVELS, PERMISSIONS, SERVICE_LEVEL_PERMISSIONS
+      
+      def is_action_allowed(customer, action):
+          """Check if a customer is allowed to perform an action.
+          
+          Args:
+              customer: The customer object
+              action: The action to check
+              
+          Returns:
+              bool: True if the action is allowed, False otherwise
+          """
+          service_level = customer.get('service_level', SERVICE_LEVELS['BASIC'])
+          allowed_actions = SERVICE_LEVEL_PERMISSIONS.get(service_level, [])
+          
+          return action in allowed_actions
+  
+  - input: |
+      # Bad: Redefining constants in multiple files
+      # In file1.py
+      BASIC = 'basic'
+      PREMIUM = 'premium'
+      ENTERPRISE = 'enterprise'
+      
+      # In file2.py
+      basic_level = 'basic'
+      premium_level = 'premium'
+      enterprise_level = 'enterprise'
+    output: |
+      # Good: Importing constants from a central location
+      # In constants.py
+      SERVICE_LEVELS = {
+          'BASIC': 'basic',
+          'PREMIUM': 'premium',
+          'ENTERPRISE': 'enterprise'
+      }
+      
+      # In file1.py
+      from constants import SERVICE_LEVELS
+      
+      # Use SERVICE_LEVELS['BASIC'], SERVICE_LEVELS['PREMIUM'], etc.
+      
+      # In file2.py
+      from constants import SERVICE_LEVELS
+      
+      # Use SERVICE_LEVELS['BASIC'], SERVICE_LEVELS['PREMIUM'], etc.
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 

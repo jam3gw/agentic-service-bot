@@ -1,0 +1,220 @@
+# Agentic Capabilities Rule
+
+This rule enforces best practices for implementing agentic capabilities in the smart bot, ensuring that all capabilities claimed in responses are actually implemented.
+
+<rule>
+name: agentic_capabilities
+description: Ensure that all capabilities claimed in responses are actually implemented
+filters:
+  - type: file_extension
+    pattern: "\\.py$"
+  - type: content
+    pattern: "(?:process_request|execute_action|generate_response)"
+
+actions:
+  - type: suggest
+    conditions:
+      # If adding a new request type without implementation
+      - pattern: "REQUEST_TYPES\\s*=\\s*\\{[^}]*['\"]([a-zA-Z_]+)['\"]\\s*:\\s*\\[[^\\]]*\\]"
+        message: "Ensure that all request types have corresponding implementation in execute_action"
+      # If adding a new action without permission check
+      - pattern: "def\\s+execute_action[^{]*\\{[^}]*['\"]([a-zA-Z_]+)['\"]\\s*:"
+        message: "Ensure that all actions have proper permission checks"
+      # If adding keywords without implementation
+      - pattern: "KEYWORDS\\s*=\\s*\\{[^}]*['\"]([a-zA-Z_]+)['\"]\\s*:\\s*\\[[^\\]]*\\]"
+        message: "Ensure that all keyword categories have corresponding implementation"
+    message: |
+      ## Agentic Capabilities Best Practices
+
+      When implementing agentic capabilities in the smart bot, follow these guidelines to ensure consistency between what the bot claims to do and what it actually does:
+
+      ### Core Principles:
+
+      1. **Implementation Before Response**: Never claim a capability in a response unless it's fully implemented.
+      
+      2. **Complete Action Lifecycle**: Every capability should have:
+         - Request identification (keywords, patterns)
+         - Permission checking
+         - Action execution
+         - State persistence
+         - Response generation
+      
+      3. **State Consistency**: Ensure that all state changes are properly persisted and retrievable.
+      
+      4. **Error Handling**: Implement proper error handling for all capabilities.
+      
+      5. **Testing**: Add tests that verify the complete lifecycle of each capability.
+
+      ### Implementation Checklist:
+
+      For each new capability:
+
+      - [ ] Add request type to `REQUEST_TYPES`
+      - [ ] Add keywords to `KEYWORDS`
+      - [ ] Implement extraction logic if needed (e.g., `extract_locations`)
+      - [ ] Add required actions to service level permissions
+      - [ ] Implement action execution in `execute_action`
+      - [ ] Implement state updates in appropriate service
+      - [ ] Update system prompt to include execution results
+      - [ ] Add tests for the capability
+
+      ### Example Implementation Pattern:
+
+      ```python
+      # 1. Add request type
+      REQUEST_TYPES = {
+          "new_capability": ["required_action1", "required_action2"]
+      }
+      
+      # 2. Add keywords
+      KEYWORDS = {
+          "new_capability": ["keyword1", "keyword2", "keyword3"]
+      }
+      
+      # 3. Implement extraction logic if needed
+      def extract_capability_parameters(text: str):
+          # Extract parameters from text
+          return parameters
+      
+      # 4. Implement action execution
+      def execute_action(customer_id, request_type, user_input, context):
+          if request_type == "new_capability":
+              # Extract parameters
+              parameters = extract_capability_parameters(user_input)
+              
+              # Execute action
+              success = perform_capability_action(customer_id, parameters)
+              
+              # Update context
+              if success:
+                  context["capability_result"] = result
+                  context["action_executed"] = True
+              else:
+                  context["error"] = "Failed to execute capability"
+              
+              return context
+      ```
+
+examples:
+  - input: |
+      # Bad: Adding a request type without implementation
+      REQUEST_TYPES = {
+          "existing_type": ["existing_action"],
+          "new_capability": ["new_action"]
+      }
+      
+      def execute_action(customer_id, request_type, user_input, context):
+          if request_type == "existing_type":
+              # Implementation for existing type
+              pass
+          # Missing implementation for new_capability
+          return context
+    output: |
+      # Good: Complete implementation for all request types
+      REQUEST_TYPES = {
+          "existing_type": ["existing_action"],
+          "new_capability": ["new_action"]
+      }
+      
+      def execute_action(customer_id, request_type, user_input, context):
+          if request_type == "existing_type":
+              # Implementation for existing type
+              pass
+          elif request_type == "new_capability":
+              # Extract parameters
+              parameters = extract_capability_parameters(user_input)
+              
+              # Execute action
+              success = perform_capability_action(customer_id, parameters)
+              
+              # Update context
+              if success:
+                  context["capability_result"] = result
+                  context["action_executed"] = True
+              else:
+                  context["error"] = "Failed to execute capability"
+          
+          return context
+  
+  - input: |
+      # Bad: Incomplete action lifecycle
+      def process_request(customer_id, user_input):
+          request_type = RequestAnalyzer.identify_request_type(user_input)
+          if request_type == "new_capability":
+              # Missing permission check
+              # Missing action execution
+              return generate_response("I've performed the capability!", context)
+    output: |
+      # Good: Complete action lifecycle
+      def process_request(customer_id, user_input):
+          # Get customer data
+          customer = get_customer(customer_id)
+          if not customer:
+              return "Error: Customer not found."
+          
+          # Identify request type
+          request_type = RequestAnalyzer.identify_request_type(user_input)
+          if request_type == "new_capability":
+              # Check permissions
+              required_actions = RequestAnalyzer.get_required_actions(request_type)
+              all_actions_allowed = all(
+                  is_action_allowed(customer, action)
+                  for action in required_actions
+              )
+              
+              # Build context
+              context = {
+                  "customer": customer,
+                  "action_allowed": all_actions_allowed,
+                  "request_type": request_type
+              }
+              
+              # Execute action if allowed
+              if all_actions_allowed:
+                  context = execute_action(customer_id, request_type, user_input, context)
+              
+              # Generate response
+              return generate_response(user_input, context)
+  
+  - input: |
+      # Bad: Missing tests for a capability
+      def test_existing_capability(self):
+          # Test for existing capability
+          pass
+      
+      # Missing test for new_capability
+    output: |
+      # Good: Tests for all capabilities
+      def test_existing_capability(self):
+          # Test for existing capability
+          pass
+      
+      def test_new_capability(self):
+          """Test the new capability functionality."""
+          # Process a request for the new capability
+          process_request(
+              self.customer_id, 
+              "Use the new capability with parameter X"
+          )
+          
+          # Verify action execution
+          self.mock_perform_capability.assert_called_once()
+          args, kwargs = self.mock_perform_capability.call_args
+          
+          # Check arguments
+          self.assertEqual(args[0], self.customer_id)
+          self.assertEqual(args[1], {"parameter": "X"})
+          
+          # Verify response generation includes execution results
+          self.mock_generate_response.assert_called_once()
+          args, kwargs = self.mock_generate_response.call_args
+          
+          # Check context
+          context = kwargs.get('context', {})
+          self.assertIn('capability_result', context)
+          self.assertTrue(context['action_executed'])
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 

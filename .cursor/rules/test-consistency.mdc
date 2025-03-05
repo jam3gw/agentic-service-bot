@@ -1,0 +1,242 @@
+# Service Level and Permission Testing Consistency
+
+This rule enforces consistency in test files specifically for permission-based features and service levels.
+
+<rule>
+name: service_level_testing_consistency
+description: Enforce consistency in tests for service levels and permissions
+filters:
+  - type: file_extension
+    pattern: "\\.(py|ts|js)$"
+  - type: file_path
+    pattern: "(?:test_.*\\.py$|.*_test\\.py$|.*\\.test\\.(?:js|ts)$|.*spec\\.(?:js|ts)$)"
+  - type: content
+    pattern: "(?:service_level|permission|allowed_actions|is_action_allowed)"
+
+actions:
+  - type: suggest
+    conditions:
+      # If test doesn't use constants for service levels
+      - pattern: "['\"](basic|premium|enterprise)['\"]"
+        message: "Use constants from constants.py for service level names in tests"
+      # If test doesn't use constants for permissions
+      - pattern: "['\"](device_power|volume_control|song_changes)['\"]"
+        message: "Use constants from constants.py for permission names in tests"
+      # If test doesn't verify permission boundaries
+      - pattern: "def\\s+test_[a-zA-Z0-9_]*permission[a-zA-Z0-9_]*\\s*\\([^)]*\\):\\s*(?!.*assert)"
+        message: "Ensure permission tests include assertions for both allowed and denied cases"
+      # If test doesn't test all service levels
+      - pattern: "def\\s+test_[a-zA-Z0-9_]*service_level[a-zA-Z0-9_]*\\s*\\([^)]*\\):\\s*(?!.*for.*in.*SERVICE_LEVELS)"
+        message: "Consider testing all service levels to ensure consistent behavior"
+      # If test doesn't mock permission checking
+      - pattern: "def\\s+test_[a-zA-Z0-9_]*permission[a-zA-Z0-9_]*\\s*\\([^)]*\\):\\s*(?!.*patch.*is_action_allowed)"
+        message: "Consider mocking permission checks to isolate test functionality"
+    message: |
+      ## Service Level and Permission Testing Best Practices
+
+      Based on our experience with the service level simplification process, follow these guidelines for testing permission-based features:
+
+      1. **Test All Permission Boundaries**
+         - Write tests for both allowed and denied permissions
+         - Test edge cases at service level boundaries
+         - Verify that permission checks work correctly
+
+      2. **Use Constants for Test Data**
+         - Import service level and permission constants from a central location
+         - Avoid hardcoding service level names or permission strings
+         - Keep test data consistent with implementation
+
+      3. **Test All Service Levels**
+         - Write tests for each service level
+         - Verify that features work correctly at each level
+         - Test upgrade and downgrade scenarios
+
+      4. **Mock Permission Checks Appropriately**
+         - Use mocks to isolate test functionality
+         - Test both successful and failed permission checks
+         - Verify that permission denials are handled correctly
+
+      5. **Test Permission Denial Handling**
+         - Verify that permission denials return appropriate error messages
+         - Test that upgrade information is included in error messages
+         - Ensure that denied actions don't have side effects
+
+      6. **Test Permission Changes**
+         - Verify that permission changes take effect immediately
+         - Test that cached permissions are invalidated correctly
+         - Ensure that permission changes are reflected in the UI
+
+      7. **Test Feature Discovery**
+         - Verify that available features are correctly displayed
+         - Test that unavailable features are properly indicated
+         - Ensure that upgrade paths are clearly communicated
+
+      8. **Maintain Test Independence**
+         - Each test should be independent of others
+         - Avoid test order dependencies
+         - Reset state between tests
+
+      9. **Document Test Purpose**
+         - Include docstrings explaining what each test verifies
+         - Document the business value of each test
+         - Make it clear which service level is being tested
+
+      10. **Keep Tests in Sync with Implementation**
+          - Update tests when service levels or permissions change
+          - Ensure that test data matches implementation
+          - Maintain consistency between tests and documentation
+
+      ### Example of Consistent Test Implementation:
+
+      ```python
+      import unittest
+      from unittest.mock import patch, MagicMock
+      from constants import SERVICE_LEVELS, PERMISSIONS, SERVICE_LEVEL_PERMISSIONS
+      from permissions import is_action_allowed
+      from request_processor import process_request
+
+      class TestServiceLevelPermissions(unittest.TestCase):
+          """Tests for service level permissions."""
+          
+          def setUp(self):
+              """Set up test data."""
+              self.test_customers = {
+                  'basic': {'id': '1', 'service_level': SERVICE_LEVELS['BASIC']},
+                  'premium': {'id': '2', 'service_level': SERVICE_LEVELS['PREMIUM']},
+                  'enterprise': {'id': '3', 'service_level': SERVICE_LEVELS['ENTERPRISE']}
+              }
+              
+          def test_device_power_permission_all_levels(self):
+              """Verify device power permission is allowed at all service levels."""
+              for level, customer in self.test_customers.items():
+                  # Test that device power is allowed at all levels
+                  self.assertTrue(
+                      is_action_allowed(customer, PERMISSIONS['DEVICE_POWER']),
+                      f"Device power should be allowed at {level} level"
+                  )
+                  
+          def test_volume_control_permission_by_level(self):
+              """Verify volume control permission is allowed only at premium and enterprise levels."""
+              # Basic level - should be denied
+              self.assertFalse(
+                  is_action_allowed(self.test_customers['basic'], PERMISSIONS['VOLUME_CONTROL']),
+                  "Volume control should be denied at basic level"
+              )
+              
+              # Premium and enterprise levels - should be allowed
+              for level in ['premium', 'enterprise']:
+                  self.assertTrue(
+                      is_action_allowed(self.test_customers[level], PERMISSIONS['VOLUME_CONTROL']),
+                      f"Volume control should be allowed at {level} level"
+                  )
+                  
+          @patch('request_processor.is_action_allowed')
+          def test_process_request_with_denied_permission(self, mock_is_allowed):
+              """Verify that denied permissions return appropriate error messages."""
+              # Mock permission check to return False
+              mock_is_allowed.return_value = False
+              
+              # Process a request that requires permission
+              customer = self.test_customers['basic']
+              result = process_request(customer, 'volume', {'level': 50})
+              
+              # Verify the result
+              self.assertFalse(result['success'])
+              self.assertIn('Permission denied', result['error'])
+              self.assertIn('Upgrade', result['upgrade_info'])
+              
+          @patch('request_processor.is_action_allowed')
+          def test_process_request_with_allowed_permission(self, mock_is_allowed):
+              """Verify that allowed permissions process the request successfully."""
+              # Mock permission check to return True
+              mock_is_allowed.return_value = True
+              
+              # Process a request that requires permission
+              customer = self.test_customers['premium']
+              result = process_request(customer, 'volume', {'level': 50})
+              
+              # Verify the result
+              self.assertTrue(result['success'])
+      ```
+
+examples:
+  - input: |
+      # Bad: Inconsistent service level testing
+      def test_volume_control():
+          # Test only for premium level
+          customer = {'service_level': 'premium'}
+          assert is_action_allowed(customer, 'volume_control')
+          
+      def test_song_changes():
+          # Hardcoded service level and permission
+          customer = {'service_level': 'enterprise'}
+          assert is_action_allowed(customer, 'song_changes')
+    output: |
+      # Good: Consistent service level testing
+      from constants import SERVICE_LEVELS, PERMISSIONS
+      
+      def test_volume_control_all_levels():
+          """Test volume control permission across all service levels."""
+          # Test for all service levels
+          test_cases = [
+              (SERVICE_LEVELS['BASIC'], False),
+              (SERVICE_LEVELS['PREMIUM'], True),
+              (SERVICE_LEVELS['ENTERPRISE'], True)
+          ]
+          
+          for service_level, expected_result in test_cases:
+              customer = {'service_level': service_level}
+              result = is_action_allowed(customer, PERMISSIONS['VOLUME_CONTROL'])
+              assert result == expected_result, f"Volume control should be {'allowed' if expected_result else 'denied'} at {service_level} level"
+          
+      def test_song_changes_all_levels():
+          """Test song changes permission across all service levels."""
+          # Test for all service levels
+          test_cases = [
+              (SERVICE_LEVELS['BASIC'], False),
+              (SERVICE_LEVELS['PREMIUM'], False),
+              (SERVICE_LEVELS['ENTERPRISE'], True)
+          ]
+          
+          for service_level, expected_result in test_cases:
+              customer = {'service_level': service_level}
+              result = is_action_allowed(customer, PERMISSIONS['SONG_CHANGES'])
+              assert result == expected_result, f"Song changes should be {'allowed' if expected_result else 'denied'} at {service_level} level"
+  
+  - input: |
+      # Bad: Not testing permission denial handling
+      @patch('permissions.is_action_allowed')
+      def test_process_volume_request(mock_is_allowed):
+          # Only test the success case
+          mock_is_allowed.return_value = True
+          customer = {'id': '123', 'service_level': 'premium'}
+          result = process_volume_request(customer, {'level': 50})
+          assert result['success'] == True
+    output: |
+      # Good: Testing both allowed and denied permissions
+      @patch('permissions.is_action_allowed')
+      def test_process_volume_request_allowed(mock_is_allowed):
+          """Test successful volume request processing when permission is allowed."""
+          # Test the success case
+          mock_is_allowed.return_value = True
+          customer = {'id': '123', 'service_level': SERVICE_LEVELS['PREMIUM']}
+          result = process_volume_request(customer, {'level': 50})
+          assert result['success'] == True, "Request should succeed when permission is allowed"
+          
+      @patch('permissions.is_action_allowed')
+      def test_process_volume_request_denied(mock_is_allowed):
+          """Test volume request processing when permission is denied."""
+          # Test the denial case
+          mock_is_allowed.return_value = False
+          customer = {'id': '123', 'service_level': SERVICE_LEVELS['BASIC']}
+          result = process_volume_request(customer, {'level': 50})
+          
+          # Verify the result
+          assert result['success'] == False, "Request should fail when permission is denied"
+          assert 'Permission denied' in result['error'], "Error should indicate permission denial"
+          assert 'Upgrade' in result['upgrade_info'], "Response should include upgrade information"
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 
