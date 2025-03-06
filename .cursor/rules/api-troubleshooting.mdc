@@ -1,0 +1,384 @@
+# API Troubleshooting Best Practices
+
+This rule provides guidance for troubleshooting API issues, particularly 502 Bad Gateway errors in serverless applications.
+
+<rule>
+name: api_troubleshooting
+description: Enforce best practices for API troubleshooting, particularly for serverless applications
+filters:
+  - type: file_extension
+    pattern: "\\.py$"
+  - type: content
+    pattern: "(?:requests\\.|http|api|502|gateway|lambda)"
+
+actions:
+  - type: suggest
+    conditions:
+      # If changing API URL in response to errors
+      - pattern: "REST_API_URL\\s*=\\s*['\"][^'\"]+['\"]\\s*#.*?changed"
+        message: "Don't change API endpoints to fix 502 errors; investigate the underlying issue instead"
+      # If using bare except when handling API errors
+      - pattern: "try\\s*:(?:[^\\n]*\\n+\\s*)+except\\s*:\\s*(?:[^\\n]*\\n+\\s*)*(?:pass|return)"
+        message: "Catch specific exceptions when handling API errors and provide meaningful error handling"
+      # If not checking response status codes
+      - pattern: "requests\\.(?:get|post|put|delete|patch)\\([^)]+\\)(?!\\s*\\.status_code)"
+        message: "Always check response status codes when making API requests"
+      # If not logging API errors
+      - pattern: "except\\s+(?:requests\\.exceptions\\.[a-zA-Z]+|ConnectionError|TimeoutError)\\s+as\\s+[a-zA-Z0-9_]+:\\s*(?:[^\\n]*\\n+\\s*)*(?:pass|return|print)"
+        message: "Log API errors with detailed information to aid troubleshooting"
+    message: |
+      ## API Troubleshooting Best Practices
+
+      When encountering API issues, especially 502 Bad Gateway errors in serverless applications:
+
+      1. **Don't immediately change API endpoints**
+         - 502 errors are typically caused by server-side issues, not by using the wrong endpoint
+         - Changing the API endpoint won't fix underlying implementation issues
+         - Focus on diagnosing the root cause rather than working around symptoms
+
+      2. **Check server-side logs**
+         - For AWS Lambda, check CloudWatch logs for errors, exceptions, and timeouts
+         - Use `aws logs describe-log-groups` and `aws logs get-log-events` to view logs
+         - Look for initialization errors, runtime exceptions, and configuration issues
+
+      3. **Verify Lambda function configuration**
+         - Check that all required environment variables are set correctly
+         - Ensure IAM roles have necessary permissions for all resources accessed
+         - Verify timeout settings are appropriate for the function's workload
+         - Check memory allocation is sufficient for the function's needs
+
+      4. **Examine database access patterns**
+         - Confirm that the Lambda function is using the correct table names
+         - Verify that query patterns match the table's key structure
+         - Check for missing indexes that might be required for efficient queries
+         - Look for permission issues between the Lambda function and the database
+
+      5. **Test API Gateway directly**
+         - Use the API Gateway console to test the endpoint directly
+         - This can help isolate whether the issue is in the Lambda function or API Gateway
+         - Check API Gateway logs for request/response details
+
+      6. **Implement proper error handling**
+         - Catch specific exceptions rather than using bare `except` blocks
+         - Log detailed error information including request parameters
+         - Return appropriate HTTP status codes and error messages
+         - Consider implementing retry logic for transient errors
+
+      7. **Incrementally fix issues**
+         - Address one issue at a time and test after each change
+         - Document each fix and its impact on the API behavior
+         - Use a systematic approach to isolate and resolve issues
+
+      ### Example of proper API error handling:
+      ```python
+      import logging
+      import requests
+      from requests.exceptions import ConnectionError, Timeout, RequestException
+
+      logger = logging.getLogger(__name__)
+
+      def call_api(url, payload=None):
+          """Call an API endpoint with proper error handling.
+          
+          Args:
+              url: The API endpoint URL
+              payload: Optional data to send (for POST requests)
+              
+          Returns:
+              The API response data or None if the request failed
+              
+          Raises:
+              ValueError: If the API returns a 4xx client error
+              RuntimeError: If the API returns a 5xx server error
+          """
+          try:
+              if payload:
+                  response = requests.post(url, json=payload, timeout=10)
+              else:
+                  response = requests.get(url, timeout=10)
+                  
+              # Check for HTTP errors
+              response.raise_for_status()
+              
+              return response.json()
+              
+          except ConnectionError as e:
+              logger.error(f"Connection error calling {url}: {e}")
+              # Consider retry logic here for transient network issues
+              return None
+              
+          except Timeout as e:
+              logger.error(f"Timeout calling {url}: {e}")
+              # Consider retry with backoff for timeout issues
+              return None
+              
+          except requests.exceptions.HTTPError as e:
+              status_code = e.response.status_code
+              
+              if 400 <= status_code < 500:
+                  # Client errors - likely an issue with our request
+                  logger.error(f"Client error ({status_code}) calling {url}: {e}")
+                  error_data = e.response.json() if e.response.content else {}
+                  raise ValueError(f"API client error: {error_data.get('message', str(e))}")
+                  
+              elif 500 <= status_code < 600:
+                  # Server errors - issue on the API side
+                  logger.error(f"Server error ({status_code}) calling {url}: {e}")
+                  
+                  if status_code == 502:
+                      logger.error("502 Bad Gateway error - check Lambda function logs")
+                      # For 502 errors, provide more specific guidance
+                      raise RuntimeError(
+                          "API returned 502 Bad Gateway. This typically indicates an issue "
+                          "with the Lambda function. Check CloudWatch logs for errors."
+                      )
+                  else:
+                      raise RuntimeError(f"API server error: {str(e)}")
+              
+          except RequestException as e:
+              # Catch-all for other request exceptions
+              logger.error(f"Error calling {url}: {e}")
+              return None
+      ```
+
+      ### Example of API troubleshooting workflow:
+      ```python
+      # 1. Check if the API is accessible
+      def check_api_health():
+          """Check if the API is accessible and responding."""
+          try:
+              response = requests.get(f"{API_URL}/ping", timeout=5)
+              if response.status_code == 200:
+                  print("✅ API is accessible")
+                  return True
+              else:
+                  print(f"❌ API returned status code {response.status_code}")
+                  return False
+          except Exception as e:
+              print(f"❌ Could not connect to API: {e}")
+              return False
+              
+      # 2. Check CloudWatch logs for errors
+      def check_cloudwatch_logs(function_name, start_time, end_time=None):
+          """Check CloudWatch logs for Lambda function errors."""
+          import boto3
+          from datetime import datetime, timedelta
+          
+          if end_time is None:
+              end_time = datetime.now()
+              
+          if isinstance(start_time, int):
+              # Convert minutes to datetime
+              start_time = end_time - timedelta(minutes=start_time)
+              
+          logs_client = boto3.client('logs')
+          log_group_name = f"/aws/lambda/{function_name}"
+          
+          try:
+              # Get log streams
+              response = logs_client.describe_log_streams(
+                  logGroupName=log_group_name,
+                  orderBy='LastEventTime',
+                  descending=True,
+                  limit=5
+              )
+              
+              for stream in response['logStreams']:
+                  stream_name = stream['logStreamName']
+                  print(f"\nChecking log stream: {stream_name}")
+                  
+                  # Get log events
+                  events = logs_client.get_log_events(
+                      logGroupName=log_group_name,
+                      logStreamName=stream_name,
+                      startTime=int(start_time.timestamp() * 1000),
+                      endTime=int(end_time.timestamp() * 1000),
+                      limit=100
+                  )
+                  
+                  # Look for errors
+                  for event in events['events']:
+                      message = event['message']
+                      if any(error_term in message.lower() for error_term in 
+                             ['error', 'exception', 'fail', 'timeout']):
+                          print(f"⚠️ {message}")
+                          
+          except Exception as e:
+              print(f"Error checking CloudWatch logs: {e}")
+      ```
+
+      ### Example of testing API Gateway directly:
+      ```python
+      def test_api_gateway_directly(api_id, stage, resource_path, method='GET', payload=None):
+          """Test an API Gateway endpoint directly using the AWS SDK."""
+          import boto3
+          import json
+          
+          client = boto3.client('apigateway')
+          
+          try:
+              # Prepare the test request
+              test_request = {
+                  'restApiId': api_id,
+                  'stageName': stage,
+                  'resourcePath': resource_path,
+                  'httpMethod': method
+              }
+              
+              if payload and method in ['POST', 'PUT', 'PATCH']:
+                  test_request['body'] = json.dumps(payload)
+                  
+              # Execute the test request
+              response = client.test_invoke_method(**test_request)
+              
+              # Print the response
+              print(f"Status code: {response['status']}")
+              print(f"Response body: {response['body']}")
+              
+              # Check for integration errors
+              if 'integrationStatus' in response:
+                  print(f"Integration status: {response['integrationStatus']}")
+                  
+              if response['status'] == '502':
+                  print("\n⚠️ 502 Bad Gateway detected. Check Lambda function logs.")
+                  
+              return response
+              
+          except Exception as e:
+              print(f"Error testing API Gateway: {e}")
+              return None
+      ```
+
+      Remember that 502 errors indicate that the server received an invalid response from an upstream server, which often points to issues in the Lambda function implementation or configuration.
+
+examples:
+  - input: |
+      # Bad: Changing API URL to fix 502 errors
+      # Changed API URL to try to fix 502 errors
+      REST_API_URL = "https://new-api-url.execute-api.us-west-2.amazonaws.com/dev/api"
+      
+      def test_chat_history(customer_id):
+          response = requests.get(f"{REST_API_URL}/chat/history/{customer_id}")
+          return response.json()
+    output: |
+      # Good: Proper troubleshooting approach
+      import logging
+      
+      logger = logging.getLogger(__name__)
+      
+      # Keep the original API URL
+      REST_API_URL = "https://api-url.execute-api.us-west-2.amazonaws.com/dev/api"
+      
+      def test_chat_history(customer_id):
+          """Test the chat history endpoint with proper error handling.
+          
+          Args:
+              customer_id: The ID of the customer to get chat history for
+              
+          Returns:
+              The chat history data or None if the request failed
+          """
+          try:
+              response = requests.get(
+                  f"{REST_API_URL}/chat/history/{customer_id}",
+                  timeout=10
+              )
+              response.raise_for_status()
+              return response.json()
+          except requests.exceptions.HTTPError as e:
+              if e.response.status_code == 502:
+                  logger.error(f"502 Bad Gateway error for customer {customer_id}. "
+                              f"Check Lambda function logs in CloudWatch.")
+              else:
+                  logger.error(f"HTTP error for customer {customer_id}: {e}")
+              return None
+          except Exception as e:
+              logger.error(f"Error getting chat history for customer {customer_id}: {e}")
+              return None
+              
+      # Add troubleshooting function
+      def check_lambda_logs(function_name="dev-chat-handler", minutes=30):
+          """Check CloudWatch logs for the chat Lambda function."""
+          # Implementation of CloudWatch logs check
+  
+  - input: |
+      # Bad: Not checking response status or handling errors
+      def send_message(customer_id, message):
+          response = requests.post(
+              f"{API_URL}/chat",
+              json={"customerId": customer_id, "message": message}
+          )
+          return response.json()
+    output: |
+      # Good: Proper status checking and error handling
+      import logging
+      
+      logger = logging.getLogger(__name__)
+      
+      def send_message(customer_id, message):
+          """Send a chat message with proper error handling.
+          
+          Args:
+              customer_id: The ID of the customer sending the message
+              message: The message text to send
+              
+          Returns:
+              The response data or None if the request failed
+              
+          Raises:
+              ValueError: If the API returns a client error
+              RuntimeError: If the API returns a server error
+          """
+          try:
+              response = requests.post(
+                  f"{API_URL}/chat",
+                  json={"customerId": customer_id, "message": message},
+                  timeout=10
+              )
+              
+              # Check for HTTP errors
+              response.raise_for_status()
+              
+              # Check status code
+              if response.status_code != 200:
+                  logger.warning(f"Unexpected status code {response.status_code} "
+                               f"for customer {customer_id}")
+                  
+              return response.json()
+              
+          except requests.exceptions.HTTPError as e:
+              status_code = e.response.status_code
+              
+              if 400 <= status_code < 500:
+                  # Client errors
+                  logger.error(f"Client error ({status_code}) sending message "
+                             f"for customer {customer_id}: {e}")
+                  raise ValueError(f"Invalid request: {str(e)}")
+                  
+              elif status_code == 502:
+                  # Bad Gateway error
+                  logger.error(f"502 Bad Gateway error sending message "
+                             f"for customer {customer_id}. Check Lambda logs.")
+                  raise RuntimeError("Chat service unavailable (502 Bad Gateway)")
+                  
+              else:
+                  # Other server errors
+                  logger.error(f"Server error ({status_code}) sending message "
+                             f"for customer {customer_id}: {e}")
+                  raise RuntimeError(f"Chat service error: {str(e)}")
+                  
+          except (requests.exceptions.ConnectionError, 
+                  requests.exceptions.Timeout) as e:
+              logger.error(f"Connection error sending message "
+                         f"for customer {customer_id}: {e}")
+              raise RuntimeError(f"Could not connect to chat service: {str(e)}")
+              
+          except Exception as e:
+              logger.error(f"Unexpected error sending message "
+                         f"for customer {customer_id}: {e}")
+              raise RuntimeError(f"Chat service error: {str(e)}")
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 

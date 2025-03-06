@@ -49,6 +49,9 @@ actions:
       # If testing service level permissions
       - pattern: "permission|authorize|role|policy"
         message: "Ensure service level permission tests verify both positive and negative access scenarios"
+      # If potentially duplicating API URL prefixes
+      - pattern: "REST_API_URL.*?/api/|API_URL.*?/api/"
+        message: "Check for duplicate API prefixes in URL construction"
     message: |
       ## Python Testing Best Practices
 
@@ -130,23 +133,102 @@ actions:
          - Verify proper logging of permission-related events
          - Test permission delegation and temporary access scenarios
       
-      11. Include docstrings for all test functions that explain:
+      11. **API URL Construction**
+         - Be careful with API URL construction to avoid duplicating prefixes
+         - When defining base URLs like `REST_API_URL`, check if they already include prefixes like `/api`
+         - Document the structure of base URLs in comments to make it clear what they include
+         - Use consistent URL construction patterns across all tests
+         - Consider creating helper functions for URL construction to ensure consistency
+         - Verify constructed URLs match the actual API endpoints by checking API documentation
+         - When updating API endpoints, ensure all tests are updated consistently
+         - **Don't change API endpoints to fix 502 errors**: If encountering 502 Bad Gateway errors, investigate the underlying issue rather than changing endpoints (see the `api-troubleshooting` rule for detailed guidance)
+      
+      12. **API Test Data Setup Automation**
+         - Always automate test data setup and teardown for API tests
+         - Use pytest fixtures to create and clean up test data
+         - Never rely on hardcoded test data that may not exist
+         - Create unique test data for each test run to prevent test interference
+         - Implement proper cleanup to avoid leaving test data in the database
+         - Use session-scoped fixtures for data that can be shared across tests
+         - Use function-scoped fixtures for data that needs to be fresh for each test
+         - Include clear error messages when test data setup fails
+         - Document the test data structure in fixture docstrings
+         - Handle both the creation and deletion of test resources
+         - Consider using transaction rollbacks where possible to speed up tests
+         - Ensure test data is isolated from production data
+      
+      13. Include docstrings for all test functions that explain:
          - What is being tested
          - Why it matters (business value)
          - Any special test conditions
       
-      12. Follow the Arrange-Act-Assert (AAA) pattern
+      14. Follow the Arrange-Act-Assert (AAA) pattern
       
-      13. Test one concept per test function
+      15. Test one concept per test function
       
-      14. Use descriptive assertion messages
+      16. Use descriptive assertion messages
       
-      15. Use fixtures for test setup and teardown
+      17. Use fixtures for test setup and teardown
       
-      16. Parameterize tests for multiple input scenarios
+      18. Parameterize tests for multiple input scenarios
       
-      17. Aim for high test coverage of critical paths, not 100% coverage
+      19. Aim for high test coverage of critical paths, not 100% coverage
 
+      ### Example of API URL Construction:
+      ```python
+      # Define the base URL with clear documentation
+      # This URL already includes the /api prefix
+      REST_API_URL = "https://api.example.com/dev/api"
+      
+      def test_get_devices():
+          """Test the GET /customers/{customerId}/devices endpoint."""
+          # Correct: Don't duplicate the /api prefix
+          response = requests.get(
+              f"{REST_API_URL}/customers/{TEST_CUSTOMER_ID}/devices"
+          )
+          
+          # Incorrect: This would result in /api/api/customers/...
+          # response = requests.get(
+          #     f"{REST_API_URL}/api/customers/{TEST_CUSTOMER_ID}/devices"
+          # )
+          
+          assert response.status_code == 200
+      ```
+      
+      ### Example of API Error Handling for 502 Errors:
+      ```python
+      def test_chat_api_with_error_handling():
+          """Test the chat API with proper error handling for 502 errors.
+          
+          This test verifies our chat API functionality while properly
+          handling potential 502 errors that may occur during testing.
+          """
+          try:
+              response = requests.post(
+                  f"{REST_API_URL}/chat",
+                  json={"customerId": test_data['customer_id'], "message": "Hello"},
+                  timeout=10
+              )
+              
+              # Check for HTTP errors
+              response.raise_for_status()
+              
+              # Normal assertions if no errors
+              assert response.status_code == 200
+              data = response.json()
+              assert "response" in data
+              
+          except requests.exceptions.HTTPError as e:
+              if e.response.status_code == 502:
+                  logging.error("502 Bad Gateway error encountered. "
+                              "This is a known issue with the chat API.")
+                  logging.error("Check Lambda function logs in CloudWatch for details.")
+                  pytest.skip("Skipping due to known 502 issue with chat API")
+              else:
+                  # Re-raise other HTTP errors
+                  raise
+      ```
+      
       ### Example of Flexible Text Assertion:
       ```python
       def test_error_message_for_invalid_input():
@@ -218,6 +300,92 @@ actions:
           print(f"Failures: {len(result.failures)}")
           for test, failure in result.failures:
               print(f"\n{'-'*40}\nFailure in {test}:\n{failure}")
+      ```
+      
+      ### Example of API Test Data Setup Automation:
+      ```python
+      # conftest.py
+      import pytest
+      import boto3
+      import uuid
+      from datetime import datetime
+      
+      # DynamoDB configuration
+      REGION = "us-west-2"
+      CUSTOMERS_TABLE = "dev-customers"
+      
+      @pytest.fixture(scope="session")
+      def dynamodb_client():
+          """Create a DynamoDB client for testing."""
+          return boto3.resource('dynamodb', region_name=REGION)
+      
+      @pytest.fixture(scope="session")
+      def test_data(dynamodb_client):
+          """
+          Create test data for API tests.
+          
+          This fixture creates a test customer with devices before running the tests,
+          and cleans up the data after the tests are complete.
+          
+          Returns:
+              A dictionary containing the test customer ID and device IDs
+          """
+          # Generate a unique customer ID for this test run
+          customer_id = f"test-customer-e2e-{uuid.uuid4().hex[:8]}"
+          
+          # Create test customer with devices
+          table = dynamodb_client.Table(CUSTOMERS_TABLE)
+          customer_data = {
+              'id': customer_id,
+              'name': 'E2E Test Customer',
+              'email': 'test@example.com',
+              'serviceLevel': 'premium',
+              'createdAt': datetime.now().isoformat(),
+              'devices': [
+                  {
+                      'id': f"{customer_id}-device-1",
+                      'type': 'speaker',
+                      'state': 'off',
+                      'location': 'living_room'
+                  },
+                  {
+                      'id': f"{customer_id}-device-2",
+                      'type': 'light',
+                      'state': 'off',
+                      'location': 'bedroom'
+                  }
+              ]
+          }
+          
+          # Put the item in the table
+          table.put_item(Item=customer_data)
+          
+          # Create test data dictionary
+          test_data = {
+              'customer_id': customer_id,
+              'device_ids': [device['id'] for device in customer_data['devices']]
+          }
+          
+          # Yield the test data to the tests
+          yield test_data
+          
+          # Clean up after tests are complete
+          table.delete_item(Key={'id': customer_id})
+      
+      # In your test file:
+      def test_get_devices(test_data):
+          """Test the GET /customers/{customerId}/devices endpoint."""
+          # Get customer ID from test data fixture
+          customer_id = test_data['customer_id']
+          
+          # Make the API request
+          response = requests.get(
+              f"{REST_API_URL}/customers/{customer_id}/devices"
+          )
+          
+          # Verify response
+          assert response.status_code == 200, f"Expected status code 200, got {response.status_code}"
+          # Additional assertions...
       ```
       
       ### Example of Proper AWS Service Mocking:

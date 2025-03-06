@@ -79,6 +79,9 @@ actions:
          - Handle reconnection attempts
          - Show connection status to users
          - Properly close connections when not needed
+         - **Always deploy WebSocket APIs to a stage**: When using AWS CDK, always create a WebSocketStage for your WebSocketApi
+         - **Use consistent stage references**: Reference the same stage in URLs, environment variables, and IAM policies
+         - **Enable auto-deploy for stages**: Set autoDeploy: true for WebSocketStage to ensure changes are deployed automatically
 
       8. **Testing**
          - Mock API responses in unit tests
@@ -273,6 +276,62 @@ actions:
           allowHeaders: ['Content-Type', 'Authorization'],
           allowCredentials: true
         }
+      });
+      ```
+
+      ### Example of WebSocket API Deployment with AWS CDK:
+      ```typescript
+      // WebSocket API with proper stage deployment
+      import * as cdk from 'aws-cdk-lib';
+      import * as websocketapi from '@aws-cdk/aws-apigatewayv2-alpha';
+      import { WebSocketLambdaIntegration } from '@aws-cdk/aws-apigatewayv2-integrations-alpha';
+      import * as lambda from 'aws-cdk-lib/aws-lambda';
+      import * as iam from 'aws-cdk-lib/aws-iam';
+
+      // Create the WebSocket API
+      const webSocketApi = new websocketapi.WebSocketApi(this, 'ChatWebSocketApi', {
+        apiName: `${config.environment}-chat-websocket-api`,
+        connectRouteOptions: {
+          integration: new WebSocketLambdaIntegration('ConnectIntegration', chatFunction),
+          returnResponse: true,
+        },
+        disconnectRouteOptions: {
+          integration: new WebSocketLambdaIntegration('DisconnectIntegration', chatFunction),
+          returnResponse: true,
+        },
+        defaultRouteOptions: {
+          integration: new WebSocketLambdaIntegration('DefaultIntegration', chatFunction),
+          returnResponse: true,
+        },
+      });
+
+      // Add custom routes
+      webSocketApi.addRoute('message', {
+        integration: new WebSocketLambdaIntegration('MessageIntegration', chatFunction),
+        returnResponse: true,
+      });
+
+      // IMPORTANT: Deploy the WebSocket API to a stage
+      const webSocketStage = new websocketapi.WebSocketStage(this, 'ChatWebSocketStage', {
+        webSocketApi,
+        stageName: config.environment,
+        autoDeploy: true,
+      });
+
+      // Set environment variables using the stage reference
+      chatFunction.addEnvironment('WEBSOCKET_API_DOMAIN', `${webSocketApi.apiId}.execute-api.${this.region}.amazonaws.com`);
+      chatFunction.addEnvironment('WEBSOCKET_API_STAGE', webSocketStage.stageName);
+
+      // Grant permissions using the stage reference
+      chatFunction.addToRolePolicy(new iam.PolicyStatement({
+        actions: ['execute-api:ManageConnections'],
+        resources: [`arn:aws:execute-api:${this.region}:${this.account}:${webSocketApi.apiId}/${webSocketStage.stageName}/*`],
+      }));
+
+      // Output the WebSocket URL using the stage reference
+      new cdk.CfnOutput(this, 'WebSocketURL', {
+        value: `wss://${webSocketApi.apiId}.execute-api.${this.region}.amazonaws.com/${webSocketStage.stageName}`,
+        description: 'WebSocket API URL',
       });
       ```
 

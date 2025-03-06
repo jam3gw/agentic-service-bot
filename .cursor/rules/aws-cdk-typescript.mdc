@@ -90,7 +90,7 @@ actions:
       ```typescript
       // Instead of:
       new CfnOutput(this, 'BucketArn', {
-        value: { 'Fn::GetAtt': [bucket.logicalId, 'Arn'] },
+        value: { 'Fn::GetAtt': [bucket.node.defaultChild.logicalId, 'Arn'] },
       });
       
       // Use:
@@ -184,6 +184,14 @@ message: |
      - Use context values for environment-specific settings
      - Avoid hardcoding account IDs and regions
      - Use environment variables for sensitive values
+
+  5. **Simplicity and Avoiding Redundancy**
+     - Prefer built-in high-level constructs over custom implementations
+     - Understand what resources constructs create automatically
+     - Avoid creating redundant resources that may cause conflicts
+     - Leverage default behaviors instead of explicit configuration when possible
+     - Minimize property overrides that bypass CDK's validation
+     - Use environment variables consistently for resource naming and configuration
 
   ## Code Structure
 
@@ -414,6 +422,124 @@ examples:
           // Good: Adding tags for resource management
           cdk.Tags.of(fn).add('Environment', props.environment || 'dev');
           cdk.Tags.of(fn).add('Service', 'MyService');
+        }
+      }
+
+  - input: |
+      import * as cdk from 'aws-cdk-lib';
+      import { Construct } from 'constructs';
+      import * as websocketapi from '@aws-cdk/aws-apigatewayv2-alpha';
+      import { WebSocketLambdaIntegration } from '@aws-cdk/aws-apigatewayv2-integrations-alpha';
+      import * as lambda from 'aws-cdk-lib/aws-lambda';
+      import * as iam from 'aws-cdk-lib/aws-iam';
+      
+      export class ComplexWebSocketStack extends cdk.Stack {
+        constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+          super(scope, id, props);
+          
+          // Create Lambda function
+          const handler = new lambda.Function(this, 'WebSocketHandler', {
+            runtime: lambda.Runtime.NODEJS_18_X,
+            handler: 'index.handler',
+            code: lambda.Code.fromAsset('lambda'),
+          });
+          
+          // Create WebSocket API
+          const webSocketApi = new websocketapi.WebSocketApi(this, 'WebSocketApi', {
+            apiName: 'my-websocket-api',
+            connectRouteOptions: {
+              integration: new WebSocketLambdaIntegration('ConnectIntegration', handler),
+            },
+            disconnectRouteOptions: {
+              integration: new WebSocketLambdaIntegration('DisconnectIntegration', handler),
+            },
+            defaultRouteOptions: {
+              integration: new WebSocketLambdaIntegration('DefaultIntegration', handler),
+            },
+          });
+          
+          // Bad: Creating an explicit stage when WebSocketApi already creates one
+          const webSocketStage = new websocketapi.WebSocketStage(this, 'WebSocketStage', {
+            webSocketApi,
+            stageName: 'dev',
+            autoDeploy: true,
+          });
+          
+          // Bad: Using low-level property overrides
+          const cfnStage = webSocketStage.node.defaultChild as cdk.aws_apigatewayv2.CfnStage;
+          cfnStage.addPropertyOverride('RouteSettings', {
+            '$connect': {
+              ThrottlingBurstLimit: 100,
+              ThrottlingRateLimit: 50,
+            },
+          });
+          
+          // Grant permissions to the Lambda
+          handler.addToRolePolicy(new iam.PolicyStatement({
+            actions: ['execute-api:ManageConnections'],
+            resources: [`arn:aws:execute-api:${this.region}:${this.account}:${webSocketApi.apiId}/dev/*`],
+          }));
+        }
+      }
+    output: |
+      import * as cdk from 'aws-cdk-lib';
+      import { Construct } from 'constructs';
+      import * as websocketapi from '@aws-cdk/aws-apigatewayv2-alpha';
+      import { WebSocketLambdaIntegration } from '@aws-cdk/aws-apigatewayv2-integrations-alpha';
+      import * as lambda from 'aws-cdk-lib/aws-lambda';
+      import * as iam from 'aws-cdk-lib/aws-iam';
+      
+      interface WebSocketStackProps extends cdk.StackProps {
+        readonly environment: string;
+      }
+      
+      export class SimpleWebSocketStack extends cdk.Stack {
+        constructor(scope: Construct, id: string, props: WebSocketStackProps) {
+          super(scope, id, props);
+          
+          // Create Lambda function
+          const handler = new lambda.Function(this, 'WebSocketHandler', {
+            runtime: lambda.Runtime.NODEJS_18_X,
+            handler: 'index.handler',
+            code: lambda.Code.fromAsset('lambda'),
+            environment: {
+              ENVIRONMENT: props.environment,
+            },
+          });
+          
+          // Create WebSocket API with all necessary routes
+          const webSocketApi = new websocketapi.WebSocketApi(this, 'WebSocketApi', {
+            apiName: `${props.environment}-websocket-api`,
+            connectRouteOptions: {
+              integration: new WebSocketLambdaIntegration('ConnectIntegration', handler),
+            },
+            disconnectRouteOptions: {
+              integration: new WebSocketLambdaIntegration('DisconnectIntegration', handler),
+            },
+            defaultRouteOptions: {
+              integration: new WebSocketLambdaIntegration('DefaultIntegration', handler),
+            },
+          });
+          
+          // Add additional routes
+          webSocketApi.addRoute('message', {
+            integration: new WebSocketLambdaIntegration('MessageIntegration', handler),
+          });
+          
+          // Good: Let WebSocketApi create the stage automatically
+          // No explicit WebSocketStage creation
+          
+          // Grant permissions to the Lambda using the environment variable
+          handler.addToRolePolicy(new iam.PolicyStatement({
+            actions: ['execute-api:ManageConnections'],
+            resources: [`arn:aws:execute-api:${this.region}:${this.account}:${webSocketApi.apiId}/${props.environment}/*`],
+          }));
+          
+          // Output the WebSocket URL
+          new cdk.CfnOutput(this, 'WebSocketURL', {
+            value: `wss://${webSocketApi.apiId}.execute-api.${this.region}.amazonaws.com/${props.environment}`,
+            description: 'WebSocket API URL',
+          });
         }
       }
 
