@@ -8,8 +8,6 @@ import { BaseStack } from './base-stack';
 import { EnvironmentConfig } from './config';
 import * as path from 'path';
 import { PythonFunction } from '@aws-cdk/aws-lambda-python-alpha';
-import * as websocketapi from '@aws-cdk/aws-apigatewayv2-alpha';
-import { WebSocketLambdaIntegration } from '@aws-cdk/aws-apigatewayv2-integrations-alpha';
 
 export class ApiStack extends BaseStack {
     constructor(scope: Construct, id: string, config: EnvironmentConfig, props?: cdk.StackProps) {
@@ -53,17 +51,6 @@ export class ApiStack extends BaseStack {
                 : cdk.RemovalPolicy.DESTROY,
         });
 
-        // Create DynamoDB table for WebSocket connections
-        const connectionsTable = new dynamodb.Table(this, 'ConnectionsTable', {
-            tableName: `${config.environment}-connections`,
-            partitionKey: { name: 'connectionId', type: dynamodb.AttributeType.STRING },
-            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-            timeToLiveAttribute: 'ttl',
-            removalPolicy: config.environment === 'prod'
-                ? cdk.RemovalPolicy.RETAIN
-                : cdk.RemovalPolicy.DESTROY,
-        });
-
         // Create Lambda function for handling chat messages
         const chatFunction = new PythonFunction(this, 'ChatFunction', {
             functionName: `${config.environment}-chat-handler`,
@@ -76,7 +63,6 @@ export class ApiStack extends BaseStack {
                 MESSAGES_TABLE: messagesTable.tableName,
                 CUSTOMERS_TABLE: customersTable.tableName,
                 SERVICE_LEVELS_TABLE: serviceLevelsTable.tableName,
-                CONNECTIONS_TABLE: connectionsTable.tableName,
                 ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || 'your-api-key-here',
                 ANTHROPIC_MODEL: 'claude-3-opus-20240229',
                 ENVIRONMENT: config.environment,
@@ -120,52 +106,16 @@ export class ApiStack extends BaseStack {
         messagesTable.grantReadWriteData(chatFunction);
         customersTable.grantReadWriteData(chatFunction);
         serviceLevelsTable.grantReadWriteData(chatFunction);
-        connectionsTable.grantReadWriteData(chatFunction);
 
         // Grant API Lambda permissions to access DynamoDB tables
         customersTable.grantReadWriteData(apiFunction);
         serviceLevelsTable.grantReadData(apiFunction);
+        messagesTable.grantReadData(apiFunction);
 
-        // Create WebSocket API
-        const webSocketApi = new websocketapi.WebSocketApi(this, 'ChatWebSocketApi', {
-            apiName: `${config.environment}-chat-websocket-api`,
-            connectRouteOptions: {
-                integration: new WebSocketLambdaIntegration('ConnectIntegration', chatFunction),
-                returnResponse: true,
-            },
-            disconnectRouteOptions: {
-                integration: new WebSocketLambdaIntegration('DisconnectIntegration', chatFunction),
-                returnResponse: true,
-            },
-            defaultRouteOptions: {
-                integration: new WebSocketLambdaIntegration('DefaultIntegration', chatFunction),
-                returnResponse: true,
-            },
-        });
-
-        // Add a route for message handling
-        webSocketApi.addRoute('message', {
-            integration: new WebSocketLambdaIntegration('MessageIntegration', chatFunction),
-            returnResponse: true,
-        });
-
-        // Deploy the WebSocket API
-        const webSocketStage = new websocketapi.WebSocketStage(this, 'ChatWebSocketStage', {
-            webSocketApi,
-            stageName: config.environment,
-            autoDeploy: true,
-        });
-
-        // Grant permission for the Lambda to manage WebSocket connections
-        chatFunction.addToRolePolicy(new iam.PolicyStatement({
-            actions: ['execute-api:ManageConnections'],
-            resources: [`arn:aws:execute-api:${this.region}:${this.account}:${webSocketApi.apiId}/${config.environment}/*`],
-        }));
-
-        // Create REST API for device and capability endpoints
-        const restApi = new apigateway.RestApi(this, 'DeviceApi', {
-            restApiName: `${config.environment}-device-api`,
-            description: 'API for device and capability management',
+        // Create REST API for device, capability, and chat endpoints
+        const restApi = new apigateway.RestApi(this, 'ServiceBotApi', {
+            restApiName: `${config.environment}-service-bot-api`,
+            description: 'API for device, capability, and chat management',
             defaultCorsPreflightOptions: {
                 allowOrigins: [config.environment === 'prod'
                     ? 'https://agentic-service-bot.jake-moses.com'
@@ -188,64 +138,35 @@ export class ApiStack extends BaseStack {
 
         // Customers endpoint
         const customersResource = apiResource.addResource('customers');
+        customersResource.addMethod('GET', new apigateway.LambdaIntegration(apiFunction));
+
         const customerIdResource = customersResource.addResource('{customerId}');
+        customerIdResource.addMethod('GET', new apigateway.LambdaIntegration(apiFunction));
 
         // Devices endpoints
         const devicesResource = customerIdResource.addResource('devices');
         devicesResource.addMethod('GET', new apigateway.LambdaIntegration(apiFunction));
 
+        // Device ID endpoint for updating device state
         const deviceIdResource = devicesResource.addResource('{deviceId}');
         deviceIdResource.addMethod('PATCH', new apigateway.LambdaIntegration(apiFunction));
 
-        // Output the WebSocket URL
-        new cdk.CfnOutput(this, 'WebSocketURL', {
-            value: webSocketStage.url,
-            description: 'WebSocket API URL',
-        });
+        // Chat endpoints
+        const chatResource = apiResource.addResource('chat');
 
-        // Output the REST API URL
-        new cdk.CfnOutput(this, 'RestApiURL', {
-            value: restApi.url,
-            description: 'REST API URL',
-        });
+        // POST /api/chat - Send a message
+        chatResource.addMethod('POST', new apigateway.LambdaIntegration(chatFunction));
 
-        // Create a custom resource to seed the DynamoDB tables with initial data
-        const seedFunction = new PythonFunction(this, 'SeedFunction', {
-            functionName: `${config.environment}-seed-data`,
-            runtime: lambda.Runtime.PYTHON_3_9,
-            entry: path.join(__dirname, '../../lambda/seed'),
-            index: 'app.py',
-            handler: 'handler',
-            timeout: cdk.Duration.minutes(5),
-            environment: {
-                CUSTOMERS_TABLE: customersTable.tableName,
-                SERVICE_LEVELS_TABLE: serviceLevelsTable.tableName,
-            },
-            bundling: {
-                assetExcludes: [
-                    'venv',
-                    '__pycache__'
-                ]
-            }
-        });
-
-        // Grant permissions to the seed function
-        customersTable.grantReadWriteData(seedFunction);
-        serviceLevelsTable.grantReadWriteData(seedFunction);
-
-        // Create the custom resource
-        const provider = new cdk.custom_resources.Provider(this, 'SeedProvider', {
-            onEventHandler: seedFunction,
-        });
-
-        const seedResource = new cdk.CustomResource(this, 'SeedData', {
-            serviceToken: provider.serviceToken,
-        });
+        // GET /api/chat/history/{customerId} - Get chat history
+        const chatHistoryResource = chatResource.addResource('history');
+        const chatHistoryCustomerResource = chatHistoryResource.addResource('{customerId}');
+        chatHistoryCustomerResource.addMethod('GET', new apigateway.LambdaIntegration(chatFunction));
 
         // Output the API URL
         new cdk.CfnOutput(this, 'ApiUrl', {
-            value: webSocketStage.url,
-            description: 'WebSocket API URL',
+            value: restApi.url,
+            description: 'URL of the REST API',
+            exportName: `${config.environment}-api-url`,
         });
     }
 } 
