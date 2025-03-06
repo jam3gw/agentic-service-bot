@@ -1,19 +1,29 @@
 """
 Device handler for the Agentic Service Bot API.
 
-This module provides handlers for device-related API endpoints.
+This module provides functions for handling device-related API requests.
 """
 
+# Standard library imports
 import json
 import logging
-from typing import Dict, Any, List
+import os
+import sys
+from typing import Dict, Any, List, Optional
+
+# Add the parent directory to sys.path to enable absolute imports
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
+# Local application imports
+from utils import convert_decimal_to_float, convert_float_to_decimal
+from services.dynamodb_service import get_customer, update_device_state
 
 # Configure logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
-
-# Import services
-from services.dynamodb_service import get_customer_by_id, update_device_state
 
 def handle_get_devices(customer_id: str, cors_headers: Dict[str, str]) -> Dict[str, Any]:
     """
@@ -30,23 +40,32 @@ def handle_get_devices(customer_id: str, cors_headers: Dict[str, str]) -> Dict[s
         return {
             'statusCode': 400,
             'headers': cors_headers,
-            'body': json.dumps({'error': 'Missing customer ID'})
+            'body': json.dumps({
+                'error': 'Missing required parameter: customerId'
+            })
         }
     
     try:
+        logger.info(f"Retrieving devices for customer {customer_id}")
+        
         # Get customer data from DynamoDB
-        customer = get_customer_by_id(customer_id)
+        customer = get_customer(customer_id)
         
         if not customer:
             return {
                 'statusCode': 404,
                 'headers': cors_headers,
-                'body': json.dumps({'error': 'Customer not found'})
+                'body': json.dumps({
+                    'error': f"Customer {customer_id} not found"
+                })
             }
         
-        # Transform devices to include additional fields
+        # Get the device (each customer has only one device)
         devices = []
-        for device in customer.get('devices', []):
+        device_list = customer.get('devices', [])
+        
+        if device_list:
+            device = device_list[0]
             # Add default values for fields not in the original data model
             enhanced_device = {
                 'id': device.get('id', ''),
@@ -59,10 +78,15 @@ def handle_get_devices(customer_id: str, cors_headers: Dict[str, str]) -> Dict[s
             }
             devices.append(enhanced_device)
         
+        # Convert Decimal objects to floats before serialization
+        devices = convert_decimal_to_float(devices)
+        
         return {
             'statusCode': 200,
             'headers': cors_headers,
-            'body': json.dumps({'devices': devices})
+            'body': json.dumps({
+                'devices': devices
+            })
         }
     
     except Exception as e:
@@ -70,7 +94,9 @@ def handle_get_devices(customer_id: str, cors_headers: Dict[str, str]) -> Dict[s
         return {
             'statusCode': 500,
             'headers': cors_headers,
-            'body': json.dumps({'error': 'Failed to retrieve devices'})
+            'body': json.dumps({
+                'error': f"Failed to retrieve devices for customer {customer_id}: {str(e)}"
+            })
         }
 
 def handle_update_device(customer_id: str, device_id: str, body: Dict[str, Any], cors_headers: Dict[str, str]) -> Dict[str, Any]:
@@ -90,7 +116,9 @@ def handle_update_device(customer_id: str, device_id: str, body: Dict[str, Any],
         return {
             'statusCode': 400,
             'headers': cors_headers,
-            'body': json.dumps({'error': 'Missing customer ID or device ID'})
+            'body': json.dumps({
+                'error': 'Missing required parameters: customerId and deviceId'
+            })
         }
     
     new_state = body.get('state')
@@ -98,10 +126,15 @@ def handle_update_device(customer_id: str, device_id: str, body: Dict[str, Any],
         return {
             'statusCode': 400,
             'headers': cors_headers,
-            'body': json.dumps({'error': 'Missing state in request body'})
+            'body': json.dumps({
+                'error': 'Missing required parameter: state'
+            })
         }
     
     try:
+        # Convert any float values to Decimal for DynamoDB
+        new_state = convert_float_to_decimal(new_state)
+        
         # Update device state in DynamoDB
         updated_device = update_device_state(customer_id, device_id, new_state)
         
@@ -109,24 +142,20 @@ def handle_update_device(customer_id: str, device_id: str, body: Dict[str, Any],
             return {
                 'statusCode': 404,
                 'headers': cors_headers,
-                'body': json.dumps({'error': 'Device not found'})
+                'body': json.dumps({
+                    'error': f"Device {device_id} not found for customer {customer_id}"
+                })
             }
         
-        # Transform device to include additional fields
-        enhanced_device = {
-            'id': updated_device.get('id', ''),
-            'type': updated_device.get('type', ''),
-            'name': f"{updated_device.get('location', '').replace('_', ' ').title()} {updated_device.get('type', '')}",
-            'location': updated_device.get('location', '').replace('_', ' ').title(),
-            'state': updated_device.get('state', 'off'),
-            'capabilities': get_device_capabilities(updated_device.get('type', '')),
-            'lastUpdated': updated_device.get('lastUpdated', '2023-03-01T14:30:45.123Z')
-        }
+        # Convert Decimal objects to floats before serialization
+        updated_device = convert_decimal_to_float(updated_device)
         
         return {
             'statusCode': 200,
             'headers': cors_headers,
-            'body': json.dumps({'device': enhanced_device})
+            'body': json.dumps({
+                'device': updated_device
+            })
         }
     
     except Exception as e:
@@ -134,7 +163,9 @@ def handle_update_device(customer_id: str, device_id: str, body: Dict[str, Any],
         return {
             'statusCode': 500,
             'headers': cors_headers,
-            'body': json.dumps({'error': 'Failed to update device'})
+            'body': json.dumps({
+                'error': f"Failed to update device {device_id} for customer {customer_id}: {str(e)}"
+            })
         }
 
 def get_device_capabilities(device_type: str) -> List[str]:

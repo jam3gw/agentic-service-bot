@@ -1,31 +1,43 @@
 """
 Capability handler for the Agentic Service Bot API.
 
-This module provides handlers for capability-related API endpoints.
+This module provides functions for handling capability-related API requests.
 """
 
+# Standard library imports
 import json
 import logging
+import os
+import sys
 from typing import Dict, Any, List
+
+# Add the parent directory to sys.path to enable absolute imports
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
+# Local application imports
+from utils import convert_decimal_to_float, convert_float_to_decimal
+from services.dynamodb_service import get_service_levels
 
 # Configure logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-# Import services
-from services.dynamodb_service import get_service_levels
-
 def handle_get_capabilities(cors_headers: Dict[str, str]) -> Dict[str, Any]:
     """
-    Handle GET request for service capabilities.
+    Handle GET request to retrieve all capabilities.
     
     Args:
         cors_headers: CORS headers to include in the response
         
     Returns:
-        API Gateway response with capabilities data
+        API Gateway response with capability data
     """
     try:
+        logger.info("Retrieving all capabilities")
+        
         # Get service levels from DynamoDB
         service_levels = get_service_levels()
         
@@ -39,10 +51,15 @@ def handle_get_capabilities(cors_headers: Dict[str, str]) -> Dict[str, Any]:
         # Transform service levels into capabilities
         capabilities = generate_capabilities(service_levels)
         
+        # Convert Decimal objects to floats before serialization
+        capabilities = convert_decimal_to_float(capabilities)
+        
         return {
             'statusCode': 200,
             'headers': cors_headers,
-            'body': json.dumps({'capabilities': capabilities})
+            'body': json.dumps({
+                'capabilities': capabilities
+            })
         }
     
     except Exception as e:
@@ -50,7 +67,9 @@ def handle_get_capabilities(cors_headers: Dict[str, str]) -> Dict[str, Any]:
         return {
             'statusCode': 500,
             'headers': cors_headers,
-            'body': json.dumps({'error': 'Failed to retrieve capabilities'})
+            'body': json.dumps({
+                'error': f"Failed to retrieve capabilities: {str(e)}"
+            })
         }
 
 def generate_capabilities(service_levels: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:

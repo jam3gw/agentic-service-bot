@@ -13,17 +13,22 @@ import json
 import logging
 import sys
 import os
-from typing import Dict, Any
-
-# Add the current directory to the path so we can import our modules
-current_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(current_dir)
+from typing import Dict, Any, List, Union
 
 # Configure logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+# Add the current directory to sys.path to enable imports
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+
+# Import utility functions from local module
+import utils
+
 # Import handlers
+from handlers.customer_handler import handle_get_customers, handle_get_customer
 from handlers.device_handler import handle_get_devices, handle_update_device
 from handlers.capability_handler import handle_get_capabilities
 
@@ -65,7 +70,11 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         path_parameters = event.get('pathParameters', {}) or {}
         
         # Route to appropriate handler based on path and method
-        if path.startswith('/api/customers/') and path.endswith('/devices'):
+        if path == '/api/customers':
+            if http_method == 'GET':
+                return handle_get_customers(CORS_HEADERS)
+        
+        elif path.startswith('/api/customers/') and path.endswith('/devices'):
             if http_method == 'GET':
                 customer_id = path_parameters.get('customerId')
                 return handle_get_devices(customer_id, CORS_HEADERS)
@@ -77,6 +86,11 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 # Parse request body
                 body = json.loads(event.get('body', '{}'))
                 return handle_update_device(customer_id, device_id, body, CORS_HEADERS)
+        
+        elif path.startswith('/api/customers/') and not '/devices/' in path and not path.endswith('/devices'):
+            if http_method == 'GET':
+                customer_id = path_parameters.get('customerId')
+                return handle_get_customer(customer_id, CORS_HEADERS)
         
         elif path == '/api/capabilities':
             if http_method == 'GET':
