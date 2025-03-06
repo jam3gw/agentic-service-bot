@@ -1,17 +1,27 @@
-// Configuration for different environments
-interface Config {
-    apiUrl: string;
-    wsUrl: string;
-}
+/**
+ * Configuration for the Agentic Service Bot frontend.
+ */
 
-// Hardcoded API URL - replace this with your actual API Gateway URL after deployment
-const config: Config = {
-    // For development, use a placeholder URL
-    // After deploying the API stack, replace this with the actual API Gateway URL
-    // Dev
-    apiUrl: 'https://xi2dz3sln6.execute-api.us-west-2.amazonaws.com/prod/',
-    // WebSocket URL - replace this with your actual WebSocket URL after deployment
-    wsUrl: 'wss://ig3bth930d.execute-api.us-west-2.amazonaws.com/dev',
+// API URLs
+const DEV_API_URL = 'https://k4w64ym45e.execute-api.us-west-2.amazonaws.com/dev/api';
+const PROD_API_URL = 'https://api.agentic-service-bot.jake-moses.com/prod/api';
+
+// Environment-specific configuration
+const config = {
+    // API URL based on environment
+    apiUrl: process.env.NODE_ENV === 'production' ? PROD_API_URL : DEV_API_URL,
+
+    // Default customer ID
+    defaultCustomerId: 'cust_001',
+
+    // Polling interval for chat history (in milliseconds)
+    chatPollingInterval: 5000,
+
+    // Maximum number of messages to display
+    maxMessages: 100,
+
+    // Enable debug logging
+    debug: process.env.NODE_ENV !== 'production',
 };
 
 export default config; 
