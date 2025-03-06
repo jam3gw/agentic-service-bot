@@ -13,7 +13,7 @@ import requests
 from pathlib import Path
 
 # API URLs for testing
-REST_API_URL = "https://dehqrpqs4i.execute-api.us-west-2.amazonaws.com/dev"
+REST_API_URL = "https://dehqrpqs4i.execute-api.us-west-2.amazonaws.com/dev/api"
 
 def print_separator():
     """Print a separator line."""
@@ -24,7 +24,7 @@ def check_api_health():
     print("Checking API health...")
     try:
         # Try to access a known endpoint
-        response = requests.get(f"{REST_API_URL}/api/capabilities")
+        response = requests.get(f"{REST_API_URL}/capabilities")
         if response.status_code == 200:
             print("✅ API is accessible")
             return True
@@ -63,7 +63,7 @@ def discover_customers():
     
     for customer_id in customer_ids:
         print(f"Checking customer ID: {customer_id}")
-        response = requests.get(f"{REST_API_URL}/api/customers/{customer_id}/devices")
+        response = requests.get(f"{REST_API_URL}/customers/{customer_id}/devices")
         
         if response.status_code == 200:
             data = response.json()
