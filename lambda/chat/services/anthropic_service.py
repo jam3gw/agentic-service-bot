@@ -5,17 +5,26 @@ This module provides functions for interacting with Anthropic's Claude API
 to generate responses to user requests.
 """
 
+# Standard library imports
 import os
-import sys
 import logging
+import sys
 from typing import Dict, Any, Optional
 
-# Add the parent directory to sys.path to enable absolute imports if needed
-current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if current_dir not in sys.path:
-    sys.path.insert(0, current_dir)
+# Third-party imports
+import anthropic
 
-# Import response examples
+# Add the parent directory to sys.path to enable absolute imports
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
+# Configure logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# Local application imports
 try:
     from response_examples import (
         ALLOWED_ACTION_EXAMPLES,
@@ -27,9 +36,6 @@ except ImportError:
     ALLOWED_ACTION_EXAMPLES = {}
     DISALLOWED_ACTION_EXAMPLES = {}
     UPGRADE_INFORMATION_EXAMPLES = {}
-
-# Configure logging
-logger = logging.getLogger()
 
 # Set default environment variables for local development
 def set_default_env_vars():
@@ -52,7 +58,6 @@ if not os.environ.get('ANTHROPIC_API_KEY'):
 
 # Initialize Anthropic client if API key is available
 try:
-    import anthropic
     if os.environ.get('ANTHROPIC_API_KEY'):
         anthropic_client = anthropic.Anthropic(
             api_key=os.environ.get('ANTHROPIC_API_KEY')
@@ -137,18 +142,18 @@ COMMUNICATION STYLE:
     
     # Add device info if available - always include the section header even if no devices
     system_prompt += "\nDEVICE INFORMATION:\n"
-    if "customer" in context and hasattr(context["customer"], "devices") and context["customer"].devices:
-        for device in context["customer"].devices:
-            location = device['location'].replace('_', ' ')
-            device_info = f"- {device['type']} in the {location}"
+    if "customer" in context and hasattr(context["customer"], "device") and context["customer"].device:
+        device = context["customer"].device
+        location = device.get('location', '').replace('_', ' ')
+        device_info = f"- {device.get('type', 'unknown')} in the {location}"
+        
+        # Add volume information if available
+        if 'volume' in device:
+            device_info += f" (volume: {device['volume']}%)"
             
-            # Add volume information if available
-            if 'volume' in device:
-                device_info += f" (volume: {device['volume']}%)"
-                
-            system_prompt += f"{device_info}\n"
+        system_prompt += f"{device_info}\n"
     else:
-        system_prompt += "No devices currently registered.\n"
+        system_prompt += "No device currently registered.\n"
     
     # Add service level permissions with clear explanations
     if "permissions" in context and "allowed_actions" in context["permissions"]:

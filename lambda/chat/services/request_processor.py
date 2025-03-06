@@ -19,25 +19,20 @@ import json
 from datetime import datetime
 from typing import Dict, Any, Optional, List, Tuple
 
-# Add the parent directory to sys.path to enable absolute imports
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
+# Remove sys.path modification
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-from analyzers.request_analyzer_simplified import RequestAnalyzer
-from services.dynamodb_service import (
+# Use relative imports
+from ..analyzers.request_analyzer_simplified import RequestAnalyzer
+from .dynamodb_service import (
     get_customer, 
     get_service_level_permissions, 
     update_device_state,
     store_message
 )
-from services.llm_service import generate_response
-from models.customer import Customer
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from .anthropic_service import generate_response
+from ..models.customer import Customer
 
 def is_action_allowed(service_level, action: str) -> bool:
     """
@@ -66,35 +61,41 @@ def is_action_allowed(service_level, action: str) -> bool:
     
     return action in service_level_info
 
-def process_request(request=None, **kwargs) -> Dict[str, Any]:
+def process_request(customer_id: str, message_data: Dict[str, Any], connection_id: str = None) -> Dict[str, Any]:
     """
     Process a user request and generate a response.
     
     Args:
-        request: A dictionary containing the request details
-            - customer_id: The ID of the customer
-            - user_input: The text input from the user
-            - connection_id: The WebSocket connection ID (optional)
-        **kwargs: Alternative way to pass parameters directly:
-            - customer_id: The ID of the customer
-            - user_input: The text input from the user
-            - connection_id: The WebSocket connection ID (optional)
-            
+        customer_id: The customer ID
+        message_data: The message data containing the user input and other metadata
+        connection_id: Optional WebSocket connection ID
+        
     Returns:
-        A dictionary containing the response details
+        Response data
     """
-    # Handle both dictionary and keyword arguments
-    if request is None:
-        request = {}
+    logger.info(f"Processing request for customer {customer_id}")
     
-    # Extract request details (prioritize kwargs over request dict)
-    customer_id = kwargs.get("customer_id", request.get("customer_id"))
-    user_input = kwargs.get("user_input", request.get("user_input", ""))
-    connection_id = kwargs.get("connection_id", request.get("connection_id"))
+    # Extract user input from message data
+    if isinstance(message_data, dict):
+        user_input = message_data.get('message', '')
+        # Extract additional metadata if needed
+        metadata = message_data.get('metadata', {})
+    else:
+        user_input = str(message_data)
+        metadata = {}
     
-    # Get customer data
+    if not user_input:
+        logger.warning(f"Empty user input for customer {customer_id}")
+        return {
+            "success": False,
+            "message": "Please provide a message",
+            "request_type": "unknown"
+        }
+    
+    # Get customer information
     customer = get_customer(customer_id)
     if not customer:
+        logger.error(f"Customer not found: {customer_id}")
         return {
             "success": False,
             "message": f"Customer with ID {customer_id} not found"
@@ -112,9 +113,10 @@ def process_request(request=None, **kwargs) -> Dict[str, Any]:
         "request_type": request_type,
         "service_level": service_level,
         "permissions": get_service_level_permissions(service_level),
-        "devices": [customer.get_device()],
+        "device": customer.get_device(),
         "action_executed": False,
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
+        "metadata": metadata
     }
     
     # If a device is mentioned in the request, identify it
@@ -233,7 +235,8 @@ def process_request(request=None, **kwargs) -> Dict[str, Any]:
         "success": True,
         "message": response_text,
         "request_type": request_type,
-        "action_executed": context.get("action_executed", False)
+        "action_executed": context.get("action_executed", False),
+        "timestamp": context["timestamp"]
     }
 
 def execute_action(action: str, context: Dict[str, Any]) -> Dict[str, Any]:
@@ -261,9 +264,7 @@ def execute_action(action: str, context: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(customer, Customer):
         device = customer.get_device()
     else:
-        devices = context.get("devices", [])
-        if devices:
-            device = devices[0]
+        device = context.get("device", {})
     
     if not device:
         context["error"] = "No device found"

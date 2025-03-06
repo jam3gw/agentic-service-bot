@@ -2,13 +2,12 @@
 Lambda function for handling chat interactions in the Agentic Service Bot.
 
 This module serves as the entry point for the AWS Lambda function that handles
-WebSocket and HTTP requests for the chat service.
+HTTP requests for the chat service.
 
 Environment Variables:
     MESSAGES_TABLE: DynamoDB table for storing message history
     CUSTOMERS_TABLE: DynamoDB table for storing customer data
     SERVICE_LEVELS_TABLE: DynamoDB table for storing service level permissions
-    CONNECTIONS_TABLE: DynamoDB table for storing WebSocket connections
     ANTHROPIC_API_KEY: API key for Anthropic's Claude API
     ANTHROPIC_MODEL: Model to use for Anthropic's Claude API
 """
@@ -17,26 +16,32 @@ import json
 import logging
 import sys
 import os
-from typing import Dict, Any
-
-# Add the current directory to the path so we can import our modules
-current_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(current_dir)
+import time
+from typing import Dict, Any, List, Union
+from decimal import Decimal
 
 # Configure logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+# Add the current directory to sys.path to enable imports
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+
+# Import utility functions from local module
+import utils
+
 # Import handlers
-from handlers.websocket_handler import (
-    handle_connect,
-    handle_message,
+from handlers.chat_handler import (
+    handle_chat_message,
+    handle_chat_history,
     CORS_HEADERS
 )
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
-    Lambda handler for WebSocket and HTTP events.
+    Main Lambda handler.
     
     Args:
         event: The event data
@@ -45,69 +50,119 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     Returns:
         API Gateway response
     """
-    logger.info(f"Event: {json.dumps(event)}")
-    
-    # Check if this is a WebSocket event
-    if 'requestContext' in event and 'connectionId' in event['requestContext']:
-        route_key = event['requestContext'].get('routeKey')
-        
-        if route_key == '$connect':
-            return handle_connect(event, context)
-        elif route_key == '$disconnect':
-            # Simple disconnect handler
-            connection_id = event['requestContext']['connectionId']
-            logger.info(f"Disconnect event received for connection ID: {connection_id}")
-            # Mark the connection as disconnected instead of removing it
-            from services.dynamodb_service import update_connection_status
-            update_connection_status(connection_id, "disconnected")
-            return {'statusCode': 200, 'body': 'Disconnected'}
-        elif route_key == 'message':
-            return handle_message(event, context)
-        else:
-            # Default route
-            return handle_message(event, context)
-    
-    # If not a WebSocket event, handle as HTTP request (for backward compatibility)
-    # Handle OPTIONS request (CORS preflight)
-    if event.get('httpMethod') == 'OPTIONS':
-        return {
-            'statusCode': 200,
-            'headers': CORS_HEADERS,
-            'body': ''
-        }
+    # Log the event for debugging
+    logger.info(f"Event received: {json.dumps(event)}")
     
     try:
-        # Parse the request body
-        body = json.loads(event.get('body', '{}'))
-        message = body.get('message')
-        customer_id = body.get('customerId')
-        
-        if not message or not customer_id:
+        # Handle HTTP events
+        if event.get('httpMethod') == 'OPTIONS':
+            # Handle CORS preflight request
             return {
-                'statusCode': 400,
+                'statusCode': 200,
                 'headers': CORS_HEADERS,
-                'body': json.dumps({'error': 'Missing required fields'})
+                'body': ''
             }
         
-        # Process the request
-        from services.request_processor import process_request
-        response = process_request(customer_id=customer_id, user_input=message)
-        response_text = response.get("message", "No response generated")
+        # Handle chat message POST request
+        if event.get('httpMethod') == 'POST' and event.get('path', '').endswith('/chat'):
+            try:
+                # Parse request body
+                body = json.loads(event.get('body', '{}'))
+                
+                # Handle regular chat message
+                customer_id = body.get('customerId')
+                message = body.get('message')
+                
+                if not customer_id or not message:
+                    logger.error("Missing required parameters: customerId and message are required")
+                    return {
+                        'statusCode': 400,
+                        'headers': CORS_HEADERS,
+                        'body': json.dumps({
+                            'error': 'Missing required parameters: customerId and message are required'
+                        })
+                    }
+                
+                # Process the chat message
+                response = handle_chat_message(customer_id, message)
+                
+                # Check if the response contains an error about customer not found
+                if 'error' in response and 'Customer not found' in response['error']:
+                    return {
+                        'statusCode': 404,
+                        'body': json.dumps(response)
+                    }
+                
+                # Convert Decimal objects to floats before serialization
+                response = utils.convert_decimal_to_float(response)
+                
+                return {
+                    'statusCode': 200,
+                    'body': json.dumps(response)
+                }
+            except Exception as e:
+                logger.error(f"Error handling chat message: {str(e)}")
+                return {
+                    'statusCode': 500,
+                    'body': json.dumps({
+                        'error': f"Internal server error: {str(e)}"
+                    })
+                }
         
-        # Return the response
+        # Handle chat history GET request
+        if event.get('httpMethod') == 'GET' and '/chat/history/' in event.get('path', ''):
+            try:
+                # Extract customer ID from path
+                path_parts = event.get('path', '').split('/')
+                customer_id = path_parts[-1]  # Last part of the path should be the customer ID
+                
+                if not customer_id:
+                    return {
+                        'statusCode': 400,
+                        'body': json.dumps({
+                            'error': 'Missing required parameter: customerId'
+                        })
+                    }
+                
+                # Get chat history
+                history = handle_chat_history(customer_id)
+                
+                # Check if the response contains an error about customer not found
+                if 'error' in history and 'Customer not found' in history['error']:
+                    return {
+                        'statusCode': 404,
+                        'body': json.dumps(history)
+                    }
+                
+                # Convert Decimal objects to floats before serialization
+                history = utils.convert_decimal_to_float(history)
+                
+                return {
+                    'statusCode': 200,
+                    'body': json.dumps(history)
+                }
+            except Exception as e:
+                logger.error(f"Error handling chat history: {str(e)}")
+                return {
+                    'statusCode': 500,
+                    'body': json.dumps({
+                        'error': f"Internal server error: {str(e)}"
+                    })
+                }
+        
+        # If no matching route, return 404
         return {
-            'statusCode': 200,
-            'headers': CORS_HEADERS,
+            'statusCode': 404,
             'body': json.dumps({
-                'message': response_text,
-                'customerId': customer_id,
+                'error': 'Not found'
             })
         }
+    
     except Exception as e:
-        logger.error(f"Error: {str(e)}")
-        
+        logger.error(f"Unhandled exception: {str(e)}")
         return {
             'statusCode': 500,
-            'headers': CORS_HEADERS,
-            'body': json.dumps({'error': 'Internal server error'})
-        } 
+            'body': json.dumps({
+                'error': f"Internal server error: {str(e)}"
+            })
+        }
