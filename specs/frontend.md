@@ -9,7 +9,7 @@ The Agentic Service Bot frontend provides a user-friendly interface for customer
 - **Framework**: React with TypeScript
 - **UI Library**: Chakra UI
 - **State Management**: React Hooks (useState, useEffect)
-- **Communication**: WebSocket API for real-time messaging
+- **Communication**: REST API for messaging
 - **Build Tool**: Create React App
 
 ## Components
@@ -41,16 +41,16 @@ Provides an introduction and usage instructions for the smart home assistant.
 
 ### Chat Component
 
-The main component that handles the chat interface and WebSocket communication.
+The main component that handles the chat interface and API communication.
 
 **Features**:
-- Real-time message display
+- Message display
 - Message input and submission
 - Customer selection
-- Connection status indicator
+- Loading state indicator
 - Error handling and display
 - Automatic scrolling to latest messages
-- Disconnect functionality
+- Polling for new messages (optional)
 
 **Props**:
 - `onCustomerChange`: Callback function when customer selection changes
@@ -61,19 +61,17 @@ The main component that handles the chat interface and WebSocket communication.
 - `isLoading`: Boolean indicating if a response is being processed
 - `error`: Error message if any
 - `customerId`: Currently selected customer ID
-- `isConnected`: Boolean indicating WebSocket connection status
-- `isConnecting`: Boolean indicating if connection is in progress
-- `isDisconnected`: Boolean indicating if user has manually disconnected
+- `lastMessageTimestamp`: Timestamp of the last message for polling
 
 ### User Devices Table Component
 
-Displays a live-updated table of the user's smart home devices.
+Displays a table of the user's smart home devices.
 
 **Features**:
 - Device listing with status indicators
 - Filtering by device type and location
 - Interactive controls for supported devices
-- Automatic refresh of device status
+- Refresh button for device status
 - Responsive design for different screen sizes
 
 **Props**:
@@ -112,20 +110,19 @@ Displays individual messages in the chat interface.
 **Props**:
 - `message`: Message object containing text, sender, timestamp, and status
 
-### Connection Status Component
+### Status Indicator Component
 
-Displays the current WebSocket connection status.
+Displays the current API request status.
 
 **Features**:
-- Visual indicators for different connection states
+- Visual indicators for different request states
 - Error message display
-- Reconnect button for manual reconnection
+- Retry button for failed requests
 
 **Props**:
-- `isConnected`: Boolean indicating if connected
-- `isConnecting`: Boolean indicating if connecting
+- `isLoading`: Boolean indicating if a request is in progress
 - `error`: Error message if any
-- `onReconnect`: Callback function for manual reconnection
+- `onRetry`: Callback function for retry action
 
 ### CustomerSelector Component
 
@@ -154,7 +151,7 @@ The primary page of the application, containing all the components.
 │ Header                                       │
 ├─────────────────────────────────────────────┤
 │ ┌─────────────────┐ ┌─────────────────────┐ │
-│ │ Customer        │ │ Connection Status    │ │
+│ │ Customer        │ │ Status Indicator     │ │
 │ │ Selector        │ │                     │ │
 │ └─────────────────┘ └─────────────────────┘ │
 ├─────────────────────────────────────────────┤
@@ -176,35 +173,35 @@ The primary page of the application, containing all the components.
 └─────────────────────────────────────────────┘
 ```
 
-## WebSocket Communication
-
-### Connection Establishment
-
-1. When the Chat component mounts or when the customer changes:
-   - Close any existing connection
-   - Create a new WebSocket connection to `{wsUrl}?customerId={customerId}`
-   - Set up event handlers for connection events
+## API Communication
 
 ### Message Handling
 
 1. **Sending Messages**:
    - When user submits a message:
      - Add message to local state
-     - Send message through WebSocket
+     - Send POST request to `/api/chat` endpoint
      - Display loading indicator
+     - Handle response when received
 
 2. **Receiving Messages**:
-   - When a message is received from the WebSocket:
+   - When a response is received from the API:
      - Parse the JSON data
      - Add the bot's response to the message list
      - Clear loading indicator
+     - Update last message timestamp
+
+3. **Message History**:
+   - On component mount or customer change:
+     - Fetch message history from `/api/chat/history/{customerId}` endpoint
+     - Display messages in chronological order
 
 ### Error Handling
 
-1. **Connection Errors**:
+1. **Request Errors**:
    - Display error message
-   - Provide reconnection option
-   - Automatically attempt to reconnect after delay
+   - Provide retry option
+   - Implement exponential backoff for retries
 
 2. **Message Errors**:
    - Display error in the chat
@@ -229,7 +226,7 @@ The primary page of the application, containing all the components.
 ### Performance
 
 - Efficient rendering with React
-- Optimized WebSocket communication
+- Optimized API communication
 - Lazy loading of components
 - Memoization of expensive calculations
 
@@ -249,170 +246,61 @@ const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001/api
 export const fetchUserDevices = async (customerId: string): Promise<Device[]> => {
   try {
     const response = await fetch(`${API_BASE_URL}/customers/${customerId}/devices`);
-    
     if (!response.ok) {
-      throw new Error(`Failed to fetch devices: ${response.status} ${response.statusText}`);
+      throw new Error(`Failed to fetch devices: ${response.statusText}`);
     }
-    
-    const data = await response.json();
-    return data.devices;
+    return await response.json();
   } catch (error) {
-    console.error('Error fetching user devices:', error);
+    console.error('Error fetching devices:', error);
     throw error;
   }
 };
 
 /**
- * Fetches service capabilities from the backend
- * @returns Promise containing array of Capability objects
+ * Sends a chat message to the backend
+ * @param customerId - The ID of the customer sending the message
+ * @param message - The message text to send
+ * @returns Promise containing the response from the bot
  */
-export const fetchServiceCapabilities = async (): Promise<Capability[]> => {
+export const sendChatMessage = async (customerId: string, message: string): Promise<ChatResponse> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/capabilities`);
+    const response = await fetch(`${API_BASE_URL}/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        customerId,
+        message,
+      }),
+    });
     
     if (!response.ok) {
-      throw new Error(`Failed to fetch capabilities: ${response.status} ${response.statusText}`);
+      throw new Error(`Failed to send message: ${response.statusText}`);
     }
     
-    const data = await response.json();
-    return data.capabilities;
+    return await response.json();
   } catch (error) {
-    console.error('Error fetching service capabilities:', error);
+    console.error('Error sending message:', error);
     throw error;
   }
 };
 
 /**
- * Updates the state of a device
- * @param deviceId - The ID of the device to update
- * @param newState - The new state to set for the device
- * @param customerId - The ID of the customer who owns the device
- * @returns Promise containing the updated Device object
+ * Fetches chat history for a customer
+ * @param customerId - The ID of the customer whose chat history to fetch
+ * @returns Promise containing array of Message objects
  */
-export const updateDeviceState = async (
-  deviceId: string, 
-  newState: string, 
-  customerId: string
-): Promise<Device> => {
+export const fetchChatHistory = async (customerId: string): Promise<Message[]> => {
   try {
-    const response = await fetch(
-      `${API_BASE_URL}/customers/${customerId}/devices/${deviceId}`, 
-      {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ state: newState }),
-      }
-    );
-    
+    const response = await fetch(`${API_BASE_URL}/chat/history/${customerId}`);
     if (!response.ok) {
-      throw new Error(`Failed to update device: ${response.status} ${response.statusText}`);
+      throw new Error(`Failed to fetch chat history: ${response.statusText}`);
     }
-    
-    const data = await response.json();
-    return data.device;
+    return await response.json();
   } catch (error) {
-    console.error('Error updating device state:', error);
+    console.error('Error fetching chat history:', error);
     throw error;
-  }
-};
-```
-
-### WebSocket Connection
-
-```typescript
-const connectWebSocket = () => {
-  // Close existing connection if any
-  if (socketRef.current) {
-    socketRef.current.close();
-    socketRef.current = null;
-  }
-
-  setIsConnecting(true);
-  setError(null);
-  setMessages([]);
-
-  // Create WebSocket URL with customerId as query parameter
-  const wsUrl = `${config.wsUrl}?customerId=${customerId}`;
-  const socket = new WebSocket(wsUrl);
-
-  socket.onopen = () => {
-    console.log('WebSocket connected');
-    setIsConnected(true);
-    setIsConnecting(false);
-  };
-
-  socket.onclose = (event) => {
-    console.log('WebSocket disconnected', event);
-    setIsConnected(false);
-    setIsConnecting(false);
-
-    // Attempt to reconnect after a delay if not intentionally closed
-    if (!event.wasClean && socketRef.current === socket) {
-      setTimeout(() => {
-        connectWebSocket();
-      }, 3000);
-    }
-  };
-
-  socket.onerror = (error) => {
-    console.error('WebSocket error', error);
-    setError('Failed to connect to chat service');
-    setIsConnecting(false);
-  };
-
-  socket.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data);
-      if (data.message) {
-        const botMessage = {
-          id: Date.now().toString(),
-          text: data.message,
-          sender: 'bot',
-          timestamp: new Date().toISOString()
-        };
-        setMessages(prev => [...prev, botMessage]);
-        setIsLoading(false);
-      }
-    } catch (error) {
-      console.error('Error parsing message', error);
-      setError('Failed to parse message from server');
-      setIsLoading(false);
-    }
-  };
-
-  socketRef.current = socket;
-};
-```
-
-### Message Sending
-
-```typescript
-const sendMessage = () => {
-  if (!input.trim() || !isConnected || isLoading) return;
-
-  const userMessage = {
-    id: Date.now().toString(),
-    text: input,
-    sender: 'user',
-    timestamp: new Date().toISOString()
-  };
-
-  setMessages(prev => [...prev, userMessage]);
-  setInput('');
-  setIsLoading(true);
-  setError(null);
-
-  try {
-    socketRef.current?.send(JSON.stringify({
-      action: 'sendMessage',
-      message: input
-    }));
-  } catch (error) {
-    console.error('Error sending message', error);
-    setError('Failed to send message');
-    setIsLoading(false);
   }
 };
 ```
@@ -471,7 +359,7 @@ The application uses Chakra UI's theming system with:
 
 1. User selects a customer profile (Basic, Premium, or Enterprise)
 2. User types a message in the input field
-3. Message is sent to the backend via WebSocket
+3. Message is sent to the backend via REST API
 4. Response is received and displayed in the chat
 5. Chat automatically scrolls to the latest message
 
@@ -493,20 +381,13 @@ The application uses Chakra UI's theming system with:
 
 ### Backend Communication
 
-The frontend communicates with the backend through REST API endpoints and WebSocket connections. The following integration points are implemented:
+The frontend communicates with the backend through REST API endpoints. The following integration points are implemented:
 
 #### REST API Endpoints
 
 - **GET /api/customers/{customerId}/devices**: Retrieve a customer's devices
-- **PATCH /api/customers/{customerId}/devices/{deviceId}**: Update a device's state
-- **GET /api/capabilities**: Retrieve service capabilities
-
-#### WebSocket API
-
-- **connect**: Establish a WebSocket connection
-- **disconnect**: Close a WebSocket connection
-- **sendMessage**: Send a message to the bot
-- **receiveMessage**: Receive a message from the bot
+- **POST /api/chat**: Send a chat message to the backend
+- **GET /api/chat/history/{customerId}**: Retrieve chat history for a customer
 
 ### Integration Requirements
 
@@ -532,10 +413,9 @@ To ensure proper communication between the frontend and backend, the following r
    - Network errors should trigger retry logic
    - User-friendly error messages should be displayed
 
-5. **WebSocket Connection Management**
-   - The frontend must handle WebSocket connection establishment
-   - Connection failures should trigger reconnection attempts
-   - The connection status should be displayed to the user
+5. **Message Handling**
+   - The frontend must handle message sending and receiving
+   - Message history should be fetched and displayed
 
 ### Implementation Steps
 
@@ -549,17 +429,6 @@ To ensure proper communication between the frontend and backend, the following r
    - Add retry logic for failed requests
    - Implement proper error handling
 
-3. **Implement WebSocket Service**
-   - Create a `websocketService.ts` file
-   - Implement connection management
-   - Add message handling functions
-
-4. **Update UI Components**
-   - Modify components to use the API and WebSocket services
-   - Add loading states and error handling
-   - Display connection status
-
-5. **Testing**
+3. **Testing**
    - Test API integration with mock endpoints
-   - Test WebSocket integration with mock server
    - Perform end-to-end testing with the actual backend 

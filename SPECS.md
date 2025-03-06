@@ -15,7 +15,7 @@ The following table lists all the specification documents for the project:
 | [Service Levels](specs/service-levels.md) | Service tier definitions, permissions, and action definitions |
 | [AI Integration](specs/ai-integration.md) | Integration with Claude AI, including prompts, error handling, and performance considerations |
 | [Data Model](specs/data-model.md) | Database schema, data structures, relationships, and access patterns |
-| [Frontend](specs/frontend.md) | User interface components, pages, WebSocket communication, and user experience |
+| [Frontend](specs/frontend.md) | User interface components, pages, REST API communication, and user experience |
 | [Deployment](specs/deployment.md) | Deployment process, environments, CI/CD pipeline, and monitoring |
 | [Testing](specs/testing.md) | Testing strategy, methodologies, automation, and reporting |
 
@@ -25,12 +25,12 @@ The Agentic Service Bot consists of the following key components:
 
 1. **Frontend Application**
    - React-based web interface
-   - Real-time WebSocket communication
+   - REST API communication
    - Customer selection and chat interface
 
 2. **Backend Services**
    - AWS Lambda functions for request processing
-   - WebSocket API Gateway for real-time communication
+   - REST API Gateway for communication
    - DynamoDB for data storage
    - Claude AI integration for natural language processing
 
@@ -38,7 +38,6 @@ The Agentic Service Bot consists of the following key components:
    - Customers table
    - Service levels table
    - Messages table
-   - Connections table
 
 4. **AI Integration**
    - Claude 3 Opus model

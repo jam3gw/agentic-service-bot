@@ -1,0 +1,173 @@
+openapi: 3.0.0
+info:
+  title: Agentic Service Bot API
+  description: API specification for the Agentic Service Bot
+  version: 1.0.0
+servers:
+  - url: https://api.example.com/v1
+    description: Production server
+paths:
+  /chat:
+    post:
+      summary: Send a message to the chat bot
+      description: Sends a user message to the chat bot and receives a response
+      operationId: postChatMessage
+      tags:
+        - Chat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - customerId
+                - message
+              properties:
+                customerId:
+                  type: string
+                  description: Unique identifier for the customer
+                message:
+                  type: string
+                  description: The message text from the user
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - message
+                  - timestamp
+                  - messageId
+                  - id
+                  - conversationId
+                  - customerId
+                properties:
+                  message:
+                    type: string
+                    description: The response message from the bot
+                  timestamp:
+                    type: number
+                    description: Unix timestamp when the message was created
+                  messageId:
+                    type: string
+                    description: Unique identifier for the message (legacy field)
+                  id:
+                    type: string
+                    description: Unique identifier for the message
+                  conversationId:
+                    type: string
+                    description: Identifier for the conversation this message belongs to
+                  customerId:
+                    type: string
+                    description: Identifier for the customer who sent the message
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+  /chat/history:
+    get:
+      summary: Get chat history for a customer
+      description: Retrieves the chat history for a specific customer
+      operationId: getChatHistory
+      tags:
+        - Chat
+      parameters:
+        - name: customerId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Unique identifier for the customer
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  messages:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          description: Unique identifier for the message
+                        message:
+                          type: string
+                          description: The message text
+                        timestamp:
+                          type: number
+                          description: Unix timestamp when the message was created
+                        sender:
+                          type: string
+                          enum: [user, bot]
+                          description: Indicates whether the message was sent by the user or the bot
+                        conversationId:
+                          type: string
+                          description: Identifier for the conversation this message belongs to
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+components:
+  schemas:
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique identifier for the message
+        message:
+          type: string
+          description: The message text
+        timestamp:
+          type: number
+          description: Unix timestamp when the message was created
+        sender:
+          type: string
+          enum: [user, bot]
+          description: Indicates whether the message was sent by the user or the bot
+        conversationId:
+          type: string
+          description: Identifier for the conversation this message belongs to
+        customerId:
+          type: string
+          description: Identifier for the customer who sent the message
+      required:
+        - id
+        - message
+        - timestamp
+        - sender 

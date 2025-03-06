@@ -2,15 +2,15 @@
 
 ## Overview
 
-The Agentic Service Bot uses a serverless architecture on AWS, with a React frontend and WebSocket communication for real-time interactions. The system is designed to be scalable, cost-effective, and maintainable.
+The Agentic Service Bot uses a serverless architecture on AWS, with a React frontend and REST API communication for interactions. The system is designed to be scalable, cost-effective, and maintainable.
 
 ## Architecture Diagram
 
 ```
 ┌─────────────┐     ┌───────────────┐     ┌──────────────┐
 │             │     │               │     │              │
-│   Frontend  │◄────┤  WebSocket    │◄────┤  Lambda      │
-│   (React)   │     │  API Gateway  │     │  Functions   │
+│   Frontend  │◄────┤  REST API     │◄────┤  Lambda      │
+│   (React)   │     │  Gateway      │     │  Functions   │
 │             │     │               │     │              │
 └─────────────┘     └───────────────┘     └──────┬───────┘
                                                  │
@@ -33,20 +33,20 @@ The Agentic Service Bot uses a serverless architecture on AWS, with a React fron
   - Chat interface
   - Customer selection
   - Message history display
-  - Real-time status indicators
+  - Status indicators
 
 ### Backend
 
 #### API Gateway
 
-- WebSocket API for real-time bidirectional communication
-- Routes for connect, disconnect, and message events
-- Custom authorizers for authentication
+- REST API for communication
+- Endpoints for chat, customers, devices, and capabilities
+- CORS configuration for frontend access
 
 #### Lambda Functions
 
-- **Chat Handler**: Processes incoming messages, interacts with Claude API, and sends responses
-- **Connection Handler**: Manages WebSocket connections
+- **Chat Handler**: Processes incoming messages, interacts with Claude API, and returns responses
+- **API Handler**: Manages customer and device data
 - **Seed Function**: Initializes database with sample data
 
 #### DynamoDB Tables
@@ -61,9 +61,6 @@ The Agentic Service Bot uses a serverless architecture on AWS, with a React fron
 - **Service Levels Table**: Defines permission tiers
   - Partition Key: `level`
   - Contains allowed actions and limits
-- **Connections Table**: Manages WebSocket connections
-  - Partition Key: `connectionId`
-  - TTL attribute for automatic cleanup
 
 ### External Services
 
@@ -74,22 +71,22 @@ The Agentic Service Bot uses a serverless architecture on AWS, with a React fron
 ## Data Flow
 
 1. **User Request**:
-   - User sends message via WebSocket
-   - Message includes customer ID and request text
+   - User sends message via REST API
+   - Request includes customer ID and message text
 
 2. **Request Processing**:
-   - Lambda receives message from WebSocket API
+   - Lambda receives message from API Gateway
    - Retrieves customer data and service level
    - Analyzes request using RequestAnalyzer
    - Checks permissions based on service level
 
 3. **AI Processing**:
-   - Sends request to Claude API with context
+   - Sends request to Anthropic API with context
    - Receives AI-generated response
 
 4. **Response Delivery**:
    - Stores message in DynamoDB
-   - Sends response back through WebSocket
+   - Returns response through REST API
    - Updates conversation history
 
 ## Deployment
@@ -111,7 +108,6 @@ The Agentic Service Bot uses a serverless architecture on AWS, with a React fron
 - Serverless architecture scales automatically
 - DynamoDB on-demand capacity
 - Stateless Lambda functions
-- Connection management with TTL
 
 ## Monitoring and Logging
 

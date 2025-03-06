@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Test Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .section {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .controls label {
+            margin-right: 5px;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .stat-item {
+            background-color: #f5f5f5;
+            padding: 8px;
+            border-radius: 4px;
+        }
+
+        .stat-label {
+            font-weight: bold;
+            margin-right: 5px;
+        }
+
+        #messages {
+            height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+            background-color: #f9f9f9;
+            margin-bottom: 10px;
+        }
+
+        .message {
+            padding: 8px;
+            margin-bottom: 8px;
+            border-radius: 4px;
+            position: relative;
+        }
+
+        .message-timestamp {
+            color: #666;
+            font-size: 0.8em;
+            margin-right: 8px;
+        }
+
+        .message-content {
+            word-break: break-word;
+        }
+
+        .message.received {
+            background-color: #e3f2fd;
+            border-left: 4px solid #2196F3;
+        }
+
+        .message.sent {
+            background-color: #e8f5e9;
+            border-left: 4px solid #4CAF50;
+            text-align: right;
+        }
+
+        .message.system {
+            background-color: #f5f5f5;
+            border-left: 4px solid #9e9e9e;
+            font-style: italic;
+        }
+
+        .message.error {
+            background-color: #ffebee;
+            border-left: 4px solid #f44336;
+            font-weight: bold;
+        }
+
+        .message.heartbeat {
+            background-color: #fff8e1;
+            border-left: 4px solid #ffc107;
+            opacity: 0.8;
+        }
+
+        button {
+            padding: 8px 12px;
+            cursor: pointer;
+        }
+
+        input[type="text"],
+        input[type="number"] {
+            padding: 8px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+        }
+
+        .input-group input {
+            flex: 1;
+        }
+
+        .connection-status {
+            font-weight: bold;
+            margin-left: 10px;
+        }
+
+        .connection-healthy {
+            color: green;
+        }
+
+        .connection-unhealthy {
+            color: red;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+
+            100% {
+                opacity: 1;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>WebSocket Test Client</h1>
+
+        <div class="section">
+            <h2>Connection Settings</h2>
+            <div class="controls">
+                <div style="flex: 1;">
+                    <label for="wsUrl">WebSocket URL:</label>
+                    <input type="text" id="wsUrl" placeholder="wss://example.com/dev">
+                </div>
+                <div style="flex: 1;">
+                    <label for="customerId">Customer ID:</label>
+                    <input type="text" id="customerId" placeholder="customer123">
+                </div>
+                <div>
+                    <button id="connectBtn">Connect</button>
+                    <button id="disconnectBtn" disabled>Disconnect</button>
+                </div>
+            </div>
+            <div>
+                <span>Status: </span><span id="connectionStatus" class="connection-status">Disconnected</span>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Connection Statistics</h2>
+            <div class="stats">
+                <div class="stat-item">
+                    <span class="stat-label">Connection Start:</span>
+                    <span id="connectionStart">-</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Connection Established:</span>
+                    <span id="connectionEstablished">-</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Connection Time:</span>
+                    <span id="connectionTime">-</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Connection Duration:</span>
+                    <span id="connectionDuration">-</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Messages Sent:</span>
+                    <span id="messagesSent">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Messages Received:</span>
+                    <span id="messagesReceived">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Errors Count:</span>
+                    <span id="errorsCount">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Last Activity:</span>
+                    <span id="lastActivity">-</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Last Heartbeat:</span>
+                    <span id="lastHeartbeat">-</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Send Message</h2>
+            <div class="input-group">
+                <input type="text" id="message" placeholder="Enter message" disabled>
+                <button id="sendBtn" disabled>Send</button>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Heartbeat Settings</h2>
+            <div class="controls">
+                <div>
+                    <label for="heartbeatInterval">Interval (ms):</label>
+                    <input type="number" id="heartbeatInterval" value="30000" min="1000">
+                </div>
+                <div>
+                    <button id="enableHeartbeat" disabled>Enable Heartbeat</button>
+                    <button id="disableHeartbeat" disabled>Disable Heartbeat</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Messages</h2>
+            <div id="messages"></div>
+            <button id="clearBtn">Clear Messages</button>
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const wsUrlInput = document.getElementById('wsUrl');
+        const customerIdInput = document.getElementById('customerId');
+        const messageInput = document.getElementById('message');
+        const messagesContainer = document.getElementById('messages');
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const sendBtn = document.getElementById('sendBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const connectionStatusSpan = document.getElementById('connectionStatus');
+        const messagesSentSpan = document.getElementById('messagesSent');
+        const messagesReceivedSpan = document.getElementById('messagesReceived');
+        const errorsCountSpan = document.getElementById('errorsCount');
+        const lastActivitySpan = document.getElementById('lastActivity');
+        const connectionStartSpan = document.getElementById('connectionStart');
+        const connectionEstablishedSpan = document.getElementById('connectionEstablished');
+        const connectionTimeSpan = document.getElementById('connectionTime');
+        const connectionDurationSpan = document.getElementById('connectionDuration');
+        const heartbeatIntervalInput = document.getElementById('heartbeatInterval');
+        const enableHeartbeatBtn = document.getElementById('enableHeartbeat');
+        const disableHeartbeatBtn = document.getElementById('disableHeartbeat');
+        const lastHeartbeatSpan = document.getElementById('lastHeartbeat');
+
+        // Variables
+        let socket = null;
+        let messagesSent = 0;
+        let messagesReceived = 0;
+        let errorsCount = 0;
+        let connectionStartTime = null;
+        let connectionEstablishedTime = null;
+        let durationInterval = null;
+        let heartbeatInterval = null;
+        let pongTimeout = null;
+        let heartbeatCount = 0;
+        let unhealthyCount = 0;
+
+        // Initialize with default values
+        wsUrlInput.value = 'wss://your-api-id.execute-api.your-region.amazonaws.com/dev';
+        customerIdInput.value = 'customer123';
+
+        // Event Listeners
+        connectBtn.addEventListener('click', connectWebSocket);
+        disconnectBtn.addEventListener('click', disconnectWebSocket);
+        sendBtn.addEventListener('click', sendMessage);
+        clearBtn.addEventListener('click', clearMessages);
+        enableHeartbeatBtn.addEventListener('click', enableHeartbeat);
+        disableHeartbeatBtn.addEventListener('click', disableHeartbeat);
+
+        // Add keyboard shortcut for sending messages
+        messageInput.addEventListener('keypress', function (event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                sendMessage();
+            }
+        });
+
+        // Start tracking connection duration
+        function startDurationTracking() {
+            durationInterval = setInterval(() => {
+                if (connectionEstablishedTime) {
+                    const duration = new Date() - connectionEstablishedTime;
+                    const seconds = Math.floor(duration / 1000);
+                    const minutes = Math.floor(seconds / 60);
+                    const hours = Math.floor(minutes / 60);
+
+                    const formattedDuration =
+                        (hours > 0 ? hours + 'h ' : '') +
+                        (minutes % 60) + 'm ' +
+                        (seconds % 60) + 's';
+
+                    connectionDurationSpan.textContent = formattedDuration;
+                }
+            }, 1000);
+        }
+
+        // Stop tracking connection duration
+        function stopDurationTracking() {
+            if (durationInterval) {
+                clearInterval(durationInterval);
+                durationInterval = null;
+            }
+        }
+
+        // Send a heartbeat ping
+        function sendHeartbeat() {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                const pingMessage = JSON.stringify({
+                    action: 'ping',
+                    timestamp: new Date().toISOString()
+                });
+
+                try {
+                    socket.send(pingMessage);
+                    heartbeatCount++;
+
+                    const now = new Date();
+                    lastHeartbeatSpan.textContent = now.toLocaleTimeString() + '.' + now.getMilliseconds().toString().padStart(3, '0');
+
+                    addMessage('Ping sent', 'heartbeat');
+
+                    // Set timeout for pong response
+                    if (pongTimeout) {
+                        clearTimeout(pongTimeout);
+                    }
+
+                    pongTimeout = setTimeout(() => {
+                        // No pong received within timeout
+                        unhealthyCount++;
+                        connectionStatusSpan.textContent = 'Unhealthy';
+                        connectionStatusSpan.className = 'connection-status connection-unhealthy';
+                        addMessage(`No pong response received within timeout (${unhealthyCount})`, 'error');
+
+                        // If we've missed too many pongs, consider the connection dead
+                        if (unhealthyCount >= 3) {
+                            addMessage('Connection appears to be dead after multiple missed pongs', 'error');
+                            // Optionally, could force a reconnect here
+                        }
+                    }, 5000); // 5 second timeout for pong
+
+                } catch (error) {
+                    addMessage(`Error sending heartbeat: ${error.message}`, 'error');
+                }
+            }
+        }
+
+        // Enable heartbeat
+        function enableHeartbeat() {
+            const interval = parseInt(heartbeatIntervalInput.value);
+            if (isNaN(interval) || interval < 1000) {
+                addMessage('Please enter a valid heartbeat interval (minimum 1000ms)', 'error');
+                return;
+            }
+
+            if (heartbeatInterval) {
+                clearInterval(heartbeatInterval);
+            }
+
+            heartbeatInterval = setInterval(sendHeartbeat, interval);
+            addMessage(`Heartbeat enabled with interval of ${interval}ms`, 'system');
+
+            enableHeartbeatBtn.disabled = true;
+            disableHeartbeatBtn.disabled = false;
+            heartbeatIntervalInput.disabled = true;
+        }
+
+        // Disable heartbeat
+        function disableHeartbeat() {
+            if (heartbeatInterval) {
+                clearInterval(heartbeatInterval);
+                heartbeatInterval = null;
+            }
+
+            if (pongTimeout) {
+                clearTimeout(pongTimeout);
+                pongTimeout = null;
+            }
+
+            addMessage('Heartbeat disabled', 'system');
+
+            enableHeartbeatBtn.disabled = false;
+            disableHeartbeatBtn.disabled = true;
+            heartbeatIntervalInput.disabled = false;
+        }
+
+        // Stop heartbeat if active
+        function stopHeartbeat() {
+            if (heartbeatInterval) {
+                clearInterval(heartbeatInterval);
+                heartbeatInterval = null;
+            }
+
+            if (pongTimeout) {
+                clearTimeout(pongTimeout);
+                pongTimeout = null;
+            }
+        }
+
+        // Clear messages
+        function clearMessages() {
+            messagesContainer.innerHTML = '';
+            addMessage('Messages cleared', 'system');
+        }
+
+        // Send a message
+        function sendMessage() {
+            if (!socket || socket.readyState !== WebSocket.OPEN) {
+                addMessage('Not connected to WebSocket server', 'error');
+                return;
+            }
+
+            const message = messageInput.value.trim();
+            if (!message) {
+                addMessage('Please enter a message to send', 'error');
+                return;
+            }
+
+            try {
+                // Try to parse as JSON if it looks like JSON
+                let messageToSend = message;
+                if (message.startsWith('{') && message.endsWith('}')) {
+                    try {
+                        const jsonObj = JSON.parse(message);
+                        messageToSend = JSON.stringify(jsonObj);
+                    } catch (e) {
+                        // Not valid JSON, send as is
+                        messageToSend = message;
+                    }
+                }
+
+                socket.send(messageToSend);
+                addMessage(messageToSend, 'sent');
+                messagesSent++;
+                messagesSentSpan.textContent = messagesSent;
+                messageInput.value = '';
+            } catch (error) {
+                addMessage(`Error sending message: ${error.message}`, 'error');
+                errorsCount++;
+                errorsCountSpan.textContent = errorsCount;
+            }
+        }
+
+        // Disconnect WebSocket
+        function disconnectWebSocket() {
+            if (socket) {
+                socket.close();
+                addMessage('Disconnecting...', 'system');
+            }
+        }
+
+        // Update UI elements based on connection state
+        function updateUIState(state) {
+            switch (state) {
+                case 'connected':
+                    messageInput.disabled = false;
+                    sendBtn.disabled = false;
+                    connectBtn.disabled = true;
+                    disconnectBtn.disabled = false;
+                    enableHeartbeatBtn.disabled = false;
+                    disableHeartbeatBtn.disabled = true;
+                    connectionStatusSpan.textContent = 'Connected';
+                    connectionStatusSpan.style.color = 'green';
+                    break;
+                case 'disconnected':
+                    messageInput.disabled = true;
+                    sendBtn.disabled = true;
+                    connectBtn.disabled = false;
+                    disconnectBtn.disabled = true;
+                    enableHeartbeatBtn.disabled = true;
+                    disableHeartbeatBtn.disabled = true;
+                    heartbeatIntervalInput.disabled = false;
+                    connectionStatusSpan.textContent = 'Disconnected';
+                    connectionStatusSpan.style.color = '';
+                    break;
+                case 'connecting':
+                    messageInput.disabled = true;
+                    sendBtn.disabled = true;
+                    connectBtn.disabled = true;
+                    disconnectBtn.disabled = true;
+                    enableHeartbeatBtn.disabled = true;
+                    disableHeartbeatBtn.disabled = true;
+                    connectionStatusSpan.textContent = 'Connecting...';
+                    connectionStatusSpan.style.color = 'blue';
+                    break;
+                case 'error':
+                    messageInput.disabled = true;
+                    sendBtn.disabled = true;
+                    connectBtn.disabled = false;
+                    disconnectBtn.disabled = false;
+                    enableHeartbeatBtn.disabled = true;
+                    disableHeartbeatBtn.disabled = true;
+                    connectionStatusSpan.textContent = 'Error';
+                    connectionStatusSpan.style.color = 'red';
+                    break;
+            }
+        }
+
+        // Connect to WebSocket
+        function connectWebSocket() {
+            const wsUrl = wsUrlInput.value;
+            const customerId = customerIdInput.value;
+
+            if (!wsUrl || !customerId) {
+                addMessage('Please provide both WebSocket URL and Customer ID', 'error');
+                return;
+            }
+
+            // Record connection start time
+            connectionStartTime = new Date();
+            connectionStartSpan.textContent = connectionStartTime.toLocaleTimeString() + '.' + connectionStartTime.getMilliseconds().toString().padStart(3, '0');
+
+            // Construct URL with query parameter
+            const fullUrl = `${wsUrl}?customer_id=${encodeURIComponent(customerId)}`;
+
+            try {
+                socket = new WebSocket(fullUrl);
+
+                addMessage(`Connecting to ${fullUrl}...`, 'system');
+                updateUIState('connecting');
+
+                socket.onopen = function (event) {
+                    connectionEstablishedTime = new Date();
+                    const connectionTimeMs = connectionEstablishedTime - connectionStartTime;
+
+                    connectionEstablishedSpan.textContent = connectionEstablishedTime.toLocaleTimeString() + '.' + connectionEstablishedTime.getMilliseconds().toString().padStart(3, '0');
+                    connectionTimeSpan.textContent = `${connectionTimeMs}ms`;
+
+                    addMessage('Connection established', 'system');
+                    updateUIState('connected');
+
+                    // Start tracking connection duration
+                    startDurationTracking();
+                };
+
+                socket.onmessage = function (event) {
+                    messagesReceived++;
+                    messagesReceivedSpan.textContent = messagesReceived;
+
+                    try {
+                        // Try to parse as JSON
+                        const data = JSON.parse(event.data);
+
+                        // Check if this is a pong response
+                        if (data.action === 'pong') {
+                            // Clear the pong timeout
+                            if (pongTimeout) {
+                                clearTimeout(pongTimeout);
+                                pongTimeout = null;
+                            }
+
+                            // Reset unhealthy count
+                            unhealthyCount = 0;
+
+                            // Update connection status
+                            connectionStatusSpan.textContent = 'Connected';
+                            connectionStatusSpan.className = 'connection-status connection-healthy';
+
+                            addMessage(`Pong received: ${JSON.stringify(data)}`, 'heartbeat');
+                        } else {
+                            addMessage(event.data, 'received', data);
+                        }
+                    } catch (e) {
+                        // Not JSON, display as is
+                        addMessage(event.data, 'received');
+                    }
+                };
+
+                socket.onerror = function (error) {
+                    errorsCount++;
+                    errorsCountSpan.textContent = errorsCount;
+                    addMessage(`Error: ${error.message || 'WebSocket error occurred'}`, 'error');
+                    updateUIState('error');
+                };
+
+                socket.onclose = function (event) {
+                    const codes = {
+                        1000: 'Normal Closure',
+                        1001: 'Going Away',
+                        1002: 'Protocol Error',
+                        1003: 'Unsupported Data',
+                        1005: 'No Status Received',
+                        1006: 'Abnormal Closure',
+                        1007: 'Invalid frame payload data',
+                        1008: 'Policy Violation',
+                        1009: 'Message too big',
+                        1010: 'Missing Extension',
+                        1011: 'Internal Error',
+                        1012: 'Service Restart',
+                        1013: 'Try Again Later',
+                        1014: 'Bad Gateway',
+                        1015: 'TLS Handshake'
+                    };
+
+                    const reason = event.reason || 'No reason provided';
+                    const code = event.code;
+                    const codeExplanation = codes[code] || 'Unknown';
+
+                    addMessage(`Connection closed: Code ${code} (${codeExplanation}) - ${reason}`, 'system');
+                    updateUIState('disconnected');
+
+                    // Stop heartbeat if active
+                    stopHeartbeat();
+
+                    // Stop duration tracking
+                    stopDurationTracking();
+
+                    socket = null;
+                };
+            } catch (error) {
+                addMessage(`Error creating WebSocket: ${error.message}`, 'error');
+                errorsCount++;
+                errorsCountSpan.textContent = errorsCount;
+            }
+        }
+
+        // Add a message to the messages container
+        function addMessage(message, type = 'system', data = null) {
+            const messageElement = document.createElement('div');
+            messageElement.className = `message ${type}`;
+
+            const now = new Date();
+            const timestamp = now.toLocaleTimeString() + '.' + now.getMilliseconds().toString().padStart(3, '0');
+
+            const timestampSpan = document.createElement('span');
+            timestampSpan.className = 'message-timestamp';
+            timestampSpan.textContent = timestamp;
+
+            const contentSpan = document.createElement('span');
+            contentSpan.className = 'message-content';
+
+            if (type === 'received' && data) {
+                try {
+                    // Try to parse and pretty-print JSON
+                    const jsonData = typeof data === 'string' ? JSON.parse(data) : data;
+                    contentSpan.innerHTML = `<strong>Received:</strong> <pre>${JSON.stringify(jsonData, null, 2)}</pre>`;
+                } catch (e) {
+                    contentSpan.innerHTML = `<strong>Received:</strong> ${data}`;
+                }
+            } else if (type === 'sent') {
+                try {
+                    // Try to parse and pretty-print JSON
+                    const jsonData = typeof message === 'string' ? JSON.parse(message) : message;
+                    contentSpan.innerHTML = `<strong>Sent:</strong> <pre>${JSON.stringify(jsonData, null, 2)}</pre>`;
+                } catch (e) {
+                    contentSpan.innerHTML = `<strong>Sent:</strong> ${message}`;
+                }
+            } else if (type === 'error') {
+                contentSpan.innerHTML = `<strong>Error:</strong> ${message}`;
+            } else if (type === 'heartbeat') {
+                contentSpan.innerHTML = `<strong>Heartbeat:</strong> ${message}`;
+            } else {
+                contentSpan.textContent = message;
+            }
+
+            messageElement.appendChild(timestampSpan);
+            messageElement.appendChild(contentSpan);
+            messagesContainer.appendChild(messageElement);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+            // Update last activity timestamp
+            lastActivitySpan.textContent = timestamp;
+        }
+    </script>
+</body>
+
+</html>
