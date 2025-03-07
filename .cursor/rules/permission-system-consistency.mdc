@@ -40,7 +40,7 @@ actions:
            - Data models (e.g., data-model.md)
            - Sample data (e.g., sample_data.json, customers.json)
            - Test fixtures and assertions
-           - Seed data for development and testing
+
          - Any inconsistency can lead to confusing behavior where permissions work in one context but fail in another
 
       2. **Use Clear Permission Naming**
