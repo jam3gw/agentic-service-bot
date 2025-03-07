@@ -261,29 +261,32 @@ def update_device_state(customer_id: str, device_id: str, state_updates: Dict[st
             return False
             
         customer_data = response['Item']
-        devices = customer_data.get('devices', [])
+        device = customer_data.get('device')
         
-        if not devices:
-            logger.error(f"No devices found for customer {customer_id}")
+        if not device:
+            logger.error(f"No device found for customer {customer_id}")
             return False
             
-        # Get the first device
-        device = devices[0]
-        
         # Verify it's the correct device
         if device.get('id') != device_id:
             logger.error(f"Device {device_id} does not match customer's device {device.get('id')}")
             return False
             
-        # Update the device state
+        # Create update expression for each attribute
+        update_expression_parts = []
+        expression_attribute_values = {}
+        
         for key, value in state_updates.items():
-            device[key] = value
-            
-        # Save the updated customer data
+            update_expression_parts.append(f"device.{key} = :val_{key}")
+            expression_attribute_values[f":val_{key}"] = value
+        
+        update_expression = "SET " + ", ".join(update_expression_parts)
+        
+        # Update the device in DynamoDB
         update_response = customers_table.update_item(
             Key={'id': customer_id},
-            UpdateExpression='SET devices[0] = :device',
-            ExpressionAttributeValues={':device': device},
+            UpdateExpression=update_expression,
+            ExpressionAttributeValues=expression_attribute_values,
             ReturnValues='UPDATED_NEW'
         )
         

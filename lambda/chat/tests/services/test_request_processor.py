@@ -154,7 +154,7 @@ class TestRequestProcessor(unittest.TestCase):
     
     @patch('services.request_processor.get_customer')
     @patch('services.request_processor.get_service_level_permissions')
-    @patch('services.request_processor.RequestAnalyzer.analyze')
+    @patch('services.request_processor.analyze_request')
     @patch('services.request_processor.store_message')
     def test_process_request_basic_service_level(self, mock_store_message, 
                                                mock_analyze, mock_get_permissions, mock_get_customer):
@@ -201,7 +201,7 @@ class TestRequestProcessor(unittest.TestCase):
     
     @patch('services.request_processor.get_customer')
     @patch('services.request_processor.get_service_level_permissions')
-    @patch('services.request_processor.RequestAnalyzer.analyze')
+    @patch('services.request_processor.analyze_request')
     @patch('services.request_processor.store_message')
     def test_process_request_premium_service_level(self, mock_store_message, 
                                                 mock_analyze, mock_get_permissions, mock_get_customer):
