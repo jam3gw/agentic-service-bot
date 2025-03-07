@@ -1,0 +1,30 @@
+[MASTER]
+# Add any Python module names where names should be loaded from
+generated-members=boto3.*.Table
+
+[MESSAGES CONTROL]
+# Disable specific warnings
+disable=C0111,  # missing-docstring
+        C0103,  # invalid-name
+        C0303,  # trailing-whitespace
+        W0311,  # bad-indentation
+        E1101,  # no-member (this covers the boto3 Table issue)
+        E1136,  # unsubscriptable-object (for DynamoDB response dict access)
+        W0622,  # redefined-builtin
+        W0703   # broad-except
+
+[FORMAT]
+# Maximum number of characters on a single line
+max-line-length=120
+
+[BASIC]
+# Regular expression which should only match function or class names
+function-rgx=[a-z_][a-z0-9_]{2,50}$
+class-rgx=[A-Z_][a-zA-Z0-9_]+$
+
+[TYPECHECK]
+# List of module names for which member attributes should not be checked
+ignored-modules=boto3,boto3.resources.base,boto3.resources.factory,mypy_boto3_dynamodb,mypy_boto3_dynamodb.service_resource
+
+# List of class names for which member attributes should not be checked
+ignored-classes=Table,DynamoDBServiceResource 

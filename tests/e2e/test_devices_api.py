@@ -54,7 +54,7 @@ def test_get_devices(test_data):
         assert "id" in device, "Device is missing id"
         assert "name" in device, "Device is missing name"
         assert "type" in device, "Device is missing type"
-        assert "state" in device, "Device is missing state"
+        assert "power" in device, "Device is missing power"
 
 def test_get_devices_invalid_customer():
     """Test the GET /customers/{customerId}/devices endpoint with an invalid customer ID."""
@@ -74,7 +74,7 @@ def test_update_device(test_data):
     
     # Prepare request body
     request_body = {
-        "state": "on"
+        "power": "on"
     }
     
     # Make the API request
@@ -95,10 +95,10 @@ def test_update_device(test_data):
     assert "id" in device, "Device is missing id"
     assert "name" in device, "Device is missing name"
     assert "type" in device, "Device is missing type"
-    assert "state" in device, "Device is missing state"
+    assert "power" in device, "Device is missing power"
     
     # Verify the device status was updated
-    assert device["state"] == "on", f"Expected device state to be 'on', got {device.get('state')}"
+    assert device["power"] == "on", f"Expected device power to be 'on', got {device.get('power')}"
     
     # Get the device list to verify the update
     get_response = requests.get(
@@ -114,7 +114,7 @@ def test_update_device(test_data):
     
     # Verify the device was found and has the updated status
     assert updated_device is not None, f"Device {device_id} not found in device list"
-    assert updated_device["state"] == "on", f"Expected device state to be 'on', got {updated_device.get('state')}"
+    assert updated_device["power"] == "on", f"Expected device power to be 'on', got {updated_device.get('power')}"
 
 def test_update_device_invalid_customer(test_data):
     """Test the PATCH /customers/{customerId}/devices/{deviceId} endpoint with an invalid customer ID."""
@@ -123,7 +123,7 @@ def test_update_device_invalid_customer(test_data):
     
     # Prepare request body
     request_body = {
-        "state": "on"
+        "power": "on"
     }
     
     # Make the API request
@@ -142,7 +142,7 @@ def test_update_device_invalid_device(test_data):
     
     # Prepare request body
     request_body = {
-        'state': 'on'
+        'power': 'on'
     }
     
     # Make the API request

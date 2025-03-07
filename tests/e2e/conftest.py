@@ -43,25 +43,24 @@ def create_test_customer(dynamodb, customer_id):
         table = dynamodb.Table(CUSTOMERS_TABLE)
         
         # Create a test customer with a single device
+        device_id = f"{customer_id}-device-1"
         customer_data = {
             'id': customer_id,
             'name': 'E2E Test Customer',
             'email': 'test@example.com',
-            'serviceLevel': 'premium',
+            'level': 'premium',
             'createdAt': datetime.now().isoformat(),
-            'devices': [
-                {
-                    'id': f"{customer_id}-device-1",
-                    'name': 'Test Speaker',
-                    'type': 'speaker',
-                    'power': 'off',
-                    'volume': 5,
-                    'current_song': 'Test Song 1',
-                    'playlist': ['Test Song 1', 'Test Song 2', 'Test Song 3', 'Test Song 4'],
-                    'location': 'living_room',
-                    'capabilities': ['power', 'volume', 'song_control']
-                }
-            ]
+            'device': {
+                'id': device_id,
+                'name': 'Test Speaker',
+                'type': 'speaker',
+                'power': 'off',
+                'volume': 5,
+                'current_song': 'Test Song 1',
+                'playlist': ['Test Song 1', 'Test Song 2', 'Test Song 3', 'Test Song 4'],
+                'location': 'living_room',
+                'capabilities': ['power', 'volume', 'song_control']
+            }
         }
         
         # Put the item in the table
@@ -138,7 +137,7 @@ def test_data():
         pytest.fail("Failed to create test customer")
     
     # Extract device ID (since we now only have one device per customer)
-    device_id = customer_data['devices'][0]['id'] if customer_data['devices'] else None
+    device_id = customer_data['device']['id'] if customer_data['device'] else None
     
     # Create test data dictionary
     test_data = {

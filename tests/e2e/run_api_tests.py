@@ -58,7 +58,8 @@ from tests.e2e.test_chat_actions import (
     test_volume_control_action,
     test_song_changes_action,
     test_service_level_permissions,
-    test_basic_service_level_device_power
+    test_basic_service_level_device_power,
+    test_basic_user_device_flow
 )
 
 # Import test data setup functions from conftest.py
@@ -84,7 +85,7 @@ def setup_test_data():
         raise Exception("Failed to create test customer")
     
     # Extract device ID (since we now only have one device per customer)
-    device_id = customer_data['devices'][0]['id'] if customer_data['devices'] else None
+    device_id = customer_data['device']['id'] if 'device' in customer_data else None
     
     # Create test data dictionary
     test_data = {
@@ -160,6 +161,7 @@ def main():
             (test_song_changes_action, "Chat API - Song Changes Action"),
             (test_service_level_permissions, "Chat API - Service Level Permissions"),
             (test_basic_service_level_device_power, "Chat API - Basic Service Level Device Power"),
+            (test_basic_user_device_flow, "Chat API - Basic User Device Flow"),
             
             # Devices API tests
             (test_get_devices, "GET /customers/{customerId}/devices"),
