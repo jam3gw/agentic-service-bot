@@ -3,8 +3,6 @@ import {
     Box,
     Input,
     Button,
-    VStack,
-    HStack,
     Text,
     Flex,
     useColorModeValue,
@@ -15,6 +13,9 @@ import {
     AlertDescription,
     CloseButton,
     Select,
+    FormControl,
+    FormLabel,
+    HStack,
 } from '@chakra-ui/react';
 import { Message, Customer } from '../types';
 import config from '../config';
@@ -28,13 +29,13 @@ interface ChatProps {
 export const Chat: React.FC<ChatProps> = ({ onCustomerChange }) => {
     // Component state
     const [messages, setMessages] = useState<Message[]>([]);
-    const [input, setInput] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
+    const [input, setInput] = useState<string>('');
+    const [isLoading, setIsLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
     const [customers, setCustomers] = useState<Customer[]>([]);
-    const [isLoadingCustomers, setIsLoadingCustomers] = useState(false);
-    const [customerId, setCustomerId] = useState(config.defaultCustomerId);
-    const [lastMessageTimestamp, setLastMessageTimestamp] = useState<string | null>(null);
+    const [isLoadingCustomers, setIsLoadingCustomers] = useState<boolean>(false);
+    const [customerId, setCustomerId] = useState<string>('');
+    const [conversationId, setConversationId] = useState<string>('');
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -51,6 +52,7 @@ export const Chat: React.FC<ChatProps> = ({ onCustomerChange }) => {
     // Handle customer change
     const handleCustomerChange = (id: string) => {
         setCustomerId(id);
+        setConversationId('');
         onCustomerChange(id);
     };
 
@@ -95,9 +97,13 @@ export const Chat: React.FC<ChatProps> = ({ onCustomerChange }) => {
                     timestamp: response.timestamp || new Date().toISOString(),
                 };
 
+                // Store the conversation ID if this is a new conversation
+                if (response.conversationId && !conversationId) {
+                    setConversationId(response.conversationId);
+                }
+
                 // Add bot message to state
                 setMessages(prev => [...prev, botMessage]);
-                setLastMessageTimestamp(botMessage.timestamp);
             }
         } catch (err) {
             setError(`Failed to send message: ${err instanceof Error ? err.message : String(err)}`);
@@ -110,14 +116,18 @@ export const Chat: React.FC<ChatProps> = ({ onCustomerChange }) => {
     const loadChatHistory = async () => {
         try {
             setIsLoading(true);
-            const history = await apiService.fetchChatHistory(customerId);
+            const history = await apiService.fetchChatHistory(customerId, conversationId);
 
             // Filter out any empty messages
             const validMessages = history.filter(msg => msg.text && msg.text.trim());
 
             if (validMessages.length > 0) {
                 setMessages(validMessages);
-                setLastMessageTimestamp(validMessages[validMessages.length - 1].timestamp);
+
+                // If we have messages and no conversationId set, use the conversationId from the first message
+                if (!conversationId && validMessages[0].conversationId) {
+                    setConversationId(validMessages[0].conversationId);
+                }
             } else {
                 // Add welcome message if no history
                 const customer = customers.find(c => c.id === customerId);
@@ -128,7 +138,6 @@ export const Chat: React.FC<ChatProps> = ({ onCustomerChange }) => {
                     timestamp: new Date().toISOString(),
                 };
                 setMessages([welcomeMessage]);
-                setLastMessageTimestamp(welcomeMessage.timestamp);
             }
         } catch (err) {
             setError(`Failed to load chat history: ${err instanceof Error ? err.message : String(err)}`);
@@ -160,7 +169,6 @@ export const Chat: React.FC<ChatProps> = ({ onCustomerChange }) => {
         setMessages([]);
         setError(null);
         setIsLoading(false);
-        setLastMessageTimestamp(null);
 
         if (customerId) {
             loadChatHistory();
@@ -177,40 +185,47 @@ export const Chat: React.FC<ChatProps> = ({ onCustomerChange }) => {
         inputRef.current?.focus();
     }, []);
 
-    // Render customer selector
-    const renderCustomerSelector = () => (
-        <Box mb={4}>
-            <Text mb={2} fontWeight="bold">Select Customer:</Text>
-            {isLoadingCustomers ? (
-                <Spinner size="sm" />
-            ) : (
-                <Select
-                    value={customerId}
-                    onChange={(e) => handleCustomerChange(e.target.value)}
-                    width="100%"
-                    maxWidth="300px"
-                >
-                    {customers.map(customer => (
-                        <option key={customer.id} value={customer.id}>
-                            {customer.name} ({customer.level})
-                        </option>
-                    ))}
-                </Select>
-            )}
-        </Box>
-    );
+    // Start a new conversation
+    const startNewConversation = () => {
+        setMessages([]);
+        setConversationId('');
 
-    // Render error alert
-    const renderError = () => (
-        error ? (
+        // Add welcome message for new conversation
+        const customer = customers.find(c => c.id === customerId);
+        const welcomeMessage: Message = {
+            id: `welcome_${Date.now()}`,
+            text: `Welcome ${customer?.name?.split(' ')[0] || 'there'}! How can I help with your smart home today?`,
+            sender: 'bot',
+            timestamp: new Date().toISOString(),
+        };
+        setMessages([welcomeMessage]);
+    };
+
+    // Render customer selector
+    const renderCustomerSelector = () => {
+        return null; // We've replaced this with the HStack above
+    };
+
+    // Render error message
+    const renderError = () => {
+        if (!error) return null;
+
+        return (
             <Alert status="error" mb={4}>
                 <AlertIcon />
-                <AlertTitle mr={2}>Error!</AlertTitle>
-                <AlertDescription>{error}</AlertDescription>
-                <CloseButton position="absolute" right="8px" top="8px" onClick={() => setError(null)} />
+                <Box flex="1">
+                    <AlertTitle>Error</AlertTitle>
+                    <AlertDescription>{error}</AlertDescription>
+                </Box>
+                <CloseButton
+                    position="absolute"
+                    right="8px"
+                    top="8px"
+                    onClick={() => setError(null)}
+                />
             </Alert>
-        ) : null
-    );
+        );
+    };
 
     return (
         <Box
@@ -219,6 +234,38 @@ export const Chat: React.FC<ChatProps> = ({ onCustomerChange }) => {
             display="flex"
             flexDirection="column"
         >
+            <HStack mb={4} spacing={4}>
+                <FormControl>
+                    <FormLabel>Customer</FormLabel>
+                    <Select
+                        value={customerId}
+                        onChange={(e) => {
+                            const newCustomerId = e.target.value;
+                            setCustomerId(newCustomerId);
+                            setConversationId(''); // Reset conversation ID when customer changes
+                            onCustomerChange(newCustomerId);
+                        }}
+                        placeholder="Select customer"
+                        isDisabled={isLoadingCustomers}
+                    >
+                        {customers.map(customer => (
+                            <option key={customer.id} value={customer.id}>
+                                {customer.name} ({customer.service_level})
+                            </option>
+                        ))}
+                    </Select>
+                </FormControl>
+
+                <Button
+                    colorScheme="blue"
+                    onClick={startNewConversation}
+                    isDisabled={!customerId || isLoading}
+                    mt="auto"
+                >
+                    New Conversation
+                </Button>
+            </HStack>
+
             {renderCustomerSelector()}
             {renderError()}
 

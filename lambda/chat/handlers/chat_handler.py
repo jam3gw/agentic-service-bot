@@ -11,15 +11,14 @@ import sys
 import uuid
 from datetime import datetime
 from typing import Dict, Any, List, Optional
+from pathlib import Path
+from decimal import Decimal
 
 # Add the parent directory to sys.path to enable absolute imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
-
-# Import utility functions from local module
-from utils import convert_decimal_to_float, convert_float_to_decimal
 
 # Import local modules
 from services.dynamodb_service import (
@@ -36,6 +35,25 @@ from models.message import Message
 # Configure logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+# Utility functions
+def convert_decimal_to_float(obj: Any) -> Any:
+    """
+    Recursively convert Decimal objects to floats in a data structure.
+    
+    Args:
+        obj: The object to convert
+        
+    Returns:
+        The converted object
+    """
+    if isinstance(obj, Decimal):
+        return float(obj)
+    elif isinstance(obj, dict):
+        return {k: convert_decimal_to_float(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_decimal_to_float(item) for item in obj]
+    return obj
 
 def get_cors_headers(event=None):
     """
@@ -168,13 +186,14 @@ def handle_chat_message(customer_id: str, message_text: str, event=None) -> Dict
             'body': json.dumps({'error': f"Error processing message: {str(e)}"})
         }
 
-def handle_chat_history(customer_id: str, event=None) -> Dict[str, Any]:
+def handle_chat_history(customer_id: str, event=None, conversation_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Get chat history for a customer.
     
     Args:
         customer_id: The ID of the customer
         event: The Lambda event (optional, for CORS headers)
+        conversation_id: The ID of the conversation (optional)
         
     Returns:
         API Gateway response
@@ -182,7 +201,8 @@ def handle_chat_history(customer_id: str, event=None) -> Dict[str, Any]:
     # Get CORS headers based on the request origin
     cors_headers = get_cors_headers(event)
     
-    logger.info(f"Getting chat history for customer {customer_id}")
+    logger.info(f"Getting chat history for customer {customer_id}" + 
+                (f" and conversation {conversation_id}" if conversation_id else ""))
     
     try:
         # Get customer data to verify customer exists
@@ -195,8 +215,25 @@ def handle_chat_history(customer_id: str, event=None) -> Dict[str, Any]:
                 'body': json.dumps({'error': f"Customer not found: {customer_id}"})
             }
         
-        # Get all messages for this customer
-        messages = get_messages_by_user_id(customer_id)
+        # Get messages based on whether a conversation_id was provided
+        if conversation_id:
+            # Get messages for the specific conversation
+            message_items = get_conversation_messages(conversation_id)
+            
+            # Convert to Message objects
+            messages = []
+            for item in message_items:
+                messages.append(Message(
+                    id=item.get('id', ''),
+                    conversation_id=item.get('conversationId', ''),
+                    user_id=item.get('userId', ''),
+                    text=item.get('text', ''),
+                    sender=item.get('sender', ''),
+                    timestamp=item.get('timestamp') or datetime.now().isoformat()
+                ))
+        else:
+            # Get all messages for this customer
+            messages = get_messages_by_user_id(customer_id)
         
         # Format messages for the response
         formatted_messages = []
@@ -218,7 +255,8 @@ def handle_chat_history(customer_id: str, event=None) -> Dict[str, Any]:
             'headers': cors_headers,
             'body': json.dumps({
                 'messages': formatted_messages,
-                'customerId': customer_id
+                'customerId': customer_id,
+                'conversationId': conversation_id
             })
         }
         

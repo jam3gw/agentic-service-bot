@@ -89,11 +89,16 @@ export const sendChatMessage = async (customerId: string, message: string): Prom
 /**
  * Fetches chat history for a customer
  * @param customerId - The ID of the customer whose chat history to fetch
+ * @param conversationId - Optional ID of a specific conversation to fetch
  * @returns Promise containing array of Message objects
  */
-export const fetchChatHistory = async (customerId: string): Promise<Message[]> => {
+export const fetchChatHistory = async (customerId: string, conversationId?: string): Promise<Message[]> => {
     try {
-        const data = await apiCall<{ messages: Message[] }>(`${config.apiUrl}/chat/history/${customerId}`);
+        let url = `${config.apiUrl}/chat/history/${customerId}`;
+        if (conversationId) {
+            url += `?conversationId=${conversationId}`;
+        }
+        const data = await apiCall<{ messages: Message[] }>(url);
         return data.messages || [];
     } catch (error) {
         console.error('Error fetching chat history:', error);

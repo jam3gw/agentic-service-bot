@@ -72,7 +72,10 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if path.startswith('/api/chat/history/'):
             if http_method == 'GET':
                 customer_id = path_parameters.get('customerId')
-                return handle_chat_history(customer_id, event)
+                # Get conversationId from query parameters if available
+                query_parameters = event.get('queryStringParameters', {}) or {}
+                conversation_id = query_parameters.get('conversationId')
+                return handle_chat_history(customer_id, event, conversation_id)
         
         elif path == '/api/chat':
             if http_method == 'POST':
