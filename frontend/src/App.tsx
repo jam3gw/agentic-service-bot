@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChakraProvider, Box, Container, Tabs, TabList, TabPanels, Tab, TabPanel } from '@chakra-ui/react';
+import { ChakraProvider, Box, Container, Grid, GridItem } from '@chakra-ui/react';
 import { Chat } from './components/Chat';
 import InstructionsSection from './components/InstructionsSection';
 import UserDevicesTable from './components/UserDevicesTable';
@@ -10,10 +10,16 @@ const DEFAULT_CUSTOMER_ID = 'cust_001';
 
 function App() {
   const [customerId, setCustomerId] = useState(DEFAULT_CUSTOMER_ID);
+  const [lastMessageTimestamp, setLastMessageTimestamp] = useState<number>(Date.now());
 
   // This function will be passed to the Chat component to update the customer ID
   const handleCustomerChange = (newCustomerId: string) => {
     setCustomerId(newCustomerId);
+  };
+
+  // This function will be called when a message is sent
+  const handleMessageSent = () => {
+    setLastMessageTimestamp(Date.now());
   };
 
   return (
@@ -22,27 +28,21 @@ function App() {
         <Container maxW="container.xl">
           <InstructionsSection />
 
-          <Tabs variant="enclosed" colorScheme="blue" mb={6}>
-            <TabList>
-              <Tab>Chat</Tab>
-              <Tab>My Devices</Tab>
-              <Tab>Capabilities</Tab>
-            </TabList>
+          <Grid
+            templateColumns={{ base: "1fr", lg: "1fr 400px" }}
+            gap={6}
+          >
+            {/* Main Chat Section */}
+            <GridItem>
+              <Chat onCustomerChange={handleCustomerChange} onMessageSent={handleMessageSent} />
+            </GridItem>
 
-            <TabPanels>
-              <TabPanel p={0} pt={5}>
-                <Chat onCustomerChange={handleCustomerChange} />
-              </TabPanel>
-
-              <TabPanel p={0} pt={5}>
-                <UserDevicesTable customerId={customerId} />
-              </TabPanel>
-
-              <TabPanel p={0} pt={5}>
-                <CapabilitiesTable customerId={customerId} />
-              </TabPanel>
-            </TabPanels>
-          </Tabs>
+            {/* Sidebar with Devices and Capabilities */}
+            <GridItem>
+              <UserDevicesTable customerId={customerId} lastUpdate={lastMessageTimestamp} />
+              <CapabilitiesTable customerId={customerId} />
+            </GridItem>
+          </Grid>
         </Container>
       </Box>
     </ChakraProvider>

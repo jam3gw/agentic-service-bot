@@ -20,16 +20,23 @@ import {
     Alert,
     AlertIcon,
     Flex,
+    Slider,
+    SliderTrack,
+    SliderFilledTrack,
+    SliderThumb,
+    ButtonGroup,
+    Button,
 } from '@chakra-ui/react';
-import { RepeatIcon, SettingsIcon } from '@chakra-ui/icons';
+import { RepeatIcon, ChevronLeftIcon, ChevronRightIcon } from '@chakra-ui/icons';
 import * as apiService from '../utils/apiService';
 import { Device } from '../types';
 
 interface UserDevicesTableProps {
     customerId: string;
+    lastUpdate: number;
 }
 
-const UserDevicesTable: React.FC<UserDevicesTableProps> = ({ customerId }) => {
+const UserDevicesTable: React.FC<UserDevicesTableProps> = ({ customerId, lastUpdate }) => {
     const [devices, setDevices] = useState<Device[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -56,10 +63,10 @@ const UserDevicesTable: React.FC<UserDevicesTableProps> = ({ customerId }) => {
         }
     };
 
-    // Load devices when customer changes
+    // Load devices when customer changes or lastUpdate changes
     useEffect(() => {
         loadDevices();
-    }, [customerId]);
+    }, [customerId, lastUpdate]);
 
     // Refresh devices
     const refreshDevices = () => {
@@ -101,17 +108,19 @@ const UserDevicesTable: React.FC<UserDevicesTableProps> = ({ customerId }) => {
     return (
         <Box
             bg={bgColor}
-            p={5}
+            p={4}
             borderRadius="md"
-            boxShadow="md"
+            boxShadow="sm"
             borderWidth="1px"
             borderColor={borderColor}
-            mb={6}
+            mb={4}
+            maxH="400px"
+            overflowY="auto"
         >
-            <HStack justifyContent="space-between" mb={4}>
+            <HStack justifyContent="space-between" mb={3}>
                 <Box>
-                    <Heading size="md" mb={1}>Your Smart Devices</Heading>
-                    <Text fontSize="sm" color="gray.500">
+                    <Heading size="md" mb={0}>Your Smart Devices</Heading>
+                    <Text fontSize="xs" color="gray.500">
                         Last updated: {lastRefreshed.toLocaleTimeString()}
                     </Text>
                 </Box>
@@ -143,60 +152,57 @@ const UserDevicesTable: React.FC<UserDevicesTableProps> = ({ customerId }) => {
                     <Text>No devices found for this user.</Text>
                 </Box>
             ) : (
-                <Box overflowX="auto">
-                    <Table variant="simple" size="sm">
-                        <Thead>
-                            <Tr>
-                                <Th>Name</Th>
-                                <Th>Type</Th>
-                                <Th>Location</Th>
-                                <Th>Status</Th>
-                                <Th>State</Th>
-                                <Th>Actions</Th>
-                            </Tr>
-                        </Thead>
-                        <Tbody>
-                            {devices.map((device) => (
-                                <Tr key={device.id}>
-                                    <Td fontWeight="medium">{device.name}</Td>
-                                    <Td>
-                                        <Tag size="sm" colorScheme={
-                                            device.type === 'security' ? 'red' :
-                                                device.type === 'light' ? 'yellow' :
-                                                    device.type === 'climate' ? 'blue' :
-                                                        device.type === 'audio' ? 'purple' : 'gray'
-                                        }>
-                                            {device.type}
-                                        </Tag>
-                                    </Td>
-                                    <Td>{device.location}</Td>
-                                    <Td>{getStatusBadge(device.status || 'unknown')}</Td>
-                                    <Td>{device.power || 'Unknown'}</Td>
-                                    <Td>
-                                        <HStack spacing={2}>
-                                            {device.type === 'light' && (
-                                                <Switch
-                                                    size="sm"
-                                                    isChecked={device.power?.toLowerCase() === 'on'}
-                                                    onChange={() => toggleDevicePower(device.id, device.power || '')}
-                                                    isDisabled={device.status?.toLowerCase() !== 'online'}
-                                                />
-                                            )}
-                                            <Tooltip label="Device settings">
-                                                <IconButton
-                                                    aria-label="Device settings"
-                                                    icon={<SettingsIcon />}
-                                                    size="xs"
-                                                    variant="ghost"
-                                                />
-                                            </Tooltip>
+                <Table variant="simple" size="sm">
+                    <Thead>
+                        <Tr>
+                            <Th>Device</Th>
+                            <Th>Power</Th>
+                            <Th>Volume</Th>
+                            <Th>Song</Th>
+                        </Tr>
+                    </Thead>
+                    <Tbody>
+                        {devices.map((device) => (
+                            <Tr key={device.id}>
+                                <Td>
+                                    <Box>
+                                        <Text fontWeight="medium">{device.name}</Text>
+                                        <HStack spacing={1} mt={1}>
+                                            <Tag size="sm" colorScheme={
+                                                device.type === 'security' ? 'red' :
+                                                    device.type === 'light' ? 'yellow' :
+                                                        device.type === 'climate' ? 'blue' :
+                                                            device.type === 'audio' ? 'purple' : 'gray'
+                                            }>
+                                                {device.type}
+                                            </Tag>
+                                            <Text fontSize="xs" color="gray.500">{device.location}</Text>
                                         </HStack>
-                                    </Td>
-                                </Tr>
-                            ))}
-                        </Tbody>
-                    </Table>
-                </Box>
+                                    </Box>
+                                </Td>
+                                <Td>
+                                    <Badge colorScheme={device.power?.toLowerCase() === 'on' ? 'green' : 'gray'}>
+                                        {device.power || 'Unknown'}
+                                    </Badge>
+                                </Td>
+                                <Td>
+                                    {(device.type === 'audio' || device.type === 'speaker') && (
+                                        <Text fontSize="sm">
+                                            {device.volume || 0}%
+                                        </Text>
+                                    )}
+                                </Td>
+                                <Td>
+                                    {(device.type === 'audio' || device.type === 'speaker') && (
+                                        <Text fontSize="sm" noOfLines={1}>
+                                            {device.currentSong || 'No song playing'}
+                                        </Text>
+                                    )}
+                                </Td>
+                            </Tr>
+                        ))}
+                    </Tbody>
+                </Table>
             )}
         </Box>
     );
