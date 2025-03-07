@@ -1,0 +1,58 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# DynamoDB Service Level Updates
+
+This rule defines the correct patterns for updating service levels in DynamoDB.
+
+<rule>
+name: dynamodb_service_level_updates
+description: Standards for updating service levels in DynamoDB tables
+
+key_points:
+  - The service level field in DynamoDB must be named 'level' (not 'serviceLevel')
+  - Valid service levels are: 'basic', 'premium', 'enterprise'
+  - Updates should use the UpdateExpression pattern shown in examples
+
+examples:
+  - description: "Correct way to update service level"
+    code: |
+      table.update_item(
+          Key={'id': customer_id},
+          UpdateExpression="set #level = :level",
+          ExpressionAttributeNames={'#level': 'level'},  # Use 'level', not 'serviceLevel'
+          ExpressionAttributeValues={':level': new_level},
+          ReturnValues="UPDATED_NEW"
+      )
+
+  - description: "Incorrect way (using wrong field name)"
+    code: |
+      # DON'T DO THIS:
+      table.update_item(
+          Key={'id': customer_id},
+          UpdateExpression="set #level = :level",
+          ExpressionAttributeNames={'#level': 'serviceLevel'},  # Wrong field name!
+          ExpressionAttributeValues={':level': new_level},
+          ReturnValues="UPDATED_NEW"
+      )
+
+validation:
+  field_name: 
+    - must_be: "level"
+    - must_not_be: "serviceLevel"
+  
+  valid_levels:
+    - "basic"
+    - "premium"
+    - "enterprise"
+
+metadata:
+  priority: high
+  version: 1.0
+  tags:
+    - dynamodb
+    - service-level
+    - data-model
+</rule> 
