@@ -76,13 +76,16 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 
                 if http_method == 'GET':
                     return handle_get_devices(customer_id, CORS_HEADERS)
-                elif http_method == 'PUT':
+            
+            elif '/devices/' in path:
+                # Handle specific device operations
+                customer_id = path_parameters.get('customerId', '')
+                device_id = path_parameters.get('deviceId', '')
+                
+                if http_method == 'PATCH':
                     # Parse request body
                     body = json.loads(event.get('body', '{}'))
-                    device_id = body.get('deviceId', '')
-                    new_power = body.get('power', '')
-                    
-                    return handle_update_device(customer_id, device_id, new_power, CORS_HEADERS)
+                    return handle_update_device(customer_id, device_id, body, CORS_HEADERS)
             
             elif '/customers/' in path and not path.endswith('/customers'):
                 # Handle specific customer
