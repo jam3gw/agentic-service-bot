@@ -144,7 +144,7 @@ def main():
     
     print(f"\nCustomer ID: {customer['id']}")
     print(f"Customer Name: {customer['name']}")
-    print(f"Service Level: {customer['serviceLevel']}")
+    print(f"Level: {customer['level']}")
     
     print("\nDevices:")
     for device in customer['devices']:
