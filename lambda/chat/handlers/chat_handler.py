@@ -26,7 +26,8 @@ from services.dynamodb_service import (
     get_customer,
     get_service_level_permissions,
     save_message,
-    get_conversation_messages
+    get_conversation_messages,
+    get_messages_by_user_id
 )
 from services.anthropic_service import generate_response
 from models.customer import Customer
@@ -36,34 +37,64 @@ from models.message import Message
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-# CORS headers
-CORS_HEADERS = {
-    'Access-Control-Allow-Origin': os.environ.get('ALLOWED_ORIGIN', '*'),
-    'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-    'Access-Control-Allow-Methods': 'OPTIONS,POST,GET',
-    'Access-Control-Allow-Credentials': 'true',
-}
+def get_cors_headers(event=None):
+    """
+    Get CORS headers based on the request origin.
+    
+    Args:
+        event: The Lambda event (optional)
+        
+    Returns:
+        Dictionary of CORS headers
+    """
+    # Since we're not using credentials, we can use a wildcard
+    return {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+        'Access-Control-Allow-Methods': 'OPTIONS,POST,GET',
+        'Access-Control-Allow-Credentials': 'false',
+    }
 
-def handle_chat_message(customer_id: str, message_text: str) -> Dict[str, Any]:
+# For backward compatibility
+CORS_HEADERS = get_cors_headers()
+
+def handle_chat_message(customer_id: str, message_text: str, event=None) -> Dict[str, Any]:
     """
     Handle a chat message from a customer.
     
     Args:
         customer_id: The ID of the customer sending the message
         message_text: The text of the message
+        event: The Lambda event (optional, for CORS headers)
         
     Returns:
-        A dictionary containing the response message
+        API Gateway response
     """
+    # Get CORS headers based on the request origin
+    cors_headers = get_cors_headers(event)
+    
     logger.info(f"Processing chat message from customer {customer_id}: {message_text}")
     
     try:
+        # Validate message text - prevent empty messages
+        if not message_text or not message_text.strip():
+            logger.warning(f"Empty message received from customer {customer_id}")
+            return {
+                'statusCode': 400,
+                'headers': cors_headers,
+                'body': json.dumps({
+                    'error': "Empty messages are not allowed"
+                })
+            }
+        
         # Get customer data
         customer = get_customer(customer_id)
         if not customer:
             logger.error(f"Customer not found: {customer_id}")
             return {
-                'error': f"Customer not found: {customer_id}"
+                'statusCode': 404,
+                'headers': cors_headers,
+                'body': json.dumps({'error': f"Customer not found: {customer_id}"})
             }
         
         # Get service level permissions
@@ -123,24 +154,34 @@ def handle_chat_message(customer_id: str, message_text: str) -> Dict[str, Any]:
         response = convert_decimal_to_float(response)
         
         # Return response
-        return response
+        return {
+            'statusCode': 200,
+            'headers': cors_headers,
+            'body': json.dumps(response)
+        }
         
     except Exception as e:
         logger.error(f"Error processing chat message: {str(e)}")
         return {
-            'error': f"Error processing message: {str(e)}"
+            'statusCode': 500,
+            'headers': cors_headers,
+            'body': json.dumps({'error': f"Error processing message: {str(e)}"})
         }
 
-def handle_chat_history(customer_id: str) -> Dict[str, Any]:
+def handle_chat_history(customer_id: str, event=None) -> Dict[str, Any]:
     """
     Get chat history for a customer.
     
     Args:
         customer_id: The ID of the customer
+        event: The Lambda event (optional, for CORS headers)
         
     Returns:
-        A dictionary containing the chat history
+        API Gateway response
     """
+    # Get CORS headers based on the request origin
+    cors_headers = get_cors_headers(event)
+    
     logger.info(f"Getting chat history for customer {customer_id}")
     
     try:
@@ -149,7 +190,9 @@ def handle_chat_history(customer_id: str) -> Dict[str, Any]:
         if not customer:
             logger.error(f"Customer not found: {customer_id}")
             return {
-                'error': f"Customer not found: {customer_id}"
+                'statusCode': 404,
+                'headers': cors_headers,
+                'body': json.dumps({'error': f"Customer not found: {customer_id}"})
             }
         
         # Get all messages for this customer
@@ -171,14 +214,20 @@ def handle_chat_history(customer_id: str) -> Dict[str, Any]:
         
         # Return response
         return {
-            'messages': formatted_messages,
-            'customerId': customer_id
+            'statusCode': 200,
+            'headers': cors_headers,
+            'body': json.dumps({
+                'messages': formatted_messages,
+                'customerId': customer_id
+            })
         }
         
     except Exception as e:
         logger.error(f"Error getting chat history: {str(e)}")
         return {
-            'error': f"Error getting chat history: {str(e)}"
+            'statusCode': 500,
+            'headers': cors_headers,
+            'body': json.dumps({'error': f"Error getting chat history: {str(e)}"})
         }
 
 def get_messages_by_user_id(user_id: str) -> List[Message]:
@@ -191,7 +240,6 @@ def get_messages_by_user_id(user_id: str) -> List[Message]:
     Returns:
         A list of Message objects
     """
-    # This is a placeholder - this function would need to be implemented
-    # in dynamodb_service.py to query the GSI for userId
-    from services.dynamodb_service import get_messages_by_user_id
-    return get_messages_by_user_id(user_id) 
+    # Import the actual implementation from dynamodb_service
+    from services.dynamodb_service import get_messages_by_user_id as db_get_messages_by_user_id
+    return db_get_messages_by_user_id(user_id) 

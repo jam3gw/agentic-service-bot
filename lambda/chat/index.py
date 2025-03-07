@@ -50,105 +50,45 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     Returns:
         API Gateway response
     """
-    # Log the event for debugging
-    logger.info(f"Event received: {json.dumps(event)}")
+    logger.info(f"Event: {json.dumps(event)}")
+    
+    # Handle OPTIONS request (CORS preflight)
+    if event.get('httpMethod') == 'OPTIONS':
+        return {
+            'statusCode': 200,
+            'headers': CORS_HEADERS,
+            'body': ''
+        }
     
     try:
-        # Handle HTTP events
-        if event.get('httpMethod') == 'OPTIONS':
-            # Handle CORS preflight request
-            return {
-                'statusCode': 200,
-                'headers': CORS_HEADERS,
-                'body': ''
-            }
+        # Extract path and method
+        path = event.get('path', '')
+        http_method = event.get('httpMethod', '')
         
-        # Handle chat message POST request
-        if event.get('httpMethod') == 'POST' and event.get('path', '').endswith('/chat'):
-            try:
+        # Parse path parameters
+        path_parameters = event.get('pathParameters', {}) or {}
+        
+        # Route to appropriate handler based on path and method
+        if path.startswith('/api/chat/history/'):
+            if http_method == 'GET':
+                customer_id = path_parameters.get('customerId')
+                return handle_chat_history(customer_id, event)
+        
+        elif path == '/api/chat':
+            if http_method == 'POST':
                 # Parse request body
                 body = json.loads(event.get('body', '{}'))
-                
-                # Handle regular chat message
                 customer_id = body.get('customerId')
                 message = body.get('message')
                 
                 if not customer_id or not message:
-                    logger.error("Missing required parameters: customerId and message are required")
                     return {
                         'statusCode': 400,
                         'headers': CORS_HEADERS,
-                        'body': json.dumps({
-                            'error': 'Missing required parameters: customerId and message are required'
-                        })
+                        'body': json.dumps({'error': 'Missing customerId or message'})
                     }
                 
-                # Process the chat message
-                response = handle_chat_message(customer_id, message)
-                
-                # Check if the response contains an error about customer not found
-                if 'error' in response and 'Customer not found' in response['error']:
-                    return {
-                        'statusCode': 404,
-                        'body': json.dumps(response)
-                    }
-                
-                # Convert Decimal objects to floats before serialization
-                response = utils.convert_decimal_to_float(response)
-                
-                return {
-                    'statusCode': 200,
-                    'body': json.dumps(response)
-                }
-            except Exception as e:
-                logger.error(f"Error handling chat message: {str(e)}")
-                return {
-                    'statusCode': 500,
-                    'body': json.dumps({
-                        'error': f"Internal server error: {str(e)}"
-                    })
-                }
-        
-        # Handle chat history GET request
-        if event.get('httpMethod') == 'GET' and '/chat/history/' in event.get('path', ''):
-            try:
-                # Extract customer ID from path
-                path_parts = event.get('path', '').split('/')
-                customer_id = path_parts[-1]  # Last part of the path should be the customer ID
-                
-                if not customer_id:
-                    return {
-                        'statusCode': 400,
-                        'body': json.dumps({
-                            'error': 'Missing required parameter: customerId'
-                        })
-                    }
-                
-                # Get chat history
-                history = handle_chat_history(customer_id)
-                
-                # Check if the response contains an error about customer not found
-                if 'error' in history and 'Customer not found' in history['error']:
-                    return {
-                        'statusCode': 404,
-                        'body': json.dumps(history)
-                    }
-                
-                # Convert Decimal objects to floats before serialization
-                history = utils.convert_decimal_to_float(history)
-                
-                return {
-                    'statusCode': 200,
-                    'body': json.dumps(history)
-                }
-            except Exception as e:
-                logger.error(f"Error handling chat history: {str(e)}")
-                return {
-                    'statusCode': 500,
-                    'body': json.dumps({
-                        'error': f"Internal server error: {str(e)}"
-                    })
-                }
+                return handle_chat_message(customer_id, message, event)
         
         # If no matching route, return 404
         return {

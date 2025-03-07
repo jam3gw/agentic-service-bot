@@ -106,13 +106,22 @@ def get_service_level_permissions(service_level: str) -> Dict[str, Any]:
     Returns:
         A dictionary containing the service level permissions
     """
+    logger.info(f"Getting permissions for service level: {service_level}")
     try:
+        logger.info(f"Querying DynamoDB table: {service_levels_table.table_name}")
         response = service_levels_table.get_item(Key={'level': service_level})
+        logger.info(f"DynamoDB response: {response}")
+        
         if 'Item' in response:
-            return response['Item']
+            permissions = response['Item']
+            logger.info(f"Retrieved permissions: {permissions}")
+            return permissions
+        
+        logger.warning(f"Unknown service level: {service_level}")
         raise ValueError(f"Unknown service level: {service_level}")
     except Exception as e:
-        logger.error(f"Error getting service level: {str(e)}")
+        logger.error(f"Error getting service level permissions: {str(e)}")
+        logger.info("Returning empty allowed_actions list as fallback")
         return {"allowed_actions": []}
 
 def get_conversation_messages(conversation_id: str, limit: int = 50) -> List[Dict[str, Any]]:

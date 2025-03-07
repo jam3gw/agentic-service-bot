@@ -7,6 +7,10 @@ user requests based on keywords and patterns.
 
 import re
 from typing import Dict, List, Optional, Any
+import logging
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 class RequestAnalyzer:
     """
@@ -16,6 +20,7 @@ class RequestAnalyzer:
     and determine the required actions for each request type.
     
     Supported request types:
+    - device_status: Check device status - Available to all service levels
     - device_power: Control device power (on/off) - Available to all service levels
     - volume_control: Control device volume - Available to Premium and Enterprise
     - song_changes: Control device song choice - Available to Enterprise only
@@ -23,6 +28,7 @@ class RequestAnalyzer:
     
     # Mapping of request types to required actions
     REQUEST_TYPES: Dict[str, List[str]] = {
+        "device_status": ["device_status"],
         "device_power": ["device_power"],
         "volume_control": ["volume_control"],
         "song_changes": ["song_changes"]
@@ -30,6 +36,10 @@ class RequestAnalyzer:
     
     # Keywords that help identify request types
     KEYWORDS: Dict[str, List[str]] = {
+        "device_status": [
+            "status", "state", "how is", "what's the status", 
+            "is it on", "is it off", "is it working", "check"
+        ],
         "device_power": [
             "turn on", "turn off", "switch on", "switch off", 
             "power on", "power off", "start", "stop", 
@@ -98,41 +108,70 @@ class RequestAnalyzer:
         Get the required actions for a request type.
         
         Args:
-            request_type: The type of request
+            request_type: The request type
             
         Returns:
-            A list of required actions for the request type
+            List of required actions for the request type
         """
         return cls.REQUEST_TYPES.get(request_type, [])
-        
+    
     @classmethod
     def analyze(cls, text: str) -> Dict[str, Any]:
         """
-        Analyze a user request and extract all relevant information.
-        
-        This method provides a simplified analysis of the user's request,
-        focusing on the core functionality needed for basic service levels.
+        Analyze a user request and extract relevant information.
         
         Args:
             text: The user's request text
             
         Returns:
-            A dictionary containing the analysis results:
-            - request_type: The identified type of request
-            - required_actions: List of actions required for the request
+            A dictionary containing the analysis results
         """
-        # Initialize the result dictionary
+        logger.info(f"Analyzing request: '{text}'")
+        
         result = {
             "request_type": None,
-            "required_actions": []
+            "required_actions": [],
+            "context": {}
         }
         
         # Identify the request type
         request_type = cls.identify_request_type(text)
-        result["request_type"] = request_type
+        logger.info(f"Identified request type: {request_type}")
         
         if request_type:
-            # Get required actions
-            result["required_actions"] = cls.get_required_actions(request_type)
+            result["request_type"] = request_type
+            
+            # Get the required actions for this request type
+            required_actions = cls.get_required_actions(request_type)
+            logger.info(f"Required actions for {request_type}: {required_actions}")
+            result["required_actions"] = required_actions
+            
+            # Extract additional context based on the request type
+            if request_type == "device_power":
+                # Determine if the user wants to turn the device on or off
+                power_state = "on" if any(phrase in text.lower() for phrase in ["on", "start", "activate", "enable"]) else "off"
+                logger.info(f"Extracted power state: {power_state}")
+                result["context"]["power_state"] = power_state
+            
+            elif request_type == "volume_control":
+                # Determine if the user wants to increase or decrease the volume
+                volume_direction = "up" if any(phrase in text.lower() for phrase in ["up", "increase", "louder", "higher"]) else "down"
+                logger.info(f"Extracted volume direction: {volume_direction}")
+                result["context"]["volume_direction"] = volume_direction
+                
+                # Extract volume level if specified
+                volume_match = re.search(r"(?:to|at)\s+(\d+)(?:\s+percent)?", text.lower())
+                if volume_match:
+                    volume_level = int(volume_match.group(1))
+                    logger.info(f"Extracted specific volume level: {volume_level}")
+                    result["context"]["volume_level"] = volume_level
+            
+            elif request_type == "song_changes":
+                # Determine if the user wants to play the next or previous song
+                song_action = "next" if any(phrase in text.lower() for phrase in ["next", "skip", "forward"]) else "previous"
+                logger.info(f"Extracted song action: {song_action}")
+                result["context"]["song_action"] = song_action
+        else:
+            logger.info("No request type identified")
         
         return result 

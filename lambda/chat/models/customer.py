@@ -20,10 +20,10 @@ class Customer:
     """
     
     # Class-level attribute declarations to satisfy hasattr checks
-    id: str = None
-    name: str = None
-    service_level: str = None
-    device: Dict[str, Any] = None
+    id: str = ""
+    name: str = ""
+    service_level: str = ""
+    device: Dict[str, Any] = {}
     
     def __init__(self, customer_id: str, name: str, service_level: str, device: Dict[str, Any]):
         """
