@@ -151,15 +151,15 @@ export const checkApiAvailability = async (): Promise<boolean> => {
 };
 
 /**
- * Updates the state of a device
+ * Updates the power of a device
  * @param deviceId - The ID of the device to update
- * @param newState - The new state to set for the device
+ * @param newPower - The new power state to set for the device
  * @param customerId - The ID of the customer who owns the device
  * @returns Promise containing the updated Device object
  */
-export const updateDeviceState = async (
+export const updateDevicePower = async (
     deviceId: string,
-    newState: string,
+    newPower: string,
     customerId: string
 ): Promise<Device> => {
     try {
@@ -167,12 +167,12 @@ export const updateDeviceState = async (
             `${config.apiUrl}/customers/${customerId}/devices/${deviceId}`,
             {
                 method: 'PATCH',
-                body: JSON.stringify({ state: newState }),
+                body: JSON.stringify({ power: newPower }),
             }
         );
         return data.device;
     } catch (error) {
-        console.error('Error updating device state:', error);
+        console.error('Error updating device power:', error);
         throw error;
     }
 };
@@ -189,7 +189,7 @@ export const fetchCustomers = async (): Promise<Customer[]> => {
         return (data.customers || []).map((customer: any) => ({
             id: customer.id,
             name: customer.name || `Customer ${customer.id}`,
-            level: customer.level || customer.serviceLevel || 'basic',
+            level: customer.level || 'basic',
             avatar: customer.avatar
         }));
     } catch (error) {
