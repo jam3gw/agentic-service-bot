@@ -528,7 +528,10 @@ def generate_response(user_input: str, context: Dict[str, Any]) -> str:
     
     elif request_type == "device_power":
         power_state = context.get("power_state", "unknown")
-        return f"I've turned your device {power_state}"
+        device_info = context.get("device_info", {})
+        device_type = device_info.get("type", "device").lower()
+        location = device_info.get("location", "unknown").replace("_", " ")
+        return f"I've turned your {device_type} in the {location} {power_state}"
     
     elif request_type == "volume_control":
         volume_change = context.get("volume_change", {})

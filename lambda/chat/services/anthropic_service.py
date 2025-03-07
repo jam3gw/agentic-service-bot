@@ -121,6 +121,15 @@ User: "Turn on my speaker"
   "out_of_scope": false
 }
 
+User: "Next song"
+{
+  "primary_action": "song_changes",
+  "all_actions": ["song_changes"],
+  "context": {"song_action": "next"},
+  "ambiguous": false,
+  "out_of_scope": false
+}
+
 User: "Turn up the volume"
 {
   "primary_action": "volume_control",
@@ -167,14 +176,14 @@ IMPORTANT: Your response must be a valid JSON object. Do not include any explana
     # If Anthropic client is not available, return a mock response
     if not anthropic_client:
         logger.info("Using mock response for local development")
-        mock_response = {
-            "primary_action": "device_status" if "status" in user_input.lower() else "device_power",
-            "all_actions": ["device_status"] if "status" in user_input.lower() else ["device_power"],
-            "context": {},
-            "ambiguous": False,
-            "out_of_scope": False
-        }
-        logger.info(f"Mock Response: {json.dumps(mock_response, indent=2)}")
+        
+        # Check if this is a device status query
+        if "status" in user_input.lower():
+            mock_response = "Your speaker is currently on and the volume is set to 60%."
+        else:
+            mock_response = f"This is a mock response for local development. Your prompt was: '{user_input}'"
+            
+        logger.info(f"Mock Response: {mock_response}")
         return mock_response
     
     try:
@@ -297,7 +306,12 @@ def generate_response(prompt: str, context: Optional[Dict[str, Any]] = None) -> 
     
     # If Anthropic client is not available, return a mock response
     if not anthropic_client:
-        mock_response = f"This is a mock response for local development. Your prompt was: '{prompt}'"
+        # Check if this is a device status query
+        if "status" in prompt.lower():
+            mock_response = "Your speaker is currently on and the volume is set to 60%."
+        else:
+            mock_response = f"This is a mock response for local development. Your prompt was: '{prompt}'"
+        
         logger.info(f"Using mock response: {mock_response}")
         return mock_response
     
