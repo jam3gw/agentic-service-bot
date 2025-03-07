@@ -1,15 +1,15 @@
 # Agentic Service Bot
 
-A smart home assistant service bot that handles customer interactions using AI. The bot processes customer requests, manages device operations, and provides responses based on the customer's service level permissions.
+An agentic service bot that handles customer interactions using AI. The bot processes customer requests, manages device operations, and provides responses based on the customer's service level permissions (Basic, Premium, or Enterprise).
 
 ## Features
 
 - Natural language processing of customer requests
-- Service level-based permission system
-- Smart home device management
+- Service level-based permission system (Basic, Premium, Enterprise)
+- Device management with tier-based limitations
 - Conversation history tracking
 - Intelligent request analysis and response generation
-- Support for device relocation requests
+- Support for device control based on service level
 - REST API for communication between frontend and backend
 
 ## Prerequisites

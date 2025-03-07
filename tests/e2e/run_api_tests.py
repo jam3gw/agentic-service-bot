@@ -51,6 +51,16 @@ from tests.e2e.test_customer_api import (
     test_get_customer_invalid_id
 )
 
+# Import the chat action tests
+from tests.e2e.test_chat_actions import (
+    test_device_status_action,
+    test_device_power_action,
+    test_volume_control_action,
+    test_song_changes_action,
+    test_service_level_permissions,
+    test_basic_service_level_device_power
+)
+
 # Import test data setup functions from conftest.py
 from tests.e2e.conftest import (
     create_dynamodb_client,
@@ -136,8 +146,20 @@ def main():
     try:
         # Define the tests to run
         tests = [
-            # Capabilities API tests
-            (test_get_capabilities, "GET /capabilities"),
+            # Chat API tests
+            (test_chat_history, "GET /chat/history/{customerId}"),
+            (test_chat_history_invalid_customer, "GET /chat/history/invalid-customer-id"),
+            (test_send_message, "POST /chat"),
+            (test_send_message_invalid_customer, "POST /chat with invalid customer ID"),
+            (test_send_message_missing_parameters, "POST /chat with missing parameters"),
+            
+            # Chat Action tests
+            (test_device_status_action, "Chat API - Device Status Action"),
+            (test_device_power_action, "Chat API - Device Power Action"),
+            (test_volume_control_action, "Chat API - Volume Control Action"),
+            (test_song_changes_action, "Chat API - Song Changes Action"),
+            (test_service_level_permissions, "Chat API - Service Level Permissions"),
+            (test_basic_service_level_device_power, "Chat API - Basic Service Level Device Power"),
             
             # Devices API tests
             (test_get_devices, "GET /customers/{customerId}/devices"),
@@ -146,17 +168,13 @@ def main():
             (test_update_device_invalid_customer, "PATCH /customers/invalid-customer-id/devices/{deviceId}"),
             (test_update_device_invalid_device, "PATCH /customers/{customerId}/devices/invalid-device-id"),
             
-            # Chat API tests
-            (test_chat_history, "GET /chat/history/{customerId}"),
-            (test_chat_history_invalid_customer, "GET /chat/history/invalid-customer-id"),
-            (test_send_message, "POST /chat"),
-            (test_send_message_invalid_customer, "POST /chat (invalid customer)"),
-            (test_send_message_missing_parameters, "POST /chat (missing parameters)"),
-            
             # Customer API tests
             (test_get_customers, "GET /customers"),
             (test_get_customer, "GET /customers/{customerId}"),
-            (test_get_customer_invalid_id, "GET /customers/invalid-customer-id")
+            (test_get_customer_invalid_id, "GET /customers/invalid-customer-id"),
+            
+            # Capabilities API tests
+            (test_get_capabilities, "GET /capabilities")
         ]
         
         # Run the tests

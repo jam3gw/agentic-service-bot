@@ -150,7 +150,7 @@ def populate_test_data():
                 'device_relocation',
                 'music_services'
             ],
-            'max_devices': 3,
+            'max_devices': 1,
             'support_priority': 'high'
         },
         {
@@ -164,7 +164,7 @@ def populate_test_data():
                 'multi_room_audio',
                 'custom_actions'
             ],
-            'max_devices': 10,
+            'max_devices': 1,
             'support_priority': 'dedicated'
         }
     ]

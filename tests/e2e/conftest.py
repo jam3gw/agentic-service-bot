@@ -54,9 +54,12 @@ def create_test_customer(dynamodb, customer_id):
                     'id': f"{customer_id}-device-1",
                     'name': 'Test Speaker',
                     'type': 'speaker',
-                    'state': 'off',
+                    'power': 'off',
+                    'volume': 5,
+                    'current_song': 'Test Song 1',
+                    'playlist': ['Test Song 1', 'Test Song 2', 'Test Song 3', 'Test Song 4'],
                     'location': 'living_room',
-                    'capabilities': ['power', 'volume']
+                    'capabilities': ['power', 'volume', 'song_control']
                 }
             ]
         }

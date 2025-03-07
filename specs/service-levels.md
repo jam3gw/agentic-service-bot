@@ -2,15 +2,16 @@
 
 ## Overview
 
-The Agentic Service Bot implements a tiered service level system that determines what actions customers can perform with their smart home devices. Each service level grants access to a specific set of features and capabilities.
+The Agentic Service Bot implements a tiered service level system that determines what actions customers can perform with their devices. Each service level grants access to a specific set of features and capabilities.
 
 ## Service Tiers
 
 ### Basic Tier
 
-**Description**: Entry-level service for customers with basic needs and a single device.
+**Description**: Entry-level service for customers with basic needs.
 
 **Features**:
+- Device status check
 - Device power control
 - Limited to 1 device
 
@@ -23,12 +24,12 @@ The Agentic Service Bot implements a tiered service level system that determines
 
 ### Premium Tier
 
-**Description**: Mid-level service for customers with multiple devices and additional needs.
+**Description**: Mid-level service for customers with additional control needs.
 
 **Features**:
-- All Basic tier features
+- All Basic tier features (device status check, device power)
 - Volume control
-- Up to 3 devices
+- Limited to 1 device
 
 **Limitations**:
 - No song changes
@@ -37,12 +38,12 @@ The Agentic Service Bot implements a tiered service level system that determines
 
 ### Enterprise Tier
 
-**Description**: Top-level service for customers with advanced needs and multiple devices.
+**Description**: Top-level service for customers with advanced control needs.
 
 **Features**:
-- All Premium tier features
+- All Premium tier features (device status check, device power, volume control)
 - Song changes
-- Up to 10 devices
+- Limited to 1 device
 
 **Limitations**:
 - None within the system's capabilities
@@ -53,11 +54,17 @@ The Agentic Service Bot implements a tiered service level system that determines
 
 | Action | Basic | Premium | Enterprise |
 |--------|-------|---------|------------|
+| Device Status Check | ✅ | ✅ | ✅ |
 | Device Power | ✅ | ✅ | ✅ |
 | Volume Control | ❌ | ✅ | ✅ |
 | Song Changes | ❌ | ❌ | ✅ |
 
 ## Action Definitions
+
+### Device Status Check
+- **Description**: Check the status of smart home devices
+- **Example Request**: "What's the status of my living room speaker?"
+- **Required Permission**: `device_status`
 
 ### Device Power
 - **Description**: Control device power (on/off)
@@ -94,12 +101,10 @@ Customers can upgrade their service level to gain access to additional features:
 
 1. **Basic to Premium**:
    - Gains volume control
-   - Increases device limit from 1 to 3
    - Improves support priority
 
 2. **Premium to Enterprise**:
    - Gains song changes
-   - Increases device limit from 3 to 10
    - Provides dedicated support
 
 ## Implementation Details
@@ -125,7 +130,7 @@ For the Premium tier:
     "device_power",
     "volume_control"
   ],
-  "max_devices": 3,
+  "max_devices": 1,
   "support_priority": "priority"
 }
 ```
@@ -139,7 +144,7 @@ For the Enterprise tier:
     "volume_control",
     "song_changes"
   ],
-  "max_devices": 10,
+  "max_devices": 1,
   "support_priority": "dedicated"
 }
 ```

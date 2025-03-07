@@ -63,7 +63,7 @@ The Agentic Service Bot uses DynamoDB as its primary data store. The data model 
     "device_power",
     "volume_control"
   ],
-  "max_devices": 3,
+  "max_devices": 1,
   "support_priority": "priority"
 }
 ```
