@@ -73,6 +73,7 @@ def handler(event, context):
                 {
                     "level": "basic",
                     "allowed_actions": [
+                        "device_status",
                         "device_power"
                     ],
                     "max_devices": 1,
@@ -81,20 +82,22 @@ def handler(event, context):
                 {
                     "level": "premium",
                     "allowed_actions": [
+                        "device_status",
                         "device_power",
                         "volume_control"
                     ],
-                    "max_devices": 3,
+                    "max_devices": 1,
                     "support_priority": "priority"
                 },
                 {
                     "level": "enterprise",
                     "allowed_actions": [
+                        "device_status",
                         "device_power",
                         "volume_control",
                         "song_changes"
                     ],
-                    "max_devices": 10,
+                    "max_devices": 1,
                     "support_priority": "dedicated"
                 }
             ]
