@@ -32,19 +32,19 @@ const InstructionsSection: React.FC = () => {
         >
             <VStack align="stretch" spacing={4}>
                 <Heading size="md" mb={2}>
-                    Welcome to Your Smart Home Assistant
+                    Welcome to the Agentic Service Bot
                 </Heading>
 
                 <Text>
-                    This assistant helps you control your smart home devices, set up routines, and manage your smart home ecosystem.
-                    Your available features depend on your service level.
+                    This service bot helps you manage your devices and services based on your subscription tier.
+                    Different service levels (Basic, Premium, Enterprise) provide access to different capabilities.
                 </Text>
 
                 <Accordion allowToggle defaultIndex={[0]}>
                     <AccordionItem border="none">
                         <AccordionButton px={0}>
                             <Box flex="1" textAlign="left" fontWeight="semibold">
-                                How to Use This Assistant
+                                How to Use This Service
                             </Box>
                             <AccordionIcon />
                         </AccordionButton>
@@ -52,19 +52,19 @@ const InstructionsSection: React.FC = () => {
                             <List spacing={2}>
                                 <ListItem>
                                     <ListIcon as={CheckCircleIcon} color="green.500" />
-                                    <Text as="span" fontWeight="medium">Control devices:</Text> "Turn on the living room lights" or "Set thermostat to 72 degrees"
+                                    <Text as="span" fontWeight="medium">Basic tier:</Text> Control basic device power functions
                                 </ListItem>
                                 <ListItem>
                                     <ListIcon as={CheckCircleIcon} color="green.500" />
-                                    <Text as="span" fontWeight="medium">Multi-room control:</Text> "Play music in all rooms" or "Turn off lights downstairs"
+                                    <Text as="span" fontWeight="medium">Premium tier:</Text> Additional volume control capabilities
                                 </ListItem>
                                 <ListItem>
                                     <ListIcon as={CheckCircleIcon} color="green.500" />
-                                    <Text as="span" fontWeight="medium">Create routines:</Text> "Create a morning routine that turns on lights and plays news at 7am"
+                                    <Text as="span" fontWeight="medium">Enterprise tier:</Text> Full control including song changes
                                 </ListItem>
                                 <ListItem>
-                                    <ListIcon as={CheckCircleIcon} color="green.500" />
-                                    <Text as="span" fontWeight="medium">Get information:</Text> "What's the temperature in the bedroom?" or "Is the front door locked?"
+                                    <ListIcon as={InfoIcon} color="blue.500" />
+                                    All service tiers are limited to 1 device maximum
                                 </ListItem>
                                 <ListItem>
                                     <ListIcon as={InfoIcon} color="blue.500" />

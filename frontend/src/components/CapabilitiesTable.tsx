@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Box,
     Table,
@@ -17,99 +17,105 @@ import {
     AccordionPanel,
     AccordionIcon,
     Icon,
+    Spinner,
+    Alert,
+    AlertIcon,
+    Flex,
 } from '@chakra-ui/react';
 import { CheckIcon, CloseIcon, InfoIcon } from '@chakra-ui/icons';
+import * as apiService from '../utils/apiService';
+import { Capability } from '../types';
 
-interface Capability {
-    name: string;
-    description: string;
-    basic: boolean;
-    premium: boolean;
-    enterprise: boolean;
-    category: 'device-control' | 'automation' | 'security' | 'integration' | 'analytics';
-}
-
-const capabilities: Capability[] = [
+// Fallback capabilities in case API fails
+const fallbackCapabilities: Capability[] = [
     {
-        name: 'Basic Device Control',
-        description: 'Control lights, thermostats, and other basic smart home devices',
-        basic: true,
-        premium: true,
-        enterprise: true,
+        id: 'device-status',
+        name: 'Device Status Check',
+        description: 'Check the status of smart home devices',
+        tiers: {
+            basic: true,
+            premium: true,
+            enterprise: true
+        },
         category: 'device-control'
     },
     {
-        name: 'Multi-Room Audio',
-        description: 'Control audio playback across multiple rooms simultaneously',
-        basic: false,
-        premium: true,
-        enterprise: true,
+        id: 'device-power',
+        name: 'Device Power Control',
+        description: 'Turn devices on and off',
+        tiers: {
+            basic: true,
+            premium: true,
+            enterprise: true
+        },
         category: 'device-control'
     },
     {
-        name: 'Security Devices',
-        description: 'Control locks, cameras, and security systems',
-        basic: false,
-        premium: true,
-        enterprise: true,
-        category: 'security'
+        id: 'volume-control',
+        name: 'Volume Control',
+        description: 'Adjust volume levels of audio devices',
+        tiers: {
+            basic: false,
+            premium: true,
+            enterprise: true
+        },
+        category: 'device-control'
     },
     {
-        name: 'Basic Routines',
-        description: 'Create simple routines with limited actions and triggers',
-        basic: true,
-        premium: true,
-        enterprise: true,
-        category: 'automation'
+        id: 'song-changes',
+        name: 'Song Changes',
+        description: 'Change songs and manage playlists',
+        tiers: {
+            basic: false,
+            premium: false,
+            enterprise: true
+        },
+        category: 'device-control'
     },
     {
-        name: 'Advanced Routines',
-        description: 'Create complex routines with multiple conditions and actions',
-        basic: false,
-        premium: true,
-        enterprise: true,
-        category: 'automation'
+        id: 'max-devices',
+        name: 'Device Limit',
+        description: 'Maximum of 1 device allowed',
+        tiers: {
+            basic: true,
+            premium: true,
+            enterprise: true
+        },
+        category: 'capacity'
     },
     {
-        name: 'Scheduled Routines',
-        description: 'Schedule routines to run at specific times or intervals',
-        basic: false,
-        premium: true,
-        enterprise: true,
-        category: 'automation'
+        id: 'standard-support',
+        name: 'Standard Support',
+        description: 'Email support with 48-hour response time',
+        tiers: {
+            basic: true,
+            premium: false,
+            enterprise: false
+        },
+        category: 'support'
     },
     {
-        name: 'Third-Party Integrations',
-        description: 'Connect with third-party services and devices',
-        basic: false,
-        premium: false,
-        enterprise: true,
-        category: 'integration'
+        id: 'priority-support',
+        name: 'Priority Support',
+        description: 'Email and chat support with 24-hour response time',
+        tiers: {
+            basic: false,
+            premium: true,
+            enterprise: false
+        },
+        category: 'support'
     },
     {
-        name: 'Energy Usage Analytics',
-        description: 'View and analyze energy usage patterns',
-        basic: false,
-        premium: false,
-        enterprise: true,
-        category: 'analytics'
-    },
-    {
-        name: 'Security Monitoring',
-        description: 'Advanced security monitoring and alerts',
-        basic: false,
-        premium: false,
-        enterprise: true,
-        category: 'security'
-    },
-    {
-        name: 'Guest Access',
-        description: 'Create and manage guest access to your smart home',
-        basic: false,
-        premium: true,
-        enterprise: true,
-        category: 'security'
-    },
+        id: 'dedicated-support',
+        name: 'Dedicated Support',
+        description: 'Email, chat, and phone support with dedicated account manager',
+        tiers: {
+            basic: false,
+            premium: false,
+            enterprise: true
+        },
+        category: 'support'
+    }
 ];
 
 interface CapabilitiesTableProps {
@@ -117,39 +123,129 @@ interface CapabilitiesTableProps {
 }
 
 const CapabilitiesTable: React.FC<CapabilitiesTableProps> = ({ customerId }) => {
+    const [capabilities, setCapabilities] = useState<Capability[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [customerLevel, setCustomerLevel] = useState<string>('basic');
+
     const bgColor = useColorModeValue('white', 'gray.800');
     const borderColor = useColorModeValue('gray.200', 'gray.700');
-    const headerBgColor = useColorModeValue('gray.50', 'gray.700');
+    const headerBg = useColorModeValue('gray.50', 'gray.700');
 
-    // Determine which service level to highlight based on customer ID
-    const serviceLevel =
-        customerId === 'cust_001' ? 'basic' :
-            customerId === 'cust_002' ? 'premium' : 'enterprise';
+    // Load capabilities from API
+    useEffect(() => {
+        const loadCapabilities = async () => {
+            setIsLoading(true);
+            setError(null);
+
+            try {
+                // Fetch capabilities from API
+                const fetchedCapabilities = await apiService.fetchServiceCapabilities();
+
+                // Validate and normalize capabilities data
+                const validCapabilities = fetchedCapabilities.map(capability => {
+                    // Ensure tiers object exists and has the correct structure
+                    if (!capability.tiers) {
+                        capability.tiers = {
+                            basic: false,
+                            premium: false,
+                            enterprise: false
+                        };
+                    } else if (typeof capability.tiers !== 'object') {
+                        // Handle case where tiers might be in a different format
+                        capability.tiers = {
+                            basic: false,
+                            premium: false,
+                            enterprise: false
+                        };
+                    }
+
+                    // Ensure all tier properties exist
+                    capability.tiers.basic = !!capability.tiers.basic;
+                    capability.tiers.premium = !!capability.tiers.premium;
+                    capability.tiers.enterprise = !!capability.tiers.enterprise;
+
+                    return capability;
+                });
+
+                setCapabilities(validCapabilities.length > 0 ? validCapabilities : fallbackCapabilities);
+
+                // Fetch customer to get service level
+                const customers = await apiService.fetchCustomers();
+                const customer = customers.find(c => c.id === customerId);
+                if (customer) {
+                    setCustomerLevel(customer.level);
+                }
+            } catch (err) {
+                console.error('Error loading capabilities:', err);
+                setError(`Failed to load capabilities: ${err instanceof Error ? err.message : String(err)}`);
+                setCapabilities(fallbackCapabilities);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        loadCapabilities();
+    }, [customerId]);
 
     // Group capabilities by category
-    const categorizedCapabilities = capabilities.reduce((acc, capability) => {
-        if (!acc[capability.category]) {
-            acc[capability.category] = [];
+    const groupedCapabilities = capabilities.reduce((acc, capability) => {
+        const category = capability.category;
+        if (!acc[category]) {
+            acc[category] = [];
         }
-        acc[capability.category].push(capability);
+        acc[category].push(capability);
         return acc;
     }, {} as Record<string, Capability[]>);
 
-    const categoryNames = {
-        'device-control': 'Device Control',
-        'automation': 'Automation',
-        'security': 'Security',
-        'integration': 'Integrations',
-        'analytics': 'Analytics'
+    // Format category name
+    const formatCategoryName = (category: string): string => {
+        const categoryMap: Record<string, string> = {
+            'device-control': 'Device Control',
+            'capacity': 'Device Capacity',
+            'support': 'Support Services',
+        };
+
+        return categoryMap[category] || category.split('-').map(word =>
+            word.charAt(0).toUpperCase() + word.slice(1)
+        ).join(' ');
     };
 
-    const renderAvailability = (available: boolean) => {
-        return available ? (
+    // Render availability icon
+    const renderAvailability = (available: boolean | undefined) => {
+        // Default to false if undefined
+        return available === true ? (
             <Icon as={CheckIcon} color="green.500" />
         ) : (
             <Icon as={CloseIcon} color="red.500" />
         );
     };
+
+    // Render table row for a capability
+    const renderCapabilityRow = (capability: Capability) => {
+        return (
+            <Tr key={capability.id}>
+                <Td>
+                    <Box>
+                        <Text fontWeight="medium">{capability.name}</Text>
+                        <Text fontSize="sm" color="gray.500">{capability.description}</Text>
+                    </Box>
+                </Td>
+                <Td>{renderAvailability(capability.tiers?.basic)}</Td>
+                <Td>{renderAvailability(capability.tiers?.premium)}</Td>
+                <Td>{renderAvailability(capability.tiers?.enterprise)}</Td>
+            </Tr>
+        );
+    };
+
+    if (isLoading) {
+        return (
+            <Flex justify="center" align="center" py={10} direction="column">
+                <Spinner size="xl" mb={4} />
+                <Text>Loading capabilities...</Text>
+            </Flex>
+        );
+    }
 
     return (
         <Box
@@ -159,52 +255,47 @@ const CapabilitiesTable: React.FC<CapabilitiesTableProps> = ({ customerId }) => 
             boxShadow="md"
             borderWidth="1px"
             borderColor={borderColor}
-            mb={6}
         >
-            <Heading size="md" mb={4}>Service Level Capabilities</Heading>
+            <Heading size="md" mb={4}>Service Capabilities</Heading>
+
+            {error && (
+                <Alert status="error" mb={4}>
+                    <AlertIcon />
+                    <Text>{error}</Text>
+                </Alert>
+            )}
 
             <Text mb={4}>
-                This table shows the capabilities available at each service level. Your current service level is{' '}
-                <Badge colorScheme={
-                    serviceLevel === 'basic' ? 'gray' :
-                        serviceLevel === 'premium' ? 'blue' : 'purple'
-                }>
-                    {serviceLevel.charAt(0).toUpperCase() + serviceLevel.slice(1)}
-                </Badge>
+                Your current service level: <Badge colorScheme={
+                    customerLevel === 'enterprise' ? 'purple' :
+                        customerLevel === 'premium' ? 'blue' : 'gray'
+                }>{customerLevel.toUpperCase()}</Badge>
             </Text>
 
             <Accordion allowMultiple defaultIndex={[0]}>
-                {Object.entries(categorizedCapabilities).map(([category, categoryCapabilities]) => (
+                {Object.entries(groupedCapabilities).map(([category, categoryCapabilities]) => (
                     <AccordionItem key={category}>
-                        <AccordionButton py={3}>
-                            <Box flex="1" textAlign="left" fontWeight="semibold">
-                                {categoryNames[category as keyof typeof categoryNames]}
-                            </Box>
-                            <AccordionIcon />
-                        </AccordionButton>
-                        <AccordionPanel pb={4} px={0}>
+                        <h2>
+                            <AccordionButton py={3}>
+                                <Box flex="1" textAlign="left" fontWeight="bold">
+                                    {formatCategoryName(category)}
+                                </Box>
+                                <AccordionIcon />
+                            </AccordionButton>
+                        </h2>
+                        <AccordionPanel pb={4}>
                             <Box overflowX="auto">
                                 <Table variant="simple" size="sm">
-                                    <Thead bg={headerBgColor}>
+                                    <Thead bg={headerBg}>
                                         <Tr>
                                             <Th>Capability</Th>
-                                            <Th width="100px" textAlign="center">Basic</Th>
-                                            <Th width="100px" textAlign="center">Premium</Th>
-                                            <Th width="100px" textAlign="center">Enterprise</Th>
+                                            <Th>Basic</Th>
+                                            <Th>Premium</Th>
+                                            <Th>Enterprise</Th>
                                         </Tr>
                                     </Thead>
                                     <Tbody>
-                                        {categoryCapabilities.map((capability) => (
-                                            <Tr key={capability.name}>
-                                                <Td>
-                                                    <Text fontWeight="medium">{capability.name}</Text>
-                                                    <Text fontSize="xs" color="gray.500">{capability.description}</Text>
-                                                </Td>
-                                                <Td textAlign="center">{renderAvailability(capability.basic)}</Td>
-                                                <Td textAlign="center">{renderAvailability(capability.premium)}</Td>
-                                                <Td textAlign="center">{renderAvailability(capability.enterprise)}</Td>
-                                            </Tr>
-                                        ))}
+                                        {categoryCapabilities.map((capability) => renderCapabilityRow(capability))}
                                     </Tbody>
                                 </Table>
                             </Box>
@@ -212,13 +303,6 @@ const CapabilitiesTable: React.FC<CapabilitiesTableProps> = ({ customerId }) => 
                     </AccordionItem>
                 ))}
             </Accordion>
-
-            <Box mt={4} p={3} bg={useColorModeValue('blue.50', 'blue.900')} borderRadius="md">
-                <Text fontSize="sm" display="flex" alignItems="center">
-                    <Icon as={InfoIcon} mr={2} color="blue.500" />
-                    Want to upgrade your service level? Contact our sales team for more information.
-                </Text>
-            </Box>
         </Box>
     );
 };

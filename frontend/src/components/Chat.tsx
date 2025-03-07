@@ -26,21 +26,18 @@ interface ChatProps {
 }
 
 export const Chat: React.FC<ChatProps> = ({ onCustomerChange }) => {
-    // State
+    // Component state
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [customerId, setCustomerId] = useState(config.defaultCustomerId);
-    const [lastMessageTimestamp, setLastMessageTimestamp] = useState<string | null>(null);
-    const [isPolling, setIsPolling] = useState(true);
     const [customers, setCustomers] = useState<Customer[]>([]);
     const [isLoadingCustomers, setIsLoadingCustomers] = useState(false);
+    const [customerId, setCustomerId] = useState(config.defaultCustomerId);
+    const [lastMessageTimestamp, setLastMessageTimestamp] = useState<string | null>(null);
 
-    // Refs
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
-    const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
     // Colors
     const bgColor = useColorModeValue('gray.50', 'gray.700');
@@ -66,12 +63,14 @@ export const Chat: React.FC<ChatProps> = ({ onCustomerChange }) => {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        if (!input.trim() || isLoading) return;
+        // Enhanced validation to prevent empty messages
+        const trimmedInput = input.trim();
+        if (!trimmedInput || isLoading) return;
 
         // Create user message
         const userMessage: Message = {
             id: `user_${Date.now()}`,
-            text: input,
+            text: trimmedInput,
             sender: 'user',
             timestamp: new Date().toISOString(),
         };
@@ -80,11 +79,10 @@ export const Chat: React.FC<ChatProps> = ({ onCustomerChange }) => {
         setMessages(prev => [...prev, userMessage]);
         setInput('');
         setIsLoading(true);
-        setError(null);
 
         try {
             // Send message to API
-            const response = await apiService.sendChatMessage(customerId, input);
+            const response = await apiService.sendChatMessage(customerId, trimmedInput);
 
             if (response.error) {
                 setError(response.error);
@@ -111,11 +109,15 @@ export const Chat: React.FC<ChatProps> = ({ onCustomerChange }) => {
     // Load chat history
     const loadChatHistory = async () => {
         try {
+            setIsLoading(true);
             const history = await apiService.fetchChatHistory(customerId);
 
-            if (history.length > 0) {
-                setMessages(history);
-                setLastMessageTimestamp(history[history.length - 1].timestamp);
+            // Filter out any empty messages
+            const validMessages = history.filter(msg => msg.text && msg.text.trim());
+
+            if (validMessages.length > 0) {
+                setMessages(validMessages);
+                setLastMessageTimestamp(validMessages[validMessages.length - 1].timestamp);
             } else {
                 // Add welcome message if no history
                 const customer = customers.find(c => c.id === customerId);
@@ -130,6 +132,8 @@ export const Chat: React.FC<ChatProps> = ({ onCustomerChange }) => {
             }
         } catch (err) {
             setError(`Failed to load chat history: ${err instanceof Error ? err.message : String(err)}`);
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -145,54 +149,6 @@ export const Chat: React.FC<ChatProps> = ({ onCustomerChange }) => {
             setIsLoadingCustomers(false);
         }
     };
-
-    // Poll for new messages
-    const pollForNewMessages = async () => {
-        if (!isPolling || !customerId) return;
-
-        try {
-            // Check if API is available
-            const isAvailable = await apiService.checkApiAvailability();
-
-            if (!isAvailable) {
-                return;
-            }
-
-            const history = await apiService.fetchChatHistory(customerId);
-
-            if (history.length > 0) {
-                // Check if there are new messages
-                const lastMessage = history[history.length - 1];
-
-                if (!lastMessageTimestamp || lastMessage.timestamp > lastMessageTimestamp) {
-                    setMessages(history);
-                    setLastMessageTimestamp(lastMessage.timestamp);
-                }
-            }
-        } catch (err) {
-            console.error('Error polling for new messages:', err);
-        }
-    };
-
-    // Set up polling interval
-    useEffect(() => {
-        // Clear any existing interval
-        if (pollingIntervalRef.current) {
-            clearInterval(pollingIntervalRef.current);
-        }
-
-        // Set up new polling interval
-        if (isPolling) {
-            pollingIntervalRef.current = setInterval(pollForNewMessages, config.chatPollingInterval);
-        }
-
-        // Clean up on unmount
-        return () => {
-            if (pollingIntervalRef.current) {
-                clearInterval(pollingIntervalRef.current);
-            }
-        };
-    }, [isPolling, customerId, lastMessageTimestamp]);
 
     // Load customers when component mounts
     useEffect(() => {
@@ -277,7 +233,18 @@ export const Chat: React.FC<ChatProps> = ({ onCustomerChange }) => {
                 overflowY="auto"
                 maxHeight="calc(100vh - 250px)"
             >
-                <MessageList messages={messages} />
+                {messages.length === 0 && isLoading ? (
+                    <Flex justify="center" align="center" height="100%" direction="column">
+                        <Spinner size="xl" mb={4} />
+                        <Text>Loading conversation...</Text>
+                    </Flex>
+                ) : messages.length === 0 ? (
+                    <Flex justify="center" align="center" height="100%">
+                        <Text color="gray.500">No messages yet. Start a conversation!</Text>
+                    </Flex>
+                ) : (
+                    <MessageList messages={messages} />
+                )}
                 <div ref={messagesEndRef} />
             </Box>
 

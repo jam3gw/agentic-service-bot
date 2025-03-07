@@ -17,19 +17,13 @@ import {
     Switch,
     IconButton,
     Tooltip,
+    Alert,
+    AlertIcon,
+    Flex,
 } from '@chakra-ui/react';
 import { RepeatIcon, SettingsIcon } from '@chakra-ui/icons';
-
-// Mock data for devices - in a real app, this would come from an API
-interface Device {
-    id: string;
-    name: string;
-    type: string;
-    location: string;
-    status: 'online' | 'offline' | 'standby';
-    state: string;
-    lastUpdated: string;
-}
+import * as apiService from '../utils/apiService';
+import { Device } from '../types';
 
 interface UserDevicesTableProps {
     customerId: string;
@@ -38,59 +32,41 @@ interface UserDevicesTableProps {
 const UserDevicesTable: React.FC<UserDevicesTableProps> = ({ customerId }) => {
     const [devices, setDevices] = useState<Device[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const [lastRefreshed, setLastRefreshed] = useState(new Date());
 
     const bgColor = useColorModeValue('white', 'gray.800');
     const borderColor = useColorModeValue('gray.200', 'gray.700');
 
-    // Mock device data based on customer ID
-    useEffect(() => {
+    // Load devices from API
+    const loadDevices = async () => {
+        if (!customerId) return;
+
         setIsLoading(true);
+        setError(null);
 
-        // Simulate API call delay
-        const timer = setTimeout(() => {
-            // Different devices for different customers
-            const mockDevices: Record<string, Device[]> = {
-                'cust_001': [
-                    { id: 'd001', name: 'Living Room Light', type: 'Light', location: 'Living Room', status: 'online', state: 'Off', lastUpdated: '2 mins ago' },
-                    { id: 'd002', name: 'Kitchen Light', type: 'Light', location: 'Kitchen', status: 'online', state: 'On', lastUpdated: '5 mins ago' },
-                    { id: 'd003', name: 'Thermostat', type: 'Climate', location: 'Hallway', status: 'online', state: '72°F', lastUpdated: '1 min ago' },
-                ],
-                'cust_002': [
-                    { id: 'd001', name: 'Living Room Light', type: 'Light', location: 'Living Room', status: 'online', state: 'Off', lastUpdated: '2 mins ago' },
-                    { id: 'd002', name: 'Kitchen Light', type: 'Light', location: 'Kitchen', status: 'online', state: 'On', lastUpdated: '5 mins ago' },
-                    { id: 'd003', name: 'Thermostat', type: 'Climate', location: 'Hallway', status: 'online', state: '72°F', lastUpdated: '1 min ago' },
-                    { id: 'd004', name: 'Front Door Lock', type: 'Security', location: 'Front Door', status: 'online', state: 'Locked', lastUpdated: '10 mins ago' },
-                    { id: 'd005', name: 'Bedroom Speaker', type: 'Audio', location: 'Bedroom', status: 'standby', state: 'Idle', lastUpdated: '30 mins ago' },
-                ],
-                'cust_003': [
-                    { id: 'd001', name: 'Living Room Light', type: 'Light', location: 'Living Room', status: 'online', state: 'Off', lastUpdated: '2 mins ago' },
-                    { id: 'd002', name: 'Kitchen Light', type: 'Light', location: 'Kitchen', status: 'online', state: 'On', lastUpdated: '5 mins ago' },
-                    { id: 'd003', name: 'Thermostat', type: 'Climate', location: 'Hallway', status: 'online', state: '72°F', lastUpdated: '1 min ago' },
-                    { id: 'd004', name: 'Front Door Lock', type: 'Security', location: 'Front Door', status: 'online', state: 'Locked', lastUpdated: '10 mins ago' },
-                    { id: 'd005', name: 'Bedroom Speaker', type: 'Audio', location: 'Bedroom', status: 'standby', state: 'Idle', lastUpdated: '30 mins ago' },
-                    { id: 'd006', name: 'Garage Door', type: 'Security', location: 'Garage', status: 'online', state: 'Closed', lastUpdated: '15 mins ago' },
-                    { id: 'd007', name: 'Basement Motion Sensor', type: 'Security', location: 'Basement', status: 'online', state: 'No Motion', lastUpdated: '3 mins ago' },
-                    { id: 'd008', name: 'Outdoor Camera', type: 'Security', location: 'Front Yard', status: 'online', state: 'Recording', lastUpdated: 'Just now' },
-                ],
-            };
-
-            setDevices(mockDevices[customerId] || []);
-            setIsLoading(false);
-        }, 1000);
-
-        return () => clearTimeout(timer);
-    }, [customerId]);
-
-    const refreshDevices = () => {
-        setIsLoading(true);
-        // In a real app, this would fetch the latest device data
-        setTimeout(() => {
+        try {
+            const fetchedDevices = await apiService.fetchUserDevices(customerId);
+            setDevices(fetchedDevices);
             setLastRefreshed(new Date());
+        } catch (err) {
+            setError(`Failed to load devices: ${err instanceof Error ? err.message : String(err)}`);
+        } finally {
             setIsLoading(false);
-        }, 1000);
+        }
     };
 
+    // Load devices when customer changes
+    useEffect(() => {
+        loadDevices();
+    }, [customerId]);
+
+    // Refresh devices
+    const refreshDevices = () => {
+        loadDevices();
+    };
+
+    // Get status badge
     const getStatusBadge = (status: string) => {
         switch (status) {
             case 'online':
@@ -104,16 +80,22 @@ const UserDevicesTable: React.FC<UserDevicesTableProps> = ({ customerId }) => {
         }
     };
 
-    const toggleDeviceState = (deviceId: string) => {
-        setDevices(devices.map(device => {
-            if (device.id === deviceId) {
-                if (device.type === 'Light') {
-                    const newState = device.state === 'On' ? 'Off' : 'On';
-                    return { ...device, state: newState, lastUpdated: 'Just now' };
+    // Toggle device state
+    const toggleDeviceState = async (deviceId: string, currentState: string) => {
+        try {
+            const newState = currentState === 'on' ? 'off' : 'on';
+            await apiService.updateDeviceState(deviceId, newState, customerId);
+
+            // Update local state
+            setDevices(devices.map(device => {
+                if (device.id === deviceId) {
+                    return { ...device, status: newState };
                 }
-            }
-            return device;
-        }));
+                return device;
+            }));
+        } catch (err) {
+            setError(`Failed to update device: ${err instanceof Error ? err.message : String(err)}`);
+        }
     };
 
     return (
@@ -144,11 +126,18 @@ const UserDevicesTable: React.FC<UserDevicesTableProps> = ({ customerId }) => {
                 </Tooltip>
             </HStack>
 
+            {error && (
+                <Alert status="error" mb={4}>
+                    <AlertIcon />
+                    <Text>{error}</Text>
+                </Alert>
+            )}
+
             {isLoading ? (
-                <Box textAlign="center" py={10}>
-                    <Spinner size="xl" />
-                    <Text mt={4}>Loading devices...</Text>
-                </Box>
+                <Flex justify="center" align="center" py={10} direction="column">
+                    <Spinner size="xl" mb={4} />
+                    <Text>Loading devices...</Text>
+                </Flex>
             ) : devices.length === 0 ? (
                 <Box textAlign="center" py={10}>
                     <Text>No devices found for this user.</Text>
@@ -163,7 +152,6 @@ const UserDevicesTable: React.FC<UserDevicesTableProps> = ({ customerId }) => {
                                 <Th>Location</Th>
                                 <Th>Status</Th>
                                 <Th>State</Th>
-                                <Th>Last Updated</Th>
                                 <Th>Actions</Th>
                             </Tr>
                         </Thead>
@@ -173,26 +161,25 @@ const UserDevicesTable: React.FC<UserDevicesTableProps> = ({ customerId }) => {
                                     <Td fontWeight="medium">{device.name}</Td>
                                     <Td>
                                         <Tag size="sm" colorScheme={
-                                            device.type === 'Security' ? 'red' :
-                                                device.type === 'Light' ? 'yellow' :
-                                                    device.type === 'Climate' ? 'blue' :
-                                                        device.type === 'Audio' ? 'purple' : 'gray'
+                                            device.type === 'security' ? 'red' :
+                                                device.type === 'light' ? 'yellow' :
+                                                    device.type === 'climate' ? 'blue' :
+                                                        device.type === 'audio' ? 'purple' : 'gray'
                                         }>
                                             {device.type}
                                         </Tag>
                                     </Td>
                                     <Td>{device.location}</Td>
-                                    <Td>{getStatusBadge(device.status)}</Td>
-                                    <Td>{device.state}</Td>
-                                    <Td>{device.lastUpdated}</Td>
+                                    <Td>{getStatusBadge(device.status || 'unknown')}</Td>
+                                    <Td>{device.state || 'Unknown'}</Td>
                                     <Td>
                                         <HStack spacing={2}>
-                                            {device.type === 'Light' && (
+                                            {device.type === 'light' && (
                                                 <Switch
                                                     size="sm"
-                                                    isChecked={device.state === 'On'}
-                                                    onChange={() => toggleDeviceState(device.id)}
-                                                    isDisabled={device.status !== 'online'}
+                                                    isChecked={device.state?.toLowerCase() === 'on'}
+                                                    onChange={() => toggleDeviceState(device.id, device.state || '')}
+                                                    isDisabled={device.status?.toLowerCase() !== 'online'}
                                                 />
                                             )}
                                             <Tooltip label="Device settings">

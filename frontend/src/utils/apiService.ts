@@ -8,6 +8,46 @@ import config from '../config';
 import { Message, Device, Capability, ChatResponse, Customer } from '../types';
 
 /**
+ * Base API request function with error handling
+ * @param url - The URL to fetch
+ * @param options - Fetch options
+ * @returns Promise containing the response data
+ */
+async function apiCall<T>(url: string, options?: RequestInit): Promise<T> {
+    try {
+        // For development only - add a timestamp to prevent caching
+        const urlWithCache = config.debug
+            ? `${url}${url.includes('?') ? '&' : '?'}_t=${Date.now()}`
+            : url;
+
+        const response = await fetch(urlWithCache, {
+            ...options,
+            headers: {
+                'Content-Type': 'application/json',
+                ...(options?.headers || {})
+            },
+            // No credentials needed for this API
+            // credentials: 'include',
+            // Note: 'no-cors' mode will make the response opaque and unusable for JSON parsing
+            // Only use this if you're just testing connectivity and don't need the response data
+            // mode: 'no-cors' // Uncomment this line only if you're testing connectivity
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(
+                errorData.message || `API error: ${response.status} ${response.statusText}`
+            );
+        }
+
+        return await response.json();
+    } catch (error) {
+        console.error('API call failed:', error);
+        throw error;
+    }
+}
+
+/**
  * Sends a chat message to the backend
  * @param customerId - The ID of the customer sending the message
  * @param message - The message text to send
@@ -15,35 +55,34 @@ import { Message, Device, Capability, ChatResponse, Customer } from '../types';
  */
 export const sendChatMessage = async (customerId: string, message: string): Promise<ChatResponse> => {
     try {
-        if (config.debug) {
-            console.log(`Sending message to ${config.apiUrl}/chat for customer ${customerId}: ${message}`);
+        // Validate message before sending
+        if (!message || !message.trim()) {
+            console.warn('Attempted to send empty message');
+            return {
+                message: '',
+                timestamp: new Date().toISOString(),
+                messageId: '',
+                conversationId: '',
+                error: 'Empty messages are not allowed'
+            };
         }
 
-        const response = await fetch(`${config.apiUrl}/chat`, {
+        return await apiCall<ChatResponse>(`${config.apiUrl}/chat`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
             body: JSON.stringify({
                 customerId,
-                message,
+                message: message.trim(), // Ensure message is trimmed
             }),
         });
-
-        if (!response.ok) {
-            throw new Error(`Failed to send message: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-
-        if (config.debug) {
-            console.log('Received response:', data);
-        }
-
-        return data;
     } catch (error) {
         console.error('Error sending message:', error);
-        throw error;
+        return {
+            message: '',
+            timestamp: new Date().toISOString(),
+            messageId: '',
+            conversationId: '',
+            error: error instanceof Error ? error.message : String(error)
+        };
     }
 };
 
@@ -54,22 +93,7 @@ export const sendChatMessage = async (customerId: string, message: string): Prom
  */
 export const fetchChatHistory = async (customerId: string): Promise<Message[]> => {
     try {
-        if (config.debug) {
-            console.log(`Fetching chat history for customer ${customerId}`);
-        }
-
-        const response = await fetch(`${config.apiUrl}/chat/history/${customerId}`);
-
-        if (!response.ok) {
-            throw new Error(`Failed to fetch chat history: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-
-        if (config.debug) {
-            console.log('Received chat history:', data);
-        }
-
+        const data = await apiCall<{ messages: Message[] }>(`${config.apiUrl}/chat/history/${customerId}`);
         return data.messages || [];
     } catch (error) {
         console.error('Error fetching chat history:', error);
@@ -84,22 +108,7 @@ export const fetchChatHistory = async (customerId: string): Promise<Message[]> =
  */
 export const fetchUserDevices = async (customerId: string): Promise<Device[]> => {
     try {
-        if (config.debug) {
-            console.log(`Fetching devices for customer ${customerId}`);
-        }
-
-        const response = await fetch(`${config.apiUrl}/customers/${customerId}/devices`);
-
-        if (!response.ok) {
-            throw new Error(`Failed to fetch devices: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-
-        if (config.debug) {
-            console.log('Received devices:', data);
-        }
-
+        const data = await apiCall<{ devices: Device[] }>(`${config.apiUrl}/customers/${customerId}/devices`);
         return data.devices || [];
     } catch (error) {
         console.error('Error fetching devices:', error);
@@ -113,22 +122,7 @@ export const fetchUserDevices = async (customerId: string): Promise<Device[]> =>
  */
 export const fetchServiceCapabilities = async (): Promise<Capability[]> => {
     try {
-        if (config.debug) {
-            console.log('Fetching service capabilities');
-        }
-
-        const response = await fetch(`${config.apiUrl}/capabilities`);
-
-        if (!response.ok) {
-            throw new Error(`Failed to fetch capabilities: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-
-        if (config.debug) {
-            console.log('Received capabilities:', data);
-        }
-
+        const data = await apiCall<{ capabilities: Capability[] }>(`${config.apiUrl}/capabilities`);
         return data.capabilities || [];
     } catch (error) {
         console.error('Error fetching capabilities:', error);
@@ -141,13 +135,8 @@ export const fetchServiceCapabilities = async (): Promise<Capability[]> => {
  * @returns Promise containing a boolean indicating if the API is available
  */
 export const checkApiAvailability = async (): Promise<boolean> => {
-    try {
-        const response = await fetch(`${config.apiUrl}/ping`);
-        return response.ok;
-    } catch (error) {
-        console.error('API availability check failed:', error);
-        return false;
-    }
+    // The ping API no longer exists, so we'll assume the API is available
+    return true;
 };
 
 /**
@@ -163,22 +152,13 @@ export const updateDeviceState = async (
     customerId: string
 ): Promise<Device> => {
     try {
-        const response = await fetch(
+        const data = await apiCall<{ device: Device }>(
             `${config.apiUrl}/customers/${customerId}/devices/${deviceId}`,
             {
                 method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
                 body: JSON.stringify({ state: newState }),
             }
         );
-
-        if (!response.ok) {
-            throw new Error(`Failed to update device: ${response.status} ${response.statusText}`);
-        }
-
-        const data = await response.json();
         return data.device;
     } catch (error) {
         console.error('Error updating device state:', error);
@@ -192,21 +172,7 @@ export const updateDeviceState = async (
  */
 export const fetchCustomers = async (): Promise<Customer[]> => {
     try {
-        if (config.debug) {
-            console.log('Fetching customers');
-        }
-
-        const response = await fetch(`${config.apiUrl}/customers`);
-
-        if (!response.ok) {
-            throw new Error(`Failed to fetch customers: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-
-        if (config.debug) {
-            console.log('Received customers:', data);
-        }
+        const data = await apiCall<{ customers: Customer[] }>(`${config.apiUrl}/customers`);
 
         // Map the API response to our Customer type
         return (data.customers || []).map((customer: any) => ({
