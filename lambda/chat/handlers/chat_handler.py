@@ -76,7 +76,7 @@ def get_cors_headers(event=None):
 # For backward compatibility
 CORS_HEADERS = get_cors_headers()
 
-def handle_chat_message(customer_id: str, message_text: str, event=None) -> Dict[str, Any]:
+def handle_chat_message(customer_id: str, message_text: str, event=None, conversation_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Handle a chat message from a customer.
     
@@ -84,6 +84,7 @@ def handle_chat_message(customer_id: str, message_text: str, event=None) -> Dict
         customer_id: The ID of the customer sending the message
         message_text: The text of the message
         event: The Lambda event (optional, for CORS headers)
+        conversation_id: The ID of the conversation (optional)
         
     Returns:
         API Gateway response
@@ -91,7 +92,8 @@ def handle_chat_message(customer_id: str, message_text: str, event=None) -> Dict
     # Get CORS headers based on the request origin
     cors_headers = get_cors_headers(event)
     
-    logger.info(f"Processing chat message from customer {customer_id}: {message_text}")
+    logger.info(f"Processing chat message from customer {customer_id}: {message_text}" +
+                (f" in conversation {conversation_id}" if conversation_id else ""))
     
     try:
         # Validate message text - prevent empty messages
@@ -120,8 +122,8 @@ def handle_chat_message(customer_id: str, message_text: str, event=None) -> Dict
         permissions = get_service_level_permissions(service_level)
         
         # Generate a conversation ID if not provided
-        # In a real app, this would be passed in from the client
-        conversation_id = str(uuid.uuid4())
+        if not conversation_id:
+            conversation_id = str(uuid.uuid4())
         
         # Create user message
         user_message = Message(

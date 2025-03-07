@@ -84,7 +84,7 @@ export const Chat: React.FC<ChatProps> = ({ onCustomerChange }) => {
 
         try {
             // Send message to API
-            const response = await apiService.sendChatMessage(customerId, trimmedInput);
+            const response = await apiService.sendChatMessage(customerId, trimmedInput, conversationId);
 
             if (response.error) {
                 setError(response.error);
@@ -95,6 +95,7 @@ export const Chat: React.FC<ChatProps> = ({ onCustomerChange }) => {
                     text: response.message,
                     sender: 'bot',
                     timestamp: response.timestamp || new Date().toISOString(),
+                    conversationId: response.conversationId
                 };
 
                 // Store the conversation ID if this is a new conversation

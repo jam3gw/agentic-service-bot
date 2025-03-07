@@ -30,6 +30,9 @@ paths:
                 message:
                   type: string
                   description: The message text from the user
+                conversationId:
+                  type: string
+                  description: Optional identifier for an existing conversation
       responses:
         '200':
           description: Successful response
@@ -95,6 +98,12 @@ paths:
           schema:
             type: string
           description: Unique identifier for the customer
+        - name: conversationId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional identifier to filter messages by conversation
       responses:
         '200':
           description: Successful response

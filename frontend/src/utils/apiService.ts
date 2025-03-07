@@ -51,9 +51,14 @@ async function apiCall<T>(url: string, options?: RequestInit): Promise<T> {
  * Sends a chat message to the backend
  * @param customerId - The ID of the customer sending the message
  * @param message - The message text to send
+ * @param conversationId - Optional ID of the conversation this message belongs to
  * @returns Promise containing the response from the bot
  */
-export const sendChatMessage = async (customerId: string, message: string): Promise<ChatResponse> => {
+export const sendChatMessage = async (
+    customerId: string,
+    message: string,
+    conversationId?: string
+): Promise<ChatResponse> => {
     try {
         // Validate message before sending
         if (!message || !message.trim()) {
@@ -72,6 +77,7 @@ export const sendChatMessage = async (customerId: string, message: string): Prom
             body: JSON.stringify({
                 customerId,
                 message: message.trim(), // Ensure message is trimmed
+                conversationId // Include conversationId if provided
             }),
         });
     } catch (error) {

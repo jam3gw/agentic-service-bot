@@ -72,6 +72,12 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if path.startswith('/api/chat/history/'):
             if http_method == 'GET':
                 customer_id = path_parameters.get('customerId')
+                if not customer_id:
+                    return {
+                        'statusCode': 400,
+                        'headers': CORS_HEADERS,
+                        'body': json.dumps({'error': 'Missing customerId parameter'})
+                    }
                 # Get conversationId from query parameters if available
                 query_parameters = event.get('queryStringParameters', {}) or {}
                 conversation_id = query_parameters.get('conversationId')
@@ -83,6 +89,7 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 body = json.loads(event.get('body', '{}'))
                 customer_id = body.get('customerId')
                 message = body.get('message')
+                conversation_id = body.get('conversationId')  # Extract conversationId if provided
                 
                 if not customer_id or not message:
                     return {
@@ -91,7 +98,7 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                         'body': json.dumps({'error': 'Missing customerId or message'})
                     }
                 
-                return handle_chat_message(customer_id, message, event)
+                return handle_chat_message(customer_id, message, event, conversation_id)
         
         # If no matching route, return 404
         return {
