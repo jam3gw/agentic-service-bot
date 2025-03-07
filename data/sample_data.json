@@ -65,7 +65,7 @@
                 "device_power",
                 "volume_control"
             ],
-            "max_devices": 3,
+            "max_devices": 1,
             "support_priority": "priority"
         },
         "enterprise": {
@@ -74,7 +74,7 @@
                 "volume_control",
                 "song_changes"
             ],
-            "max_devices": 10,
+            "max_devices": 1,
             "support_priority": "dedicated"
         }
     }
