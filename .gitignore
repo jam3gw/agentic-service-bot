@@ -54,3 +54,4 @@ frontend/build/
 .env.test.local
 .env.production.local
 *.d.tsresponse.json
+response.json
