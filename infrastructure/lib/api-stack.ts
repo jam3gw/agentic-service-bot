@@ -68,7 +68,7 @@ export class ApiStack extends BaseStack {
                 ENVIRONMENT: config.environment,
                 ALLOWED_ORIGIN: config.environment === 'prod'
                     ? 'https://agentic-service-bot.jake-moses.com'
-                    : 'https://agentic-service-bot.dev.jake-moses.com',
+                    : 'https://agentic-service-bot.dev.jake-moses.com,http://localhost:5173', // Add localhost for development
             },
             bundling: {
                 assetExcludes: [
@@ -92,7 +92,7 @@ export class ApiStack extends BaseStack {
                 ENVIRONMENT: config.environment,
                 ALLOWED_ORIGIN: config.environment === 'prod'
                     ? 'https://agentic-service-bot.jake-moses.com'
-                    : 'https://agentic-service-bot.dev.jake-moses.com',
+                    : 'https://agentic-service-bot.dev.jake-moses.com,http://localhost:5173', // Add localhost for development
             },
             bundling: {
                 assetExcludes: [
@@ -117,9 +117,9 @@ export class ApiStack extends BaseStack {
             restApiName: `${config.environment}-service-bot-api`,
             description: 'API for device, capability, and chat management',
             defaultCorsPreflightOptions: {
-                allowOrigins: [config.environment === 'prod'
-                    ? 'https://agentic-service-bot.jake-moses.com'
-                    : 'https://agentic-service-bot.dev.jake-moses.com'],
+                allowOrigins: config.environment === 'prod'
+                    ? ['https://agentic-service-bot.jake-moses.com']
+                    : ['https://agentic-service-bot.dev.jake-moses.com', 'http://localhost:5173'], // Add localhost for development
                 allowMethods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
                 allowHeaders: ['Content-Type', 'Authorization'],
                 allowCredentials: true,
