@@ -47,7 +47,6 @@ The Agentic Service Bot uses a serverless architecture on AWS, with a React fron
 
 - **Chat Handler**: Processes incoming messages, interacts with Claude API, and returns responses
 - **API Handler**: Manages customer and device data
-- **Seed Function**: Initializes database with sample data
 
 #### DynamoDB Tables
 
