@@ -9,7 +9,8 @@ import json
 import logging
 import os
 import sys
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
+from decimal import Decimal
 
 # Add the parent directory to sys.path to enable absolute imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -18,12 +19,20 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 # Local application imports
+import services.dynamodb_service as dynamodb_service
 from utils import convert_decimal_to_float, convert_float_to_decimal
-from services.dynamodb_service import get_service_levels
 
 # Configure logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+# CORS headers for responses
+CORS_HEADERS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+    'Access-Control-Allow-Methods': 'OPTIONS,POST,GET,PATCH,DELETE,PUT',
+    'Access-Control-Allow-Credentials': 'false',
+}
 
 def handle_get_capabilities(cors_headers: Dict[str, str]) -> Dict[str, Any]:
     """
@@ -39,7 +48,7 @@ def handle_get_capabilities(cors_headers: Dict[str, str]) -> Dict[str, Any]:
         logger.info("Retrieving all capabilities")
         
         # Get service levels from DynamoDB
-        service_levels = get_service_levels()
+        service_levels = dynamodb_service.get_service_levels()
         
         if not service_levels:
             return {
@@ -244,3 +253,55 @@ def generate_capabilities(service_levels: Dict[str, Dict[str, Any]]) -> List[Dic
         enhanced_capabilities.append(enhanced_capability)
     
     return enhanced_capabilities 
+
+def handle_get_capability(capability_id: str, cors_headers: Dict[str, str]) -> Dict[str, Any]:
+    """
+    Handle GET request to retrieve a specific capability.
+    
+    Args:
+        capability_id: The ID of the capability to retrieve
+        cors_headers: CORS headers to include in the response
+        
+    Returns:
+        API Gateway response with capability data
+    """
+    try:
+        logger.info(f"Retrieving capability: {capability_id}")
+        
+        # Get service levels from DynamoDB
+        service_levels = dynamodb_service.get_service_levels()
+        
+        if not service_levels:
+            return {
+                'statusCode': 500,
+                'headers': cors_headers,
+                'body': json.dumps({'error': 'Failed to retrieve service levels'})
+            }
+        
+        # Generate capabilities from service levels
+        capabilities = generate_capabilities(service_levels)
+        
+        # Find the requested capability
+        capability = next((c for c in capabilities if c.get('id') == capability_id), None)
+        
+        if not capability:
+            return {
+                'statusCode': 404,
+                'headers': cors_headers,
+                'body': json.dumps({'error': f'Capability not found: {capability_id}'})
+            }
+        
+        # Return the capability
+        return {
+            'statusCode': 200,
+            'headers': cors_headers,
+            'body': json.dumps(capability)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error retrieving capability: {str(e)}")
+        return {
+            'statusCode': 500,
+            'headers': cors_headers,
+            'body': json.dumps({'error': f'Error retrieving capability: {str(e)}'})
+        } 

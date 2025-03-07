@@ -11,10 +11,11 @@ import logging
 import sys
 import json
 import re
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional, List, Union, cast
 
 # Third-party imports
 import anthropic
+from anthropic import Anthropic
 
 # Add the parent directory to sys.path to enable absolute imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -22,9 +23,12 @@ parent_dir = os.path.dirname(current_dir)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-# Configure logging
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+# Configure logging with more detailed format
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Define empty dictionaries for response examples
 ALLOWED_ACTION_EXAMPLES = {}
@@ -35,7 +39,7 @@ UPGRADE_INFORMATION_EXAMPLES = {}
 def set_default_env_vars():
     """Set default environment variables for local development if they're not already set."""
     defaults = {
-        'ANTHROPIC_MODEL': 'claude-3-opus-20240229',
+        'ANTHROPIC_MODEL': 'claude-3-haiku-20240307',
     }
     
     for key, value in defaults.items():
@@ -52,17 +56,21 @@ if not os.environ.get('ANTHROPIC_API_KEY'):
 
 # Initialize Anthropic client if API key is available
 try:
-    if os.environ.get('ANTHROPIC_API_KEY'):
-        anthropic_client = anthropic.Anthropic(
-            api_key=os.environ.get('ANTHROPIC_API_KEY')
-        )
+    import anthropic
+    from anthropic import Anthropic
+    
+    # Initialize Anthropic client
+    anthropic_api_key = os.environ.get('ANTHROPIC_API_KEY')
+    if anthropic_api_key:
+        anthropic_client = Anthropic(api_key=anthropic_api_key)
     else:
+        logger.warning("ANTHROPIC_API_KEY not set. Using mock responses.")
         anthropic_client = None
-    ANTHROPIC_MODEL = os.environ.get('ANTHROPIC_MODEL', 'claude-3-opus-20240229')
+    ANTHROPIC_MODEL = os.environ.get('ANTHROPIC_MODEL', 'claude-3-haiku-20240307')
 except ImportError:
     logger.warning("anthropic package not installed. Using mock responses.")
     anthropic_client = None
-    ANTHROPIC_MODEL = 'claude-3-opus-20240229'
+    ANTHROPIC_MODEL = 'claude-3-haiku-20240307'
 
 def analyze_request(user_input: str) -> Dict[str, Any]:
     """
@@ -79,6 +87,9 @@ def analyze_request(user_input: str) -> Dict[str, Any]:
         - ambiguous: Boolean indicating if the request could map to multiple actions
         - out_of_scope: Boolean indicating if the request doesn't map to any actions
     """
+    logger.info("=" * 80)
+    logger.info(f"Starting request analysis for input: {user_input}")
+    
     system_prompt = """You are an AI assistant analyzing user requests for a smart home device system.
     
 AVAILABLE ACTIONS:
@@ -91,12 +102,14 @@ YOUR TASK:
 Analyze the user's request and determine which action(s) it maps to. If it maps to multiple actions, list them in order of execution. If it doesn't map to any action, indicate that it's out of scope.
 
 RESPONSE FORMAT:
-Respond with a JSON object containing:
-- primary_action: The main action the request maps to, or null if none
-- all_actions: Array of all actions required to fulfill the request, in order of execution
-- context: Object containing relevant details extracted from the request (e.g., power_state, volume_direction)
-- ambiguous: Boolean indicating if the request could map to multiple actions and needs clarification
-- out_of_scope: Boolean indicating if the request doesn't map to any available actions
+You must respond with a valid JSON object containing:
+{
+  "primary_action": "string or null",
+  "all_actions": ["array of strings"],
+  "context": {"object with details"},
+  "ambiguous": "boolean",
+  "out_of_scope": "boolean"
+}
 
 EXAMPLES:
 User: "Turn on my speaker"
@@ -108,11 +121,29 @@ User: "Turn on my speaker"
   "out_of_scope": false
 }
 
-User: "Turn up the volume and play the next song"
+User: "Turn up the volume"
 {
   "primary_action": "volume_control",
-  "all_actions": ["volume_control", "song_changes"],
-  "context": {"volume_direction": "up", "song_action": "next"},
+  "all_actions": ["volume_control"],
+  "context": {
+    "volume_change": {
+      "direction": "up",
+      "amount": 10
+    }
+  },
+  "ambiguous": false,
+  "out_of_scope": false
+}
+
+User: "Set the volume to 60%"
+{
+  "primary_action": "volume_control",
+  "all_actions": ["volume_control"],
+  "context": {
+    "volume_change": {
+      "new": 60
+    }
+  },
   "ambiguous": false,
   "out_of_scope": false
 }
@@ -125,20 +156,29 @@ User: "What's the weather like today?"
   "ambiguous": false,
   "out_of_scope": true
 }
-"""
+
+IMPORTANT: Your response must be a valid JSON object. Do not include any explanatory text before or after the JSON."""
+
+    logger.info("System Prompt:")
+    logger.info("-" * 40)
+    logger.info(system_prompt)
+    logger.info("-" * 40)
     
     # If Anthropic client is not available, return a mock response
     if not anthropic_client:
         logger.info("Using mock response for local development")
-        return {
-            "request_type": "device_status" if "status" in user_input.lower() else "device_power",
-            "required_actions": ["device_status"] if "status" in user_input.lower() else ["device_power"],
+        mock_response = {
+            "primary_action": "device_status" if "status" in user_input.lower() else "device_power",
+            "all_actions": ["device_status"] if "status" in user_input.lower() else ["device_power"],
             "context": {},
             "ambiguous": False,
             "out_of_scope": False
         }
+        logger.info(f"Mock Response: {json.dumps(mock_response, indent=2)}")
+        return mock_response
     
     try:
+        logger.info("Sending request to Anthropic API...")
         message = anthropic_client.messages.create(
             model=ANTHROPIC_MODEL,
             system=system_prompt,
@@ -149,17 +189,52 @@ User: "What's the weather like today?"
             temperature=0.0  # Use 0 temperature for consistent, deterministic responses
         )
         
-        # Parse the JSON response
-        response_text = message.content[0].text
+        logger.info("Received response from Anthropic API")
+        # Log the response for debugging
+        logger.info("Claude response:")
+        logger.info(f"Response type: {type(message)}")
+        logger.info(f"Content type: {type(message.content)}")
         
-        # Extract JSON from the response (in case Claude adds any explanatory text)
-        json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
-        if json_match:
-            json_str = json_match.group(0)
-            analysis = json.loads(json_str)
-        else:
-            # Fallback if no JSON is found
-            analysis = {
+        # Get the text content from the first ContentBlock
+        response_text = message.content[0].text if message.content else ""
+        logger.info(f"Response text: {response_text}")
+        
+        # Extract the JSON object from the response
+        try:
+            # First try to parse the entire response as JSON
+            result = json.loads(response_text)
+        except json.JSONDecodeError:
+            # If that fails, try to extract the JSON object from the response
+            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(0)
+                # Clean up any potential Unicode escapes
+                json_str = json_str.encode('utf-8').decode('unicode_escape')
+                try:
+                    result = json.loads(json_str)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse extracted JSON: {e}")
+                    logger.error(f"Extracted JSON string: {json_str}")
+                    result = {
+                        "primary_action": None,
+                        "all_actions": [],
+                        "context": {},
+                        "ambiguous": False,
+                        "out_of_scope": True
+                    }
+            else:
+                logger.error("No JSON object found in response")
+                result = {
+                    "primary_action": None,
+                    "all_actions": [],
+                    "context": {},
+                    "ambiguous": False,
+                    "out_of_scope": True
+                }
+        
+        # Ensure consistent response structure
+        if not isinstance(result, dict):
+            result = {
                 "primary_action": None,
                 "all_actions": [],
                 "context": {},
@@ -167,26 +242,30 @@ User: "What's the weather like today?"
                 "out_of_scope": True
             }
         
-        # Convert to our existing format for compatibility
-        result = {
-            "request_type": analysis.get("primary_action"),
-            "required_actions": analysis.get("all_actions", []),
-            "context": analysis.get("context", {}),
-            "ambiguous": analysis.get("ambiguous", False),
-            "out_of_scope": analysis.get("out_of_scope", False)
-        }
+        # Ensure all required fields are present
+        required_fields = ["primary_action", "all_actions", "context", "ambiguous", "out_of_scope"]
+        for field in required_fields:
+            if field not in result:
+                result[field] = None if field == "primary_action" else [] if field == "all_actions" else {} if field == "context" else False
+        
+        logger.info("Final Result:")
+        logger.info("-" * 40)
+        logger.info(json.dumps(result, indent=2))
+        logger.info("-" * 40)
         
         return result
     except Exception as e:
-        logger.error(f"Error analyzing request with Claude: {e}")
+        logger.error(f"Error analyzing request with Claude: {str(e)}", exc_info=True)
         # Fallback to a safe default
-        return {
-            "request_type": None,
-            "required_actions": [],
+        fallback = {
+            "primary_action": None,
+            "all_actions": [],
             "context": {},
             "ambiguous": False,
             "out_of_scope": True
         }
+        logger.info(f"Returning fallback response: {json.dumps(fallback, indent=2)}")
+        return fallback
 
 def generate_response(prompt: str, context: Optional[Dict[str, Any]] = None) -> str:
     """
@@ -199,43 +278,65 @@ def generate_response(prompt: str, context: Optional[Dict[str, Any]] = None) -> 
     Returns:
         The generated response text
     """
+    logger.info("=" * 80)
+    logger.info(f"Generating response for prompt: {prompt}")
+    
+    # Convert Customer object to dict before JSON serialization
+    if context and "customer" in context and hasattr(context["customer"], "to_dict"):
+        context = context.copy()  # Create a copy to avoid modifying the original
+        context["customer"] = context["customer"].to_dict()
+    
+    if context:
+        logger.info(f"Context: {json.dumps(context, indent=2)}")
+    
     system_prompt = build_system_prompt(context or {})
+    logger.info("System Prompt:")
+    logger.info("-" * 40)
+    logger.info(system_prompt)
+    logger.info("-" * 40)
     
     # If Anthropic client is not available, return a mock response
     if not anthropic_client:
-        logger.info("Using mock response for local development")
-        return f"This is a mock response for local development. Your prompt was: '{prompt}'"
+        mock_response = f"This is a mock response for local development. Your prompt was: '{prompt}'"
+        logger.info(f"Using mock response: {mock_response}")
+        return mock_response
     
     try:
+        logger.info("Sending request to Anthropic API...")
+        # Use a lower max_tokens value to reduce costs
         message = anthropic_client.messages.create(
             model=ANTHROPIC_MODEL,
             system=system_prompt,
             messages=[
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=500,
+            max_tokens=300,  # Reduced from 500
             temperature=0.5
         )
-        return message.content[0].text
+        
+        response = str(message.content[0])
+        logger.info("Received response from Anthropic API:")
+        logger.info("-" * 40)
+        logger.info(response)
+        logger.info("-" * 40)
+        
+        return response
     except Exception as e:
-        logger.error(f"Error calling Anthropic API: {e}")
-        return "I apologize, but I'm having trouble processing your request right now."
+        logger.error(f"Error generating response with Claude: {str(e)}", exc_info=True)
+        return f"I apologize, but I encountered an error processing your request. Please try again."
 
 def build_system_prompt(context: Dict[str, Any]) -> str:
     """
-    Build a system prompt based on context.
+    Build the system prompt for Claude based on the provided context.
     
     Args:
-        context: Additional context for the request (customer, devices, permissions, etc.)
+        context: Dictionary containing customer, device, and request information
         
     Returns:
-        The system prompt for the Anthropic API
+        The system prompt string
     """
-    if not context:
-        return "You are a helpful AI assistant for a smart home device company. Keep responses brief and to the point."
-    
     # Start with base prompt
-    system_prompt = """You are an AI assistant for a smart home device company. Keep all responses brief and concise. 
+    prompt = """You are an AI assistant for a smart home device company. Keep all responses brief and concise. 
 
 IMPORTANT GUIDELINES FOR SERVICE LEVEL COMMUNICATION:
 1. Always respect service level permissions and NEVER suggest actions that are not permitted for the customer's service level.
@@ -258,195 +359,55 @@ RESPONSE GUIDELINES:
 - If a user asks about device status, respond with the current status information provided in the context.
 - NEVER provide manual instructions for how to physically operate devices - the system handles all actions automatically.
 """
-    
-    # Add customer info if available
+
+    # Add customer information if available
     if "customer" in context:
         customer = context["customer"]
-        system_prompt += f"\nCUSTOMER INFORMATION:\nName: {customer.name}\nService Level: {customer.service_level.capitalize()}\n"
-    
-    # Add device info if available - always include the section header even if no devices
-    system_prompt += "\nDEVICE INFORMATION:\n"
-    if "customer" in context and hasattr(context["customer"], "device") and context["customer"].device:
-        device = context["customer"].device
-        location = device.get('location', '').replace('_', ' ')
-        device_info = f"- {device.get('type', 'unknown')} in the {location}"
+        # Handle both dict and Customer object
+        if isinstance(customer, dict):
+            customer_name = customer.get("name", "")
+            service_level = customer.get("service_level", "").title()
+            device = customer.get("device", {})
+        else:
+            customer_name = customer.name
+            service_level = customer.service_level.title()
+            device = customer.device
+
+        prompt += f"\nCUSTOMER INFORMATION:\nName: {customer_name}\nService Level: {service_level}\n"
         
-        # Add volume information if available
-        if 'volume' in device:
-            device_info += f" (volume: {device['volume']}%)"
-            
-        system_prompt += f"{device_info}\n"
-    else:
-        system_prompt += "No device currently registered.\n"
+        # Add device information
+        if device:
+            device_type = device.get("type", "device")
+            device_location = device.get("location", "")
+            prompt += f"\nDEVICE INFORMATION:\n- {device_type} in the {device_location}\n"
     
-    # Add service level permissions with clear explanations
-    if "permissions" in context and "allowed_actions" in context["permissions"]:
-        allowed_actions = context["permissions"]["allowed_actions"]
-        system_prompt += "\nALLOWED ACTIONS WITH CURRENT SERVICE LEVEL:\n"
+    # Add permissions if available
+    if "permissions" in context:
+        permissions = context["permissions"]
+        allowed_actions = permissions.get("allowed_actions", [])
+        
+        prompt += "\nALLOWED ACTIONS WITH CURRENT SERVICE LEVEL:\n"
         
         # Map action names to user-friendly descriptions
-        # Updated to match exactly with the service level permissions
         action_descriptions = {
             "device_status": "Check if devices are online/offline and view basic status info",
             "device_power": "Turn devices on/off",
-            "volume_control": "Adjust device volume up/down", 
-            "song_changes": "Change songs (next, previous, or random)"
+            "volume_control": "Adjust device volume",
+            "song_changes": "Control music playback (next/previous/pause/play)"
         }
         
-        # Add each allowed action with its description
         for action in allowed_actions:
-            description = action_descriptions.get(action, action.replace("_", " "))
-            system_prompt += f"- {description}\n"
-        
-        # If context includes service level and upgrade options, add information about upgrade path
-        if "customer" in context and "upgrade_options" in context["permissions"]:
-            service_level = context["customer"].service_level
-            upgrade_options = context["permissions"]["upgrade_options"]
-            
-            if upgrade_options:
-                system_prompt += "\nUPGRADE INFORMATION:\n"
-                if "premium" in upgrade_options:
-                    system_prompt += "Premium tier adds: volume control\n"
-                if "enterprise" in upgrade_options:
-                    system_prompt += "Enterprise tier adds: song changes\n"
+            if action in action_descriptions:
+                prompt += f"- {action_descriptions[action]}\n"
     
-    # Add information about executed actions
-    if "action_executed" in context and context["action_executed"]:
-        system_prompt += "\nACTION EXECUTION INFORMATION:\n"
-        
-        if "device_info" in context:
-            device_info = context["device_info"]
-            power_state = device_info.get("power", "unknown")
-            volume = device_info.get("volume", 50)
-            location = device_info.get("location", "unknown")
-            
-            system_prompt += f"- SYSTEM ACTION: Retrieved device status for {location} speaker\n"
-            system_prompt += f"- Current power state: {power_state}\n"
-            system_prompt += f"- Current volume: {volume}%\n"
-            system_prompt += f"- Respond with this current status information\n"
-        
-        elif "device_state" in context:
-            device_state = context["device_state"]
-            device = context.get("device", {})
-            device_type = device.get("type", "device")
-            location = device.get("location", "").replace("_", " ")
-            
-            system_prompt += f"- SYSTEM ACTION: Changed power state of {device_type} in {location} to {device_state}\n"
-            system_prompt += f"- The device is now {device_state}\n"
-            system_prompt += f"- Confirm this action was completed in your response\n"
-        
-        elif "volume_change" in context:
-            volume_info = context["volume_change"]
-            previous_volume = volume_info.get("previous", 0)
-            new_volume = volume_info.get("new", 0)
-            device = context.get("device", {})
-            device_type = device.get("type", "device")
-            location = device.get("location", "").replace("_", " ")
-            
-            system_prompt += f"- SYSTEM ACTION: Changed volume of {device_type} in {location} from {previous_volume}% to {new_volume}%\n"
-            system_prompt += f"- The volume is now set to {new_volume}%\n"
-            system_prompt += f"- Confirm this action was completed in your response\n"
-        
-        elif "song_change" in context:
-            song_info = context["song_change"]
-            action = song_info.get("action", "changed")
-            device = context.get("device", {})
-            device_type = device.get("type", "device")
-            location = device.get("location", "").replace("_", " ")
-            
-            system_prompt += f"- SYSTEM ACTION: {action.capitalize()} song on {device_type} in {location}\n"
-            system_prompt += f"- The song has been {action}ed\n"
-            system_prompt += f"- Confirm this action was completed in your response\n"
-        
-        # Add more action execution information for other action types
+    # Add action execution information if available
+    if "action_execution" in context:
+        execution = context["action_execution"]
+        prompt += "\nACTION EXECUTION INFORMATION:\n"
+        if "success" in execution:
+            prompt += f"Action {'succeeded' if execution['success'] else 'failed'}"
+            if "details" in execution:
+                prompt += f": {execution['details']}"
+        prompt += "\n"
     
-    # If there was an error executing the action
-    elif "error" in context:
-        system_prompt += f"\nACTION EXECUTION ERROR:\n"
-        system_prompt += f"- ERROR: {context['error']}\n"
-        
-        # Add information about the attempted action
-        if "request_type" in context:
-            request_type = context["request_type"]
-            system_prompt += f"- ATTEMPTED ACTION: {request_type.replace('_', ' ')}\n"
-            
-            # Add service level information if available
-            if "customer" in context and hasattr(context["customer"], "service_level"):
-                service_level = context["customer"].service_level
-                system_prompt += f"- Customer's current service level: {service_level}\n"
-                
-                # Add upgrade information if available
-                if "permissions" in context and "upgrade_options" in context["permissions"]:
-                    upgrade_options = context["permissions"]["upgrade_options"]
-                    if upgrade_options:
-                        next_tier = upgrade_options[0]
-                        system_prompt += f"- Next available tier: {next_tier}\n"
-        
-        system_prompt += "- Explain the error clearly and suggest what the user can do instead\n"
-        system_prompt += "- If the error is due to service level restrictions, mention the tier that would allow this action\n"
-    
-    # Add specific instructions based on context
-    if "action_allowed" in context:
-        if context["action_allowed"]:
-            system_prompt += "\nREQUEST IS PERMITTED. Respond helpfully with clear, actionable instructions. Be confident and direct.\n"
-        else:
-            system_prompt += "\nREQUEST IS NOT PERMITTED. Follow this structure in your response:\n1. Acknowledge their request\n2. Clearly explain this feature is not available with their current service level\n3. Briefly mention which tier offers this feature\n4. Suggest an alternative action they CAN perform\n"
-    
-    # Add examples of good responses based on request type and service level
-    system_prompt += "\nEXAMPLES OF GOOD RESPONSES:\n"
-    
-    # Add examples for allowed actions
-    if "request_type" in context and context.get("action_allowed", False):
-        request_type = context["request_type"]
-        system_prompt += "\nFor Allowed Actions:\n"
-        
-        if request_type in ALLOWED_ACTION_EXAMPLES:
-            for i, example in enumerate(ALLOWED_ACTION_EXAMPLES[request_type]):
-                if example:
-                    system_prompt += f"\nExample {i+1}:\n{example}\n"
-    
-    # Add examples for disallowed actions
-    if "request_type" in context and not context.get("action_allowed", True):
-        request_type = context["request_type"]
-        system_prompt += "\nFor Disallowed Actions:\n"
-        
-        if request_type in DISALLOWED_ACTION_EXAMPLES:
-            for i, example in enumerate(DISALLOWED_ACTION_EXAMPLES[request_type]):
-                if example:
-                    system_prompt += f"\nExample {i+1}:\n{example}\n"
-        
-        # Add upgrade information examples
-        if "customer" in context and "permissions" in context and "upgrade_options" in context["permissions"]:
-            service_level = context["customer"].service_level
-            upgrade_options = context["permissions"]["upgrade_options"]
-            
-            if upgrade_options and upgrade_options[0] in UPGRADE_INFORMATION_EXAMPLES:
-                upgrade_tier = upgrade_options[0]
-                system_prompt += "\nUpgrade Information Examples:\n"
-                
-                for i, example in enumerate(UPGRADE_INFORMATION_EXAMPLES[upgrade_tier]):
-                    if example:
-                        system_prompt += f"\nExample {i+1}:\n{example}\n"
-    
-    # Add multi-room audio context if available
-    if "device_groups" in context and context.get("request_type") == "multi_room_audio":
-        if "all" in context["device_groups"]:
-            system_prompt += "\nCONTEXT: Customer is asking about multi-room audio setup for all devices.\n"
-        else:
-            group_str = ", ".join([loc.replace("_", " ") for loc in context["device_groups"]])
-            system_prompt += f"\nCONTEXT: Customer is asking about multi-room audio setup for these locations: {group_str}.\n"
-    
-    # Add custom routine context if available
-    if "routine" in context and context.get("request_type") == "custom_actions":
-        routine = context["routine"]
-        routine_name = routine.get("name", "unnamed")
-        system_prompt += f"\nCONTEXT: Customer is asking about a custom routine named '{routine_name}'.\n"
-        
-        if "trigger" in routine and routine["trigger"] == "time" and "trigger_value" in routine:
-            system_prompt += f"Trigger: {routine['trigger_value']}\n"
-        
-        if "actions" in routine and routine["actions"]:
-            actions_str = ", ".join(routine["actions"])
-            system_prompt += f"Actions: {actions_str}\n"
-    
-    return system_prompt
+    return prompt

@@ -51,4 +51,18 @@ class Customer:
         Returns:
             The device dictionary
         """
-        return self.device 
+        return self.device
+
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Convert the Customer instance to a dictionary.
+        
+        Returns:
+            Dictionary representation of the Customer
+        """
+        return {
+            'id': self.id,
+            'name': self.name,
+            'service_level': self.service_level,
+            'device': self.device
+        } 

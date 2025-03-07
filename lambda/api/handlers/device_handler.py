@@ -10,6 +10,7 @@ import logging
 import os
 import sys
 from typing import Dict, Any, List, Optional
+from decimal import Decimal
 
 # Add the parent directory to sys.path to enable absolute imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -18,12 +19,20 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 # Local application imports
+import services.dynamodb_service as dynamodb_service
 from utils import convert_decimal_to_float, convert_float_to_decimal
-from services.dynamodb_service import get_customer, update_device_state
 
 # Configure logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+# CORS headers for responses
+CORS_HEADERS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+    'Access-Control-Allow-Methods': 'OPTIONS,POST,GET,PATCH,DELETE,PUT',
+    'Access-Control-Allow-Credentials': 'false',
+}
 
 def handle_get_devices(customer_id: str, cors_headers: Dict[str, str]) -> Dict[str, Any]:
     """
@@ -49,7 +58,7 @@ def handle_get_devices(customer_id: str, cors_headers: Dict[str, str]) -> Dict[s
         logger.info(f"Retrieving devices for customer {customer_id}")
         
         # Get customer data from DynamoDB
-        customer = get_customer(customer_id)
+        customer = dynamodb_service.get_customer(customer_id)
         
         if not customer:
             return {
@@ -60,19 +69,19 @@ def handle_get_devices(customer_id: str, cors_headers: Dict[str, str]) -> Dict[s
                 })
             }
         
-        # Get the device (each customer has only one device)
+        # Initialize devices array
         devices = []
-        device_list = customer.get('devices', [])
         
-        if device_list:
-            device = device_list[0]
+        # Get the device
+        device = customer.get('device', {})
+        if device:
             # Add default values for fields not in the original data model
             enhanced_device = {
                 'id': device.get('id', ''),
                 'type': device.get('type', ''),
                 'name': f"{device.get('location', '').replace('_', ' ').title()} {device.get('type', '')}",
                 'location': device.get('location', '').replace('_', ' ').title(),
-                'state': device.get('state', 'off'),
+                'power': device.get('power', 'off'),
                 'capabilities': get_device_capabilities(device.get('type', '')),
                 'lastUpdated': device.get('lastUpdated', '2023-03-01T14:30:45.123Z')
             }
@@ -101,12 +110,12 @@ def handle_get_devices(customer_id: str, cors_headers: Dict[str, str]) -> Dict[s
 
 def handle_update_device(customer_id: str, device_id: str, body: Dict[str, Any], cors_headers: Dict[str, str]) -> Dict[str, Any]:
     """
-    Handle PATCH request to update device state.
+    Handle PATCH request to update device power.
     
     Args:
         customer_id: The ID of the customer
         device_id: The ID of the device to update
-        body: Request body containing the new state
+        body: Request body containing the new power
         cors_headers: CORS headers to include in the response
         
     Returns:
@@ -121,22 +130,22 @@ def handle_update_device(customer_id: str, device_id: str, body: Dict[str, Any],
             })
         }
     
-    new_state = body.get('state')
-    if not new_state:
+    new_power = body.get('power')
+    if not new_power:
         return {
             'statusCode': 400,
             'headers': cors_headers,
             'body': json.dumps({
-                'error': 'Missing required parameter: state'
+                'error': 'Missing required parameter: power'
             })
         }
     
     try:
         # Convert any float values to Decimal for DynamoDB
-        new_state = convert_float_to_decimal(new_state)
+        new_power = convert_float_to_decimal(new_power)
         
-        # Update device state in DynamoDB
-        updated_device = update_device_state(customer_id, device_id, new_state)
+        # Update device power in DynamoDB
+        updated_device = dynamodb_service.update_device_state(customer_id, device_id, new_power)
         
         if not updated_device:
             return {
