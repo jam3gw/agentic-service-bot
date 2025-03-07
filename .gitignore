@@ -53,4 +53,4 @@ frontend/build/
 .env.development.local
 .env.test.local
 .env.production.local
-*.d.ts
+*.d.tsresponse.json
