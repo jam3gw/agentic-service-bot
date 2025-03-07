@@ -33,12 +33,23 @@ from handlers.device_handler import handle_get_devices, handle_update_device
 from handlers.capability_handler import handle_get_capabilities
 
 # CORS headers
-CORS_HEADERS = {
-    'Access-Control-Allow-Origin': os.environ.get('ALLOWED_ORIGIN', '*'),
-    'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-    'Access-Control-Allow-Methods': 'OPTIONS,GET,POST,PATCH,DELETE',
-    'Access-Control-Allow-Credentials': 'true'
-}
+def get_cors_headers(event=None):
+    """
+    Get CORS headers based on the request origin.
+    
+    Args:
+        event: The Lambda event (optional)
+        
+    Returns:
+        Dictionary of CORS headers
+    """
+    # Since we're not using credentials, we can use a wildcard
+    return {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+        'Access-Control-Allow-Methods': 'OPTIONS,POST,GET,PATCH,DELETE',
+        'Access-Control-Allow-Credentials': 'false',
+    }
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
@@ -53,11 +64,14 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     logger.info(f"Event: {json.dumps(event)}")
     
+    # Get CORS headers based on the request origin
+    cors_headers = get_cors_headers(event)
+    
     # Handle OPTIONS request (CORS preflight)
     if event.get('httpMethod') == 'OPTIONS':
         return {
             'statusCode': 200,
-            'headers': CORS_HEADERS,
+            'headers': cors_headers,
             'body': ''
         }
     
@@ -72,12 +86,12 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Route to appropriate handler based on path and method
         if path == '/api/customers':
             if http_method == 'GET':
-                return handle_get_customers(CORS_HEADERS)
+                return handle_get_customers(cors_headers)
         
         elif path.startswith('/api/customers/') and path.endswith('/devices'):
             if http_method == 'GET':
                 customer_id = path_parameters.get('customerId')
-                return handle_get_devices(customer_id, CORS_HEADERS)
+                return handle_get_devices(customer_id, cors_headers)
         
         elif path.startswith('/api/customers/') and '/devices/' in path:
             if http_method == 'PATCH':
@@ -85,21 +99,21 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 device_id = path_parameters.get('deviceId')
                 # Parse request body
                 body = json.loads(event.get('body', '{}'))
-                return handle_update_device(customer_id, device_id, body, CORS_HEADERS)
+                return handle_update_device(customer_id, device_id, body, cors_headers)
         
         elif path.startswith('/api/customers/') and not '/devices/' in path and not path.endswith('/devices'):
             if http_method == 'GET':
                 customer_id = path_parameters.get('customerId')
-                return handle_get_customer(customer_id, CORS_HEADERS)
+                return handle_get_customer(customer_id, cors_headers)
         
         elif path == '/api/capabilities':
             if http_method == 'GET':
-                return handle_get_capabilities(CORS_HEADERS)
+                return handle_get_capabilities(cors_headers)
         
         # If no route matches
         return {
             'statusCode': 404,
-            'headers': CORS_HEADERS,
+            'headers': cors_headers,
             'body': json.dumps({'error': 'Not found'})
         }
     
@@ -108,6 +122,6 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         return {
             'statusCode': 500,
-            'headers': CORS_HEADERS,
+            'headers': cors_headers,
             'body': json.dumps({'error': 'Internal server error'})
         } 

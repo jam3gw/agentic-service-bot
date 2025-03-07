@@ -99,8 +99,8 @@ def generate_capabilities(service_levels: Dict[str, Dict[str, Any]]) -> List[Dic
         },
         {
             'id': 'cap_003',
-            'name': 'Light Control',
-            'description': 'Turn lights on/off and adjust brightness',
+            'name': 'Song Changes',
+            'description': 'Change songs and manage playlists',
             'category': 'device-control'
         },
         {
@@ -194,6 +194,14 @@ def generate_capabilities(service_levels: Dict[str, Dict[str, Any]]) -> List[Dic
             'name': 'Energy Monitoring',
             'description': 'Monitor energy usage of compatible devices',
             'category': 'analytics'
+        },
+        
+        # Capacity capabilities
+        {
+            'id': 'cap_501',
+            'name': 'Device Limit',
+            'description': 'Maximum of 1 device allowed',
+            'category': 'capacity'
         }
     ]
     
@@ -202,50 +210,22 @@ def generate_capabilities(service_levels: Dict[str, Dict[str, Any]]) -> List[Dic
         # Basic level capabilities
         'basic': [
             'cap_001',  # Device Status Check
-            'cap_002',  # Volume Control
-            'cap_003',  # Light Control
-            'cap_101',  # Basic Routines
-            'cap_201',  # Basic Security
-            'cap_301',  # Music Services
-            'cap_401'   # Basic Usage Stats
+            'cap_501'   # Device Limit
         ],
         
         # Premium level capabilities (includes all basic)
         'premium': [
             'cap_001',  # Device Status Check
             'cap_002',  # Volume Control
-            'cap_003',  # Light Control
-            'cap_004',  # Temperature Control
-            'cap_005',  # Multi-room Audio
-            'cap_101',  # Basic Routines
-            'cap_102',  # Advanced Routines
-            'cap_201',  # Basic Security
-            'cap_202',  # Advanced Security
-            'cap_301',  # Music Services
-            'cap_302',  # Weather Services
-            'cap_401',  # Basic Usage Stats
-            'cap_402'   # Advanced Analytics
+            'cap_501'   # Device Limit
         ],
         
-        # Enterprise level capabilities (includes all)
+        # Enterprise level capabilities (includes basic and premium capabilities plus song changes)
         'enterprise': [
             'cap_001',  # Device Status Check
             'cap_002',  # Volume Control
-            'cap_003',  # Light Control
-            'cap_004',  # Temperature Control
-            'cap_005',  # Multi-room Audio
-            'cap_101',  # Basic Routines
-            'cap_102',  # Advanced Routines
-            'cap_103',  # Scheduled Actions
-            'cap_201',  # Basic Security
-            'cap_202',  # Advanced Security
-            'cap_203',  # Remote Lock Control
-            'cap_301',  # Music Services
-            'cap_302',  # Weather Services
-            'cap_303',  # Third-party Integrations
-            'cap_401',  # Basic Usage Stats
-            'cap_402',  # Advanced Analytics
-            'cap_403'   # Energy Monitoring
+            'cap_003',  # Song Changes
+            'cap_501'   # Device Limit
         ]
     }
     
@@ -255,9 +235,11 @@ def generate_capabilities(service_levels: Dict[str, Dict[str, Any]]) -> List[Dic
         capability_id = capability['id']
         enhanced_capability = {
             **capability,
-            'basic': capability_id in capability_mapping.get('basic', []),
-            'premium': capability_id in capability_mapping.get('premium', []),
-            'enterprise': capability_id in capability_mapping.get('enterprise', [])
+            'tiers': {
+                'basic': capability_id in capability_mapping.get('basic', []),
+                'premium': capability_id in capability_mapping.get('premium', []),
+                'enterprise': capability_id in capability_mapping.get('enterprise', [])
+            }
         }
         enhanced_capabilities.append(enhanced_capability)
     
