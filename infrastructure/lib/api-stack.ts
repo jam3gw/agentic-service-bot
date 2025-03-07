@@ -64,7 +64,7 @@ export class ApiStack extends BaseStack {
                 CUSTOMERS_TABLE: customersTable.tableName,
                 SERVICE_LEVELS_TABLE: serviceLevelsTable.tableName,
                 ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || 'your-api-key-here',
-                ANTHROPIC_MODEL: 'claude-3-opus-20240229',
+                ANTHROPIC_MODEL: 'claude-3-haiku-20240307',
                 ENVIRONMENT: config.environment,
                 ALLOWED_ORIGIN: config.environment === 'prod'
                     ? 'https://agentic-service-bot.jake-moses.com'
