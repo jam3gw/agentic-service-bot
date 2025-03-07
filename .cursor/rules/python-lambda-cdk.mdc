@@ -171,6 +171,49 @@ examples:
       }
     output: "Correctly using PythonFunction CDK with proper bundling configuration"
 
+  - type: suggest
+    when:
+      - type: file_content
+        pattern: "aws\\s+lambda\\s+(create-function|update-function-code)"
+    message: |
+      NEVER use AWS CLI directly for Lambda deployments. Use PythonFunction CDK construct instead.
+      
+      ```typescript
+      // Use PythonFunction CDK construct:
+      new PythonFunction(this, 'MyPythonFunction', {
+        entry: 'lambda/my_function',
+        runtime: lambda.Runtime.PYTHON_3_9,
+        index: 'app.py',
+        handler: 'handler',
+        bundling: {
+          assetExcludes: [
+            'venv',
+            '__pycache__'
+          ]
+        }
+      });
+      ```
+
+  - type: suggest
+    when:
+      - type: file_content
+        pattern: "update_lambda|deploy_lambda|lambda_update|lambda_deploy"
+    message: |
+      NEVER create custom scripts for Lambda deployments. Use CDK for all deployments.
+      
+      Custom deployment scripts can break Lambda functions by:
+      1. Missing dependencies
+      2. Using incorrect packaging formats
+      3. Not handling permissions correctly
+      4. Breaking the deployment pipeline
+      
+      Always use CDK for deployments:
+      ```bash
+      cd infrastructure
+      npm run build
+      npx cdk deploy ApiStack
+      ```
+
 metadata:
   priority: high
   version: 1.0

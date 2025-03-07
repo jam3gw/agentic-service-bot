@@ -687,6 +687,110 @@ def test_basic_customer_cannot_access_premium_features():
     # (This could be a separate verification step)
 ```
 
+## DynamoDB Testing Best Practices
+
+When testing DynamoDB operations, follow these guidelines:
+
+1. **Mock at the Table Level**
+   - Mock the DynamoDB table directly instead of the boto3 resource
+   - Use consistent mocking patterns across all tests
+   - Set up mocks in setUp for reuse across test methods
+
+2. **Use Realistic Response Structures**
+   - Include all required DynamoDB response fields
+   - Match the exact structure of real DynamoDB responses
+   - Include proper metadata and attributes
+
+3. **Test Error Cases**
+   - Test item not found scenarios
+   - Test conditional update failures
+   - Test permission and access issues
+
+4. **Verify DynamoDB Operations**
+   - Check that operations are called with correct parameters
+   - Verify update expressions and attribute values
+   - Ensure proper error handling
+
+### Example of DynamoDB Testing:
+```python
+class TestDynamoDBService(unittest.TestCase):
+    """Tests for the DynamoDB service functions."""
+    
+    def setUp(self):
+        """Set up test environment."""
+        # Create a mock table
+        self.mock_table = MagicMock()
+        
+        # Patch the customers_table directly in the module
+        self.table_patcher = patch('services.dynamodb_service.customers_table', self.mock_table)
+        self.table_patcher.start()
+        
+    def tearDown(self):
+        """Clean up after tests."""
+        self.table_patcher.stop()
+    
+    def test_update_device_state_success(self):
+        """Test updating a device state successfully."""
+        # Set up mock response
+        self.mock_table.get_item.return_value = {
+            'Item': {
+                'id': 'test-customer',
+                'device': {
+                    'id': 'test-device',
+                    'type': 'speaker',
+                    'location': 'living_room'
+                }
+            }
+        }
+        self.mock_table.update_item.return_value = {
+            'ResponseMetadata': {
+                'HTTPStatusCode': 200
+            }
+        }
+        
+        # Test parameters
+        customer_id = 'test-customer'
+        device_id = 'test-device'
+        state_updates = {"power": "on"}
+        
+        # Call the function
+        result = update_device_state(customer_id, device_id, state_updates)
+        
+        # Verify the result
+        self.assertTrue(result)
+        
+        # Verify the get_item call
+        self.mock_table.get_item.assert_called_once_with(Key={'id': customer_id})
+        
+        # Verify the update_item call
+        self.mock_table.update_item.assert_called_once()
+        call_args = self.mock_table.update_item.call_args[1]
+        self.assertEqual(call_args['Key'], {'id': customer_id})
+        self.assertIn('device.#attr_power = :val_power', call_args['UpdateExpression'])
+    
+    def test_update_device_state_customer_not_found(self):
+        """Test updating a device state when the customer is not found."""
+        # Set up mock response for customer not found
+        self.mock_table.get_item.return_value = {}
+        
+        # Test parameters
+        customer_id = 'test-customer'
+        device_id = 'test-device'
+        state_updates = {"power": "on"}
+        
+        # Call the function
+        result = update_device_state(customer_id, device_id, state_updates)
+        
+        # Verify the result
+        self.assertFalse(result)
+        
+        # Verify the get_item call
+        self.mock_table.get_item.assert_called_once_with(Key={'id': customer_id})
+        
+        # Verify update_item was not called
+        self.mock_table.update_item.assert_not_called()
+```
+
 examples:
   - input: |
       # Bad: Rigid string assertion
