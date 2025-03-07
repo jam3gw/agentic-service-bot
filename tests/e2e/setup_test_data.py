@@ -71,7 +71,7 @@ def create_test_customer(dynamodb, customer_id="test-customer-e2e"):
             'id': customer_id,
             'name': 'E2E Test Customer',
             'email': 'test@example.com',
-            'serviceLevel': 'premium',
+            'level': 'premium',
             'createdAt': datetime.now().isoformat(),
             'devices': [
                 {
