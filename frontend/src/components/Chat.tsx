@@ -18,7 +18,6 @@ import {
     HStack,
 } from '@chakra-ui/react';
 import { Message, Customer } from '../types';
-import config from '../config';
 import * as apiService from '../utils/apiService';
 import MessageList from './MessageList';
 
@@ -47,13 +46,6 @@ export const Chat: React.FC<ChatProps> = ({ onCustomerChange }) => {
     // Scroll to bottom of messages
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    };
-
-    // Handle customer change
-    const handleCustomerChange = (id: string) => {
-        setCustomerId(id);
-        setConversationId('');
-        onCustomerChange(id);
     };
 
     // Handle input change
@@ -251,7 +243,7 @@ export const Chat: React.FC<ChatProps> = ({ onCustomerChange }) => {
                     >
                         {customers.map(customer => (
                             <option key={customer.id} value={customer.id}>
-                                {customer.name} ({customer.service_level})
+                                {customer.name} ({customer.level})
                             </option>
                         ))}
                     </Select>

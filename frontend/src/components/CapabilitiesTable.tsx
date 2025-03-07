@@ -22,7 +22,7 @@ import {
     AlertIcon,
     Flex,
 } from '@chakra-ui/react';
-import { CheckIcon, CloseIcon, InfoIcon } from '@chakra-ui/icons';
+import { CheckIcon, CloseIcon } from '@chakra-ui/icons';
 import * as apiService from '../utils/apiService';
 import { Capability } from '../types';
 

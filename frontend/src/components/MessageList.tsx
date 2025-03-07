@@ -70,8 +70,9 @@ const MessageItem: React.FC<MessageItemProps> = ({ message }) => {
                     src="/logo.png"
                     mr={2}
                     mt={1}
-                    fallback={<Text fontSize="xs">🏠</Text>}
-                />
+                >
+                    <Text fontSize="xs">🏠</Text>
+                </Avatar>
             )}
 
             <VStack

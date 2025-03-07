@@ -4,12 +4,12 @@
 
 // API URLs
 const DEV_API_URL = 'https://k4w64ym45e.execute-api.us-west-2.amazonaws.com/dev/api';
-const PROD_API_URL = 'https://api.agentic-service-bot.jake-moses.com/prod/api';
+// const PROD_API_URL = 'https://api.agentic-service-bot.jake-moses.com/prod/api';
 
 // Environment-specific configuration
 const config = {
     // API URL based on environment
-    apiUrl: process.env.NODE_ENV === 'production' ? PROD_API_URL : DEV_API_URL,
+    apiUrl: DEV_API_URL,
 
     // Default customer ID
     defaultCustomerId: 'cust_001',
@@ -21,7 +21,7 @@ const config = {
     maxMessages: 100,
 
     // Enable debug logging
-    debug: process.env.NODE_ENV !== 'production',
+    debug: true
 };
 
 export default config; 

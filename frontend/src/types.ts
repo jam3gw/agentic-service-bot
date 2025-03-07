@@ -9,6 +9,7 @@ export interface Message {
     sender: 'user' | 'bot';
     timestamp: string;
     conversationId?: string;
+    status?: 'sending' | 'sent' | 'delivered' | 'queued' | 'error';
 }
 
 // Device type for smart home devices
@@ -19,6 +20,7 @@ export interface Device {
     location: string;
     status: string;
     capabilities: string[];
+    power?: string;
 }
 
 // Capability type for service level capabilities

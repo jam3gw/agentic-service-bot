@@ -80,16 +80,16 @@ const UserDevicesTable: React.FC<UserDevicesTableProps> = ({ customerId }) => {
         }
     };
 
-    // Toggle device state
-    const toggleDeviceState = async (deviceId: string, currentState: string) => {
+    // Toggle device power
+    const toggleDevicePower = async (deviceId: string, currentPower: string) => {
         try {
-            const newState = currentState === 'on' ? 'off' : 'on';
-            await apiService.updateDeviceState(deviceId, newState, customerId);
+            const newPower = currentPower === 'on' ? 'off' : 'on';
+            await apiService.updateDevicePower(deviceId, newPower, customerId);
 
             // Update local state
             setDevices(devices.map(device => {
                 if (device.id === deviceId) {
-                    return { ...device, status: newState };
+                    return { ...device, power: newPower };
                 }
                 return device;
             }));
@@ -171,14 +171,14 @@ const UserDevicesTable: React.FC<UserDevicesTableProps> = ({ customerId }) => {
                                     </Td>
                                     <Td>{device.location}</Td>
                                     <Td>{getStatusBadge(device.status || 'unknown')}</Td>
-                                    <Td>{device.state || 'Unknown'}</Td>
+                                    <Td>{device.power || 'Unknown'}</Td>
                                     <Td>
                                         <HStack spacing={2}>
                                             {device.type === 'light' && (
                                                 <Switch
                                                     size="sm"
-                                                    isChecked={device.state?.toLowerCase() === 'on'}
-                                                    onChange={() => toggleDeviceState(device.id, device.state || '')}
+                                                    isChecked={device.power?.toLowerCase() === 'on'}
+                                                    onChange={() => toggleDevicePower(device.id, device.power || '')}
                                                     isDisabled={device.status?.toLowerCase() !== 'online'}
                                                 />
                                             )}

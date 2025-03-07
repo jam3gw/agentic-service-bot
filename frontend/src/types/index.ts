@@ -12,7 +12,7 @@ export interface Device {
     type: string;
     location: string;
     status: 'online' | 'offline' | 'standby';
-    state: string;
+    power: string;
     lastUpdated: string;
 }
 
