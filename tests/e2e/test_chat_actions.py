@@ -684,7 +684,7 @@ def test_service_level_permissions(test_data: Dict[str, str]) -> None:
         try:
             customers_table.update_item(
                 Key={'id': customer_id},
-                UpdateExpression="SET serviceLevel = :val",
+                UpdateExpression="SET level = :val",
                 ExpressionAttributeValues={':val': 'premium'}
             )
         except Exception as e:
@@ -713,12 +713,12 @@ def test_basic_service_level_device_power(test_data: Dict[str, str]) -> None:
         response = customers_table.get_item(Key={'id': customer_id})
         assert 'Item' in response, f"Customer {customer_id} not found"
         customer = response['Item']
-        assert customer['serviceLevel'] == 'premium', "Test customer should start with premium service level"
+        assert customer['level'] == 'premium', "Test customer should start with premium service level"
         
         # Change to basic service level
         update_response = customers_table.update_item(
             Key={'id': customer_id},
-            UpdateExpression="SET serviceLevel = :val",
+            UpdateExpression="SET level = :val",
             ExpressionAttributeValues={':val': 'basic'},
             ReturnValues="UPDATED_NEW"
         )
@@ -761,7 +761,7 @@ def test_basic_service_level_device_power(test_data: Dict[str, str]) -> None:
         try:
             customers_table.update_item(
                 Key={'id': customer_id},
-                UpdateExpression="SET serviceLevel = :val",
+                UpdateExpression="SET level = :val",
                 ExpressionAttributeValues={':val': 'premium'}
             )
         except Exception as e:
