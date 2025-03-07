@@ -5,9 +5,9 @@ This module provides functions for processing user requests, analyzing them,
 and generating appropriate responses based on service level permissions.
 
 Service Levels:
-- Basic: Can control device power (on/off)
+- Basic: Can check device status and control device power (on/off)
 - Premium: Basic + volume control
-- Enterprise: Premium + light control
+- Enterprise: Premium + song changes
 """
 
 import time
@@ -27,11 +27,10 @@ logger = logging.getLogger(__name__)
 from ..analyzers.request_analyzer_simplified import RequestAnalyzer
 from .dynamodb_service import (
     get_customer, 
-    get_service_level_permissions, 
-    update_device_state,
+    get_service_level_permissions,
     store_message
 )
-from .anthropic_service import generate_response
+from .anthropic_service import analyze_request
 from ..models.customer import Customer
 
 def is_action_allowed(service_level, action: str) -> bool:
@@ -49,19 +48,33 @@ def is_action_allowed(service_level, action: str) -> bool:
     if hasattr(service_level, 'service_level'):
         service_level = service_level.service_level
     
+    logger.info(f"Checking if action '{action}' is allowed for service level '{service_level}'")
+    
     # Handle None or empty service level
     if not service_level:
+        logger.info(f"Service level is None or empty, action '{action}' is not allowed")
         return False
+    
+    # Basic actions that should be allowed for all service levels
+    basic_actions = ["device_status", "device_power"]
+    if action in basic_actions:
+        logger.info(f"Action '{action}' is a basic action allowed for all service levels")
+        return True
     
     # Get permissions from DynamoDB
     permissions = get_service_level_permissions(service_level.lower())
+    logger.info(f"Retrieved permissions for service level '{service_level}': {permissions}")
     
     # Get the allowed actions for the service level
-    service_level_info = permissions.get("allowed_actions", [])
+    allowed_actions = permissions.get("allowed_actions", [])
+    logger.info(f"Allowed actions for service level '{service_level}': {allowed_actions}")
     
-    return action in service_level_info
+    # Now that we have consistent naming, we can directly check if the action is allowed
+    is_allowed = action in allowed_actions
+    logger.info(f"Action '{action}' is allowed for service level '{service_level}': {is_allowed}")
+    return is_allowed
 
-def process_request(customer_id: str, message_data: Dict[str, Any], connection_id: str = None) -> Dict[str, Any]:
+def process_request(customer_id: str, message_data: Dict[str, Any], connection_id: str = "") -> Dict[str, Any]:
     """
     Process a user request and generate a response.
     
@@ -103,101 +116,93 @@ def process_request(customer_id: str, message_data: Dict[str, Any], connection_i
     
     # Get service level permissions
     service_level = customer.service_level
+    permissions = get_service_level_permissions(service_level)
+    device = customer.get_device()
     
-    # Analyze the request to determine the type
-    request_type = RequestAnalyzer.identify_request_type(user_input)
+    # Step 1: Analyze the request to determine the type and parameters
+    # Use the new analyze_request function from anthropic_service.py
+    request_analysis = analyze_request(user_input)
+    request_type = request_analysis.get("request_type")
     
-    # Build context for LLM
+    # Build initial context for action execution
     context = {
         "customer": customer,
         "request_type": request_type,
         "service_level": service_level,
-        "permissions": get_service_level_permissions(service_level),
-        "device": customer.get_device(),
+        "permissions": permissions,
+        "device": device,
         "action_executed": False,
         "timestamp": datetime.now().isoformat(),
-        "metadata": metadata
+        "metadata": metadata,
+        "user_input": user_input
     }
     
-    # If a device is mentioned in the request, identify it
-    device = customer.get_device()
-    device_id = device.get("id")
-    
-    # Process based on request type
+    # Step 2: Prepare action parameters based on request type
     if request_type == "device_power":
-        if is_action_allowed(service_level, "device_control"):
-            # Determine if turning on or off
-            turn_on = any(keyword in user_input.lower() for keyword in ["on", "start", "activate"])
-            turn_off = any(keyword in user_input.lower() for keyword in ["off", "stop", "deactivate"])
-            
-            new_state = "on" if turn_on else "off" if turn_off else None
-            
-            if new_state:
-                # Update device state
-                update_device_state(customer_id, device_id, {"power": new_state})
-                context["action_executed"] = True
-                context["device_state"] = new_state
+        # Determine if turning on or off
+        turn_on = any(keyword in user_input.lower() for keyword in ["on", "start", "activate"])
+        turn_off = any(keyword in user_input.lower() for keyword in ["off", "stop", "deactivate"])
+        
+        new_state = "on" if turn_on else "off" if turn_off else None
+        
+        if new_state:
+            context["power_state"] = new_state
         else:
-            context["error"] = "This action requires a higher service level"
+            context["error"] = "Could not determine whether to turn the device on or off"
     
     elif request_type == "volume_control":
-        if is_action_allowed(service_level, "volume_control"):
-            # Determine volume change
-            current_volume = device.get("volume", 50)
-            
-            # Check for volume up/down
-            volume_up = any(keyword in user_input.lower() for keyword in ["up", "increase", "louder", "higher"])
-            volume_down = any(keyword in user_input.lower() for keyword in ["down", "decrease", "lower", "quieter"])
-            
-            # Check for specific volume level
-            volume_match = re.search(r"(?:set|change|make|to)\s+(?:the\s+)?volume\s+(?:to\s+)?(\d+)", user_input.lower())
-            
-            new_volume = current_volume
-            if volume_up:
-                new_volume = min(100, current_volume + 10)
-            elif volume_down:
-                new_volume = max(0, current_volume - 10)
-            elif volume_match:
-                requested_volume = int(volume_match.group(1))
-                new_volume = max(0, min(100, requested_volume))
-            
-            if new_volume != current_volume:
-                # Update device volume
-                update_device_state(customer_id, device_id, {"volume": new_volume})
-                context["action_executed"] = True
-                context["volume_change"] = {
-                    "previous": current_volume,
-                    "new": new_volume
-                }
+        # Determine volume change
+        current_volume = device.get("volume", 50)
+        
+        # Check for volume up/down
+        volume_up = any(keyword in user_input.lower() for keyword in ["up", "increase", "louder", "higher"])
+        volume_down = any(keyword in user_input.lower() for keyword in ["down", "decrease", "lower", "quieter"])
+        
+        # Check for specific volume level
+        volume_match = re.search(r"(?:set|change|make|to)\s+(?:the\s+)?volume\s+(?:to\s+)?(\d+)", user_input.lower())
+        
+        new_volume = current_volume
+        if volume_up:
+            new_volume = min(100, current_volume + 10)
+        elif volume_down:
+            new_volume = max(0, current_volume - 10)
+        elif volume_match:
+            requested_volume = int(volume_match.group(1))
+            new_volume = max(0, min(100, requested_volume))
+        
+        if new_volume != current_volume:
+            context["volume_change"] = {
+                "previous": current_volume,
+                "new": new_volume
+            }
         else:
-            context["error"] = "Volume control requires Premium or Enterprise service level"
+            context["error"] = "Could not determine how to change the volume"
     
-    elif request_type == "light_control":
-        if is_action_allowed(service_level, "light_control"):
-            # Determine light action
-            turn_on = any(keyword in user_input.lower() for keyword in ["on", "brighten", "illuminate"])
-            turn_off = any(keyword in user_input.lower() for keyword in ["off", "dim", "darken"])
-            toggle = "toggle" in user_input.lower()
-            
-            current_state = device.get("light", "off")
-            new_state = None
-            
-            if turn_on:
-                new_state = "on"
-            elif turn_off:
-                new_state = "off"
-            elif toggle:
-                new_state = "off" if current_state == "on" else "on"
-            
-            if new_state and new_state != current_state:
-                # Update device light state
-                update_device_state(customer_id, device_id, {"light": new_state})
-                context["action_executed"] = True
-                context["light_state"] = new_state
-        else:
-            context["error"] = "Light control requires Enterprise service level"
+    elif request_type == "song_changes":
+        # Determine song action
+        next_song = any(keyword in user_input.lower() for keyword in ["next", "skip", "forward"])
+        previous_song = any(keyword in user_input.lower() for keyword in ["previous", "back", "backward"])
+        
+        action = "next" if next_song else "previous" if previous_song else "change"
+        context["song_action"] = action
     
-    # Generate response using LLM
+    # Step 3: Execute the action if a request type was identified
+    if request_type and not context.get("error"):
+        # Get the required action for this request type
+        required_action = request_analysis.get("required_actions", [])[0] if request_type else None
+        
+        if required_action:
+            # Check if the action is allowed for the customer's service level
+            if is_action_allowed(service_level, required_action):
+                # Execute the action and update the context
+                context = execute_action(required_action, device, context)
+                context["action_allowed"] = True
+            else:
+                # Action is not allowed for this service level
+                context["error"] = f"This action is not allowed with your current service level"
+                context["action_allowed"] = False
+    
+    # Step 4: Generate response based on the updated context
     response_text = generate_response(user_input, context)
     
     # Store the message
@@ -231,6 +236,7 @@ def process_request(customer_id: str, message_data: Dict[str, Any], connection_i
         actions_allowed=context.get("action_executed", False)
     )
     
+    # Return success response
     return {
         "success": True,
         "message": response_text,
@@ -239,62 +245,125 @@ def process_request(customer_id: str, message_data: Dict[str, Any], connection_i
         "timestamp": context["timestamp"]
     }
 
-def execute_action(action: str, context: Dict[str, Any]) -> Dict[str, Any]:
+def execute_action(action: str, device: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Execute an action based on the request type and context.
+    Execute an action on a device.
     
     Args:
         action: The action to execute
-        context: The context containing request details
+        device: The device to execute the action on
+        context: The context containing action parameters
         
     Returns:
-        Updated context with action results
+        Updated context with action execution results
     """
-    # This is a simplified version that only handles our three main actions
-    customer = context.get("customer")
-    service_level = customer.service_level if isinstance(customer, Customer) else customer.get("service_level")
+    logger.info(f"Executing action: {action}")
     
-    # Check if the action is allowed for the service level
-    if not is_action_allowed(service_level, action):
-        context["error"] = f"The {action} action is not allowed with your service level"
-        return context
-    
-    # Get the device
-    device = None
-    if isinstance(customer, Customer):
-        device = customer.get_device()
-    else:
-        device = context.get("device", {})
-    
-    if not device:
-        context["error"] = "No device found"
-        return context
-    
-    device_id = device.get("id")
-    customer_id = customer.id if isinstance(customer, Customer) else customer.get("customer_id")
-    
-    # Execute the appropriate action
-    if action == "device_power":
-        # Handle device power control
-        power_state = context.get("power_state")
-        if power_state:
-            update_device_state(customer_id, device_id, {"power": power_state})
-            context["action_executed"] = True
-    
+    if action == "device_status":
+        # Get device status
+        context["device_info"] = {
+            "power": device.get("state", "unknown"),
+            "volume": device.get("volume", 50),
+            "location": device.get("location", "unknown")
+        }
+        context["action_executed"] = True
+        
+    elif action == "device_power":
+        # Change device power state
+        new_state = context.get("power_state")
+        if new_state:
+            # Update device state in DynamoDB
+            device_id = device.get("id")
+            if device_id:
+                success = update_device_state(device_id, {"state": new_state})
+                if success:
+                    context["device_state"] = new_state
+                    context["action_executed"] = True
+                else:
+                    context["error"] = f"Failed to update device state to {new_state}"
+            else:
+                context["error"] = "Device ID not found"
+        else:
+            context["error"] = "No power state specified"
+            
     elif action == "volume_control":
-        # Handle volume control
+        # Change device volume
         volume_change = context.get("volume_change")
         if volume_change:
             new_volume = volume_change.get("new")
-            update_device_state(customer_id, device_id, {"volume": new_volume})
-            context["action_executed"] = True
-    
+            device_id = device.get("id")
+            if device_id:
+                success = update_device_state(device_id, {"volume": new_volume})
+                if success:
+                    context["action_executed"] = True
+                else:
+                    context["error"] = f"Failed to update device volume to {new_volume}"
+            else:
+                context["error"] = "Device ID not found"
+        else:
+            context["error"] = "No volume change specified"
+            
     elif action == "song_changes":
-        # Handle song changes
-        song_change = context.get("song_change")
-        if song_change:
-            new_song = song_change.get("new")
-            update_device_state(customer_id, device_id, {"current_song": new_song})
+        # Change song
+        song_action = context.get("song_action")
+        if song_action:
+            # In a real implementation, this would interact with a music service
+            # For now, we'll just simulate a successful song change
+            context["song_change"] = {
+                "action": song_action,
+                "previous": "Unknown Song",
+                "new": "New Song"
+            }
             context["action_executed"] = True
+        else:
+            context["error"] = "No song action specified"
+    
+    else:
+        context["error"] = f"Unknown action: {action}"
     
     return context
+
+def update_device_state(device_id: str, updates: Dict[str, Any]) -> bool:
+    """
+    Update the state of a device.
+    
+    Args:
+        device_id: The ID of the device to update
+        updates: The updates to apply to the device
+        
+    Returns:
+        True if the update was successful, False otherwise
+    """
+    logger.info(f"Updating device {device_id} with {updates}")
+    try:
+        # Get the customer ID from the device ID (assuming format: customer-id-device-number)
+        customer_id = device_id.split('-')[0] if '-' in device_id else None
+        if not customer_id:
+            logger.error(f"Invalid device ID format: {device_id}")
+            return False
+            
+        # Import and call the update_device_state function from dynamodb_service
+        from .dynamodb_service import update_device_state as db_update_device_state
+        db_update_device_state(customer_id, device_id, updates)
+        return True
+    except Exception as e:
+        logger.error(f"Error updating device state: {e}")
+        return False
+
+def generate_response(user_input: str, context: Dict[str, Any]) -> str:
+    """
+    Generate a response using the LLM based on the user input and context.
+    
+    Args:
+        user_input: The user input
+        context: The context containing customer, device, and other information
+        
+    Returns:
+        The generated response
+    """
+    logger.info("Generating response with LLM")
+    
+    # Import and call the generate_response function from anthropic_service
+    # with the correct parameter names
+    from .anthropic_service import generate_response as anthropic_generate_response
+    return anthropic_generate_response(prompt=user_input, context=context)
