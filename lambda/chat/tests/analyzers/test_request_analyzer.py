@@ -226,31 +226,81 @@ class TestRequestAnalyzer(unittest.TestCase):
                     self.assertEqual(result["context"].get("volume_level"), expected_level)
     
     def test_analyze_song_changes_request(self):
-        """Test analyzing a song changes request."""
+        """Test analyzing song change requests."""
         test_cases = [
-            # Test next song
-            ("Play the next song", "next"),
-            ("Skip this track", "next"),
-            ("Next song please", "next"),
-            ("Forward", "next"),
-            # Test previous song
-            ("Play the previous song", "previous"),
-            ("Go back one song", "previous"),
-            ("Previous track", "previous"),
-            ("Backward", "previous"),
+            # Test next song commands
+            ("play next song", "next", None),
+            ("play the next song", "next", None),
+            ("next song", "next", None),
+            ("skip to next", "next", None),
+            ("play next track", "next", None),
+            ("skip this song", "next", None),
+            
+            # Test previous song commands
+            ("play previous song", "previous", None),
+            ("play the previous song", "previous", None),
+            ("previous song", "previous", None),
+            ("go back to previous track", "previous", None),
+            
+            # Test specific song requests
+            ("play Bohemian Rhapsody", "specific", "Bohemian Rhapsody"),
+            ("put on Sweet Caroline", "specific", "Sweet Caroline"),
+            ("switch to Hotel California", "specific", "Hotel California"),
+            
+            # New test cases for play commands
+            ("Play Test Song 2", "specific", "Test Song 2"),
+            ("play next", "next", None),
+            ("play previous", "previous", None),
+            ("play the next one", "next", None),
+            ("play something different", "next", None),
+            ("play another song", "next", None),
+            
             # Edge cases
-            ("NEXT SONG", "next"),  # All caps
-            ("previous track", "previous"),  # All lowercase
-            ("Skip this one", "next"),  # Implicit next
-            ("Go back", "previous")  # Implicit previous
+            ("PLAY NEXT SONG", "next", None),
+            ("play PREVIOUS song", "previous", None),
+            ("Play", None, None),  # Should not identify a song action for just "play"
+            ("play next song now", "next", None),
+            ("can you play the next song", "next", None),
+            ("please play the previous song", "previous", None),
         ]
         
-        for text, expected_action in test_cases:
+        for text, expected_action, expected_song in test_cases:
             with self.subTest(text=text):
                 result = RequestAnalyzer.analyze(text)
-                self.assertEqual(result["request_type"], "song_changes")
-                self.assertEqual(result["required_actions"], ["song_changes"])
-                self.assertEqual(result["context"]["song_action"], expected_action)
+                self.assertEqual(result["request_type"], "song_changes" if expected_action else None,
+                               f"Wrong request type for: {text}")
+                if expected_action:
+                    self.assertEqual(result["required_actions"], ["song_changes"])
+                    self.assertEqual(result["context"]["song_action"], expected_action,
+                                  f"Wrong song action for: {text}")
+                    if expected_song:
+                        self.assertEqual(result["context"]["requested_song"], expected_song,
+                                      f"Wrong requested song for: {text}")
+                else:
+                    self.assertEqual(result["required_actions"], [],
+                                  f"Should have no required actions for: {text}")
+    
+    def test_analyze_song_changes_error_cases(self):
+        """Test error cases for song change requests."""
+        test_cases = [
+            "play",  # Just the word play
+            "playing",  # Variation of play
+            "played",  # Past tense
+            "",  # Empty string
+            "something random",  # Random text
+            "can you",  # Incomplete request
+            "please play",  # Incomplete play command
+        ]
+        
+        for text in test_cases:
+            with self.subTest(text=text):
+                result = RequestAnalyzer.analyze(text)
+                self.assertIsNone(result["request_type"],
+                                f"Should not identify request type for: {text}")
+                self.assertEqual(result["required_actions"], [],
+                              f"Should have no required actions for: {text}")
+                self.assertEqual(result["context"], {},
+                              f"Should have empty context for: {text}")
     
     def test_analyze_unknown_request(self):
         """Test analyzing an unknown request."""
