@@ -29,6 +29,15 @@ dynamodb = boto3.resource('dynamodb')
 CUSTOMERS_TABLE = os.environ.get('CUSTOMERS_TABLE', '')
 SERVICE_LEVELS_TABLE = os.environ.get('SERVICE_LEVELS_TABLE', '')
 
+# Device fields that can be updated
+DEVICE_FIELDS = {
+    'power': str,
+    'volume': int,
+    'currentSong': str,
+    'playlist': list,
+    'currentSongIndex': int  # Add this to track the current position in playlist
+}
+
 def get_customers() -> Optional[List[Dict[str, Any]]]:
     """
     Get all customers from DynamoDB.
@@ -56,13 +65,13 @@ def get_customers() -> Optional[List[Dict[str, Any]]]:
 
 def get_customer(customer_id: str) -> Optional[Dict[str, Any]]:
     """
-    Get a specific customer from DynamoDB.
+    Get a customer by ID from DynamoDB.
     
     Args:
         customer_id: The ID of the customer to retrieve
         
     Returns:
-        Customer dictionary, or None if not found or error
+        Customer data as a dictionary, or None if not found
     """
     if not CUSTOMERS_TABLE:
         logger.error("CUSTOMERS_TABLE environment variable not set")
@@ -82,14 +91,14 @@ def get_customer(customer_id: str) -> Optional[Dict[str, Any]]:
         logger.error(f"Error getting customer: {str(e)}")
         return None
 
-def update_device_state(customer_id: str, device_id: str, new_power: str) -> Optional[Dict[str, Any]]:
+def update_device_state(customer_id: str, device_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """
-    Update the power of a device for a customer.
+    Update the state of a device for a customer.
     
     Args:
         customer_id: The ID of the customer
         device_id: The ID of the device to update
-        new_power: The new power state to set for the device
+        updates: Dictionary of fields to update and their new values
         
     Returns:
         Updated device data as a dictionary, or None if not found
@@ -118,23 +127,50 @@ def update_device_state(customer_id: str, device_id: str, new_power: str) -> Opt
             logger.warning(f"Device ID mismatch: expected {device_id}, found {device.get('id')}")
             return None
         
-        # Update the device power
-        device['power'] = new_power
-        device['lastUpdated'] = datetime.now().isoformat()
+        # Validate updates
+        update_expressions = []
+        expression_values = {}
+        expression_names = {}
         
-        # Update the customer record in DynamoDB
+        for field, value in updates.items():
+            if field not in DEVICE_FIELDS:
+                logger.warning(f"Invalid field: {field}")
+                continue
+                
+            # Validate field type
+            try:
+                value = DEVICE_FIELDS[field](value)
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid value for field {field}: {value}")
+                continue
+            
+            # Add to update expression
+            update_expressions.append(f"device.#attr_{field} = :val_{field}")
+            expression_values[f":val_{field}"] = value
+            expression_names[f"#attr_{field}"] = field
+        
+        if not update_expressions:
+            logger.warning("No valid updates provided")
+            return None
+        
+        # Update the device state
         table = dynamodb.Table(CUSTOMERS_TABLE)
-        table.update_item(
+        response = table.update_item(
             Key={'id': customer_id},
-            UpdateExpression='SET device = :device',
-            ExpressionAttributeValues={':device': device}
+            UpdateExpression=f"SET {', '.join(update_expressions)}",
+            ExpressionAttributeValues=expression_values,
+            ExpressionAttributeNames=expression_names,
+            ReturnValues='ALL_NEW'
         )
         
-        logger.info(f"Updated device {device_id} power to {new_power}")
-        return device
+        if 'Attributes' not in response:
+            logger.warning("Update successful but no attributes returned")
+            return None
+            
+        return response['Attributes'].get('device')
         
-    except Exception as e:
-        logger.error(f"Error updating device power: {str(e)}")
+    except ClientError as e:
+        logger.error(f"Error updating device state: {str(e)}")
         return None
 
 def get_service_levels() -> Optional[Dict[str, Dict[str, Any]]]:
