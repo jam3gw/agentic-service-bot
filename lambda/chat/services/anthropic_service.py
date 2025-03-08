@@ -392,8 +392,7 @@ RESPONSE GUIDELINES:
         # Add device information
         if device:
             device_type = device.get("type", "device")
-            device_location = device.get("location", "")
-            prompt += f"\nDEVICE INFORMATION:\n- {device_type} in the {device_location}\n"
+            prompt += f"\nDEVICE INFORMATION:\n- {device_type}\n"
     
     # Add permissions if available
     if "permissions" in context:

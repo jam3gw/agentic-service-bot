@@ -203,9 +203,8 @@ def process_request(customer_id: str, message_data: Dict[str, Any], connection_i
         # For device status requests, check if device is off
         if request_type == "device_status":
             device_type = device.get("type", "device").lower()
-            location = device.get("location", "unknown").replace("_", " ")
             if device.get("power") == "off":
-                message = f"Your {device_type} in the {location} is currently off"
+                message = f"Your {device_type} is currently off"
                 return {
                     "message": message,
                     "action_executed": True,
@@ -420,25 +419,79 @@ def execute_action(action: str, device: Dict[str, Any], context: Dict[str, Any])
             logger.warning(f"[ACTION_EXEC] {error_msg}")
             return {"error": error_msg}
         
-        # Determine the new song based on the action
-        current_index = playlist.index(current_song) if current_song in playlist else -1
+        # Handle different song actions
         if song_action == "next":
+            # Move to next song
+            current_index = playlist.index(current_song) if current_song in playlist else -1
             new_index = (current_index + 1) % len(playlist)
+            new_song = playlist[new_index]
         elif song_action == "previous":
+            # Move to previous song
+            current_index = playlist.index(current_song) if current_song in playlist else -1
             new_index = (current_index - 1) % len(playlist)
+            new_song = playlist[new_index]
+        elif song_action == "specific":
+            # Try to find the requested song in the playlist
+            requested_song = context.get("requested_song", "").lower()
+            if not requested_song:
+                error_msg = "No song name provided"
+                logger.warning(f"[ACTION_EXEC] {error_msg}")
+                return {"error": error_msg}
+            
+            # Find the best matching song
+            best_match = None
+            best_match_score = 0
+            
+            for song in playlist:
+                # Calculate similarity score
+                song_lower = song.lower()
+                
+                # Exact match
+                if requested_song == song_lower:
+                    best_match = song
+                    break
+                
+                # Check if requested song is a substring
+                if requested_song in song_lower:
+                    score = len(requested_song) / len(song_lower)
+                    if score > best_match_score:
+                        best_match = song
+                        best_match_score = score
+                
+                # Check if any word in the requested song matches
+                requested_words = requested_song.split()
+                for word in requested_words:
+                    if word in song_lower:
+                        score = len(word) / len(song_lower) * 0.8  # Slightly lower score for partial matches
+                        if score > best_match_score:
+                            best_match = song
+                            best_match_score = score
+            
+            if best_match:
+                new_song = best_match
+            else:
+                error_msg = f"Could not find a song matching '{context.get('requested_song')}' in the playlist"
+                logger.warning(f"[ACTION_EXEC] {error_msg}")
+                return {"error": error_msg}
         else:
-            new_index = 0
+            error_msg = f"Unknown song action: {song_action}"
+            logger.warning(f"[ACTION_EXEC] {error_msg}")
+            return {"error": error_msg}
         
-        new_song = playlist[new_index]
         logger.info(f"[ACTION_EXEC] Changing song from {current_song} to {new_song}")
         
-        success = update_device_state(customer_id, device_id, {"current_song": new_song})
+        success = update_device_state(customer_id, device_id, {
+            "current_song": new_song,
+            "currentSongIndex": playlist.index(new_song)
+        })
+        
         if success:
             return {
                 "action_executed": True,
                 "song_changed": True,
                 "new_song": new_song,
-                "previous_song": current_song
+                "previous_song": current_song,
+                "song_action": song_action
             }
         else:
             error_msg = f"Failed to update current song to {new_song}"
@@ -514,24 +567,21 @@ def generate_response(user_input: str, context: Dict[str, Any]) -> str:
     if request_type == "device_status":
         device_info = context.get("device_info", {})
         power_state = device_info.get("power", "unknown")
-        device_type = device_info.get("type", "device").lower()
-        location = device_info.get("location", "unknown").replace("_", " ")
         volume = device_info.get("volume", 0)
         current_song = device_info.get("current_song", "No song playing")
         
-        response = f"Your {device_type} in the {location} is currently {power_state}"
+        response = f"Your device is currently {power_state}"
         if power_state == "on":
             response += f", volume is at {volume}%"
             if current_song and current_song != "No song playing":
-                response += f", and {current_song} is playing"
+                response += f", and currently playing {current_song}"
         return response
     
     elif request_type == "device_power":
         power_state = context.get("power_state", "unknown")
         device_info = context.get("device_info", {})
         device_type = device_info.get("type", "device").lower()
-        location = device_info.get("location", "unknown").replace("_", " ")
-        return f"I've turned your {device_type} in the {location} {power_state}"
+        return f"I've turned your {device_type} {power_state}"
     
     elif request_type == "volume_control":
         volume_change = context.get("volume_change", {})
@@ -549,14 +599,28 @@ def generate_response(user_input: str, context: Dict[str, Any]) -> str:
         if context.get("song_changed"):
             new_song = context.get("new_song", "")
             previous_song = context.get("previous_song", "")
+            song_action = context.get("song_action", "")
             
-            if new_song:
+            if song_action == "specific" and new_song:
                 if previous_song:
                     return f"I've changed the song from {previous_song} to {new_song}"
                 else:
                     return f"I've changed the song to {new_song}"
+            elif song_action == "next":
+                if new_song:
+                    return f"I've changed to the next song: {new_song}"
+                else:
+                    return "I've changed to the next song in your playlist"
+            elif song_action == "previous":
+                if new_song:
+                    return f"I've changed to the previous song: {new_song}"
+                else:
+                    return "I've changed to the previous song in your playlist"
             else:
-                return "I've changed to the next song in your playlist"
+                if new_song:
+                    return f"I've changed to a different song: {new_song}"
+                else:
+                    return "I've changed to a different song"
         else:
             return "I couldn't change the song. Please try again."
     

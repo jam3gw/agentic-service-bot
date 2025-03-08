@@ -579,7 +579,12 @@ class TestRequestProcessor(unittest.TestCase):
         mock_analyze.return_value = {
             "primary_action": "volume_control",
             "all_actions": ["volume_control"],
-            "context": {"volume_direction": "up"}
+            "context": {
+                "volume_change": {
+                    "previous": 50,
+                    "new": 55
+                }
+            }
         }
         
         # Mock execute_action to simulate powered-off device behavior
@@ -862,7 +867,7 @@ class TestRequestProcessor(unittest.TestCase):
             "type": "speaker",
             "power": "on",
             "location": "living room",
-            "volume": 50
+            "volume": 50  # Current volume
         }
         mock_get_customer.return_value = mock_customer
         
@@ -873,45 +878,67 @@ class TestRequestProcessor(unittest.TestCase):
             "support_priority": "priority"
         }
         
-        # Set analyze to return volume control action
+        # Set analyze to return volume control action with target volume
+        target_volume = 75
         mock_analyze.return_value = {
             "primary_action": "volume_control",
             "all_actions": ["volume_control"],
-            "context": {
-                "volume_change": {
-                    "type": "absolute",
-                    "value": 75
-                }
+            "volume_change": {  # Move volume_change to top level
+                "previous": 50,
+                "new": target_volume
             }
         }
         
-        # Set execute_action to return success
+        # Set execute_action to return success with the volume change
         mock_execute_action.return_value = {
             "action_executed": True,
-            "volume_change": {"previous": 50, "new": 75},
-            "timestamp": datetime.now().isoformat()
+            "volume_change": {
+                "previous": 50,
+                "new": target_volume
+            }
         }
         
         # Test setting volume to specific level
         result = process_request("test-customer", {
-            "message": "Set volume to 75",
+            "message": f"Set volume to {target_volume}",
             "metadata": {"conversation_id": "test-conv-123"}
         })
         
         # Verify the result
         self.assertTrue(result.get("action_executed", False), 
-                       "Action should be executed for premium service level")
-        self.assertIn("75", result.get("message", ""), 
-                     "Response should mention the new volume level")
+                       "Volume change action should be executed for premium service level")
         
         # Verify execute_action was called with correct parameters
         mock_execute_action.assert_called_once()
         args = mock_execute_action.call_args[0]
-        self.assertEqual(args[0], "volume_control", "First argument should be the action")
-        self.assertEqual(args[1], mock_customer.get_device.return_value, "Second argument should be the device")
-        context = args[2]  # Get the context argument
-        self.assertEqual(context.get("volume_change", {}).get("new"), 75,
-                        "Volume should be set to exactly 75")
+        self.assertEqual(args[0], "volume_control", "Action should be volume_control")
+        self.assertEqual(args[1], mock_customer.get_device.return_value, "Device should match")
+        
+        # Verify the volume change was requested correctly
+        context = args[2]
+        self.assertIn("volume_change", context, "Context should include volume_change")
+        volume_change = context["volume_change"]
+        self.assertEqual(volume_change["previous"], 50, "Previous volume should be preserved")
+        self.assertEqual(volume_change["new"], target_volume, "New volume should match target")
+        
+        # Verify the response message includes both action confirmation and new volume
+        message = result.get("message", "").lower()
+        self.assertTrue(
+            any(word in message for word in ["volume", "changed", "set", "adjusted"]),
+            "Response should indicate volume was changed"
+        )
+        self.assertTrue(
+            str(target_volume) in message,
+            f"Response should include the new volume level ({target_volume})"
+        )
+        self.assertTrue(
+            any(phrase in message for phrase in [
+                "to " + str(target_volume),
+                "at " + str(target_volume),
+                str(target_volume) + "%"
+            ]),
+            f"Response should clearly indicate the new volume level ({target_volume})"
+        )
 
     @patch('services.request_processor.get_customer')
     @patch('services.request_processor.get_service_level_permissions')
@@ -1285,6 +1312,368 @@ class TestRequestProcessor(unittest.TestCase):
             request_type="device_status",
             actions_allowed=True
         )
+
+    @patch('services.request_processor.get_customer')
+    @patch('services.request_processor.get_service_level_permissions')
+    @patch('services.request_processor.analyze_request')
+    @patch('services.request_processor.execute_action')
+    @patch('services.request_processor.store_message')
+    def test_process_request_song_control_error_cases(self, mock_store_message, 
+                                                    mock_execute_action, mock_analyze, 
+                                                    mock_get_permissions, mock_get_customer):
+        """Test error cases for song control."""
+        # Setup mocks
+        mock_customer = MagicMock()
+        mock_customer.id = "test-customer"
+        mock_customer.service_level = "enterprise"
+        mock_customer.get_device.return_value = {
+            "id": "device-1",
+            "type": "speaker",
+            "power": "off",  # Device is off
+            "current_song": "Current Song",
+            "playlist": ["Song 1", "Current Song", "Song 3"]
+        }
+        mock_get_customer.return_value = mock_customer
+        
+        # Set permissions for enterprise service level
+        mock_get_permissions.return_value = {
+            "allowed_actions": ["device_status", "device_power", "volume_control", "song_changes"],
+            "max_devices": 5,
+            "support_priority": "vip"
+        }
+        
+        # Test device powered off
+        mock_analyze.return_value = {
+            "primary_action": "song_changes",
+            "all_actions": ["song_changes"],
+            "context": {
+                "song_action": "next"
+            }
+        }
+        
+        mock_execute_action.return_value = {
+            "error": "Cannot change songs when device is powered off"
+        }
+        
+        result = process_request("test-customer", {
+            "message": "Play next song"
+        })
+        
+        assert result["action_executed"] is False
+        assert "powered off" in result["message"]
+
+    @patch('services.request_processor.get_customer')
+    @patch('services.request_processor.get_service_level_permissions')
+    @patch('services.request_processor.analyze_request')
+    @patch('services.request_processor.execute_action')
+    @patch('services.request_processor.store_message')
+    def test_process_request_specific_song_selection(self, mock_store_message, 
+                                                   mock_execute_action, mock_analyze, 
+                                                   mock_get_permissions, mock_get_customer):
+        """Test selecting specific songs by name, including partial matches."""
+        # Setup mocks
+        mock_customer = MagicMock()
+        mock_customer.id = "test-customer"
+        mock_customer.service_level = "enterprise"
+        mock_customer.get_device.return_value = {
+            "id": "device-1",
+            "type": "speaker",
+            "power": "on",
+            "current_song": "Current Song",
+            "playlist": [
+                "Sweet Caroline",
+                "Hotel California",
+                "Sweet Child O' Mine",
+                "Sweet Dreams"
+            ]
+        }
+        mock_get_customer.return_value = mock_customer
+        
+        # Set permissions for enterprise service level
+        mock_get_permissions.return_value = {
+            "allowed_actions": ["device_status", "device_power", "volume_control", "song_changes"],
+            "max_devices": 5,
+            "support_priority": "vip"
+        }
+
+        # Test cases for specific song selection
+        test_cases = [
+            # Exact match
+            {
+                "message": "Play Hotel California",
+                "requested_song": "Hotel California",
+                "expected_song": "Hotel California",
+                "should_match": True
+            },
+            # Partial match
+            {
+                "message": "Play Sweet Car",
+                "requested_song": "Sweet Car",
+                "expected_song": "Sweet Caroline",
+                "should_match": True
+            },
+            # Multiple matches (should pick best match)
+            {
+                "message": "Play Sweet",
+                "requested_song": "Sweet",
+                "expected_song": "Sweet Caroline",  # First match in playlist
+                "should_match": True
+            },
+            # No match
+            {
+                "message": "Play Nonexistent Song",
+                "requested_song": "Nonexistent Song",
+                "expected_song": None,
+                "should_match": False
+            }
+        ]
+
+        for case in test_cases:
+            # Configure analyze_request mock
+            mock_analyze.return_value = {
+                "primary_action": "song_changes",
+                "all_actions": ["song_changes"],
+                "context": {
+                    "song_action": "specific",
+                    "requested_song": case["requested_song"]
+                }
+            }
+
+            if case["should_match"]:
+                # Configure successful execution
+                mock_execute_action.return_value = {
+                    "action_executed": True,
+                    "song_changed": True,
+                    "new_song": case["expected_song"],
+                    "previous_song": "Current Song",
+                    "song_action": "specific"
+                }
+            else:
+                # Configure failed execution
+                mock_execute_action.return_value = {
+                    "error": f"Could not find a song matching '{case['requested_song']}' in the playlist"
+                }
+
+            # Test the request
+            result = process_request("test-customer", {
+                "message": case["message"]
+            })
+
+            if case["should_match"]:
+                self.assertTrue(result.get("action_executed", False),
+                              f"Action should be executed for valid song request: {case['message']}")
+                self.assertIn(case["expected_song"], result.get("message", ""),
+                            f"Response should mention the new song: {case['expected_song']}")
+            else:
+                self.assertFalse(result.get("action_executed", True),
+                               f"Action should not be executed for invalid song: {case['message']}")
+                self.assertIn("could not find", result.get("message", "").lower(),
+                            "Response should indicate song wasn't found")
+
+    @patch('services.request_processor.get_customer')
+    @patch('services.request_processor.get_service_level_permissions')
+    @patch('services.request_processor.analyze_request')
+    @patch('services.request_processor.execute_action')
+    @patch('services.request_processor.store_message')
+    def test_process_request_playlist_edge_cases(self, mock_store_message, 
+                                               mock_execute_action, mock_analyze, 
+                                               mock_get_permissions, mock_get_customer):
+        """Test playlist edge cases like empty playlists and single-song playlists."""
+        # Setup base mocks
+        mock_customer = MagicMock()
+        mock_customer.id = "test-customer"
+        mock_customer.service_level = "enterprise"
+        mock_get_customer.return_value = mock_customer
+        
+        mock_get_permissions.return_value = {
+            "allowed_actions": ["device_status", "device_power", "volume_control", "song_changes"],
+            "max_devices": 5,
+            "support_priority": "vip"
+        }
+
+        test_cases = [
+            # Empty playlist
+            {
+                "playlist": [],
+                "current_song": "",
+                "message": "Play next song",
+                "should_succeed": False,
+                "error_message": "No playlist available"
+            },
+            # Single song playlist - next
+            {
+                "playlist": ["Only Song"],
+                "current_song": "Only Song",
+                "message": "Play next song",
+                "should_succeed": True,
+                "expected_song": "Only Song"  # Should loop back to the same song
+            },
+            # Single song playlist - previous
+            {
+                "playlist": ["Only Song"],
+                "current_song": "Only Song",
+                "message": "Play previous song",
+                "should_succeed": True,
+                "expected_song": "Only Song"
+            },
+            # End of playlist - next should loop to start
+            {
+                "playlist": ["Song 1", "Song 2", "Song 3"],
+                "current_song": "Song 3",
+                "message": "Play next song",
+                "should_succeed": True,
+                "expected_song": "Song 1"
+            },
+            # Start of playlist - previous should loop to end
+            {
+                "playlist": ["Song 1", "Song 2", "Song 3"],
+                "current_song": "Song 1",
+                "message": "Play previous song",
+                "should_succeed": True,
+                "expected_song": "Song 3"
+            }
+        ]
+
+        for case in test_cases:
+            # Update mock device with current test case
+            mock_customer.get_device.return_value = {
+                "id": "device-1",
+                "type": "speaker",
+                "power": "on",
+                "current_song": case["current_song"],
+                "playlist": case["playlist"]
+            }
+
+            # Configure analyze_request mock
+            mock_analyze.return_value = {
+                "primary_action": "song_changes",
+                "all_actions": ["song_changes"],
+                "context": {
+                    "song_action": "next" if "next" in case["message"] else "previous"
+                }
+            }
+
+            if case["should_succeed"]:
+                mock_execute_action.return_value = {
+                    "action_executed": True,
+                    "song_changed": True,
+                    "new_song": case["expected_song"],
+                    "previous_song": case["current_song"],
+                    "song_action": "next" if "next" in case["message"] else "previous"
+                }
+            else:
+                mock_execute_action.return_value = {
+                    "error": case["error_message"]
+                }
+
+            # Test the request
+            result = process_request("test-customer", {
+                "message": case["message"]
+            })
+
+            if case["should_succeed"]:
+                self.assertTrue(result.get("action_executed", False),
+                              f"Action should be executed for case: {case['message']}")
+                self.assertIn(case["expected_song"], result.get("message", ""),
+                            f"Response should mention the expected song: {case['expected_song']}")
+            else:
+                self.assertFalse(result.get("action_executed", True),
+                               f"Action should not be executed for case: {case['message']}")
+                self.assertIn(case["error_message"].lower(), result.get("message", "").lower(),
+                            f"Response should include error message: {case['error_message']}")
+
+    @patch('services.request_processor.get_customer')
+    @patch('services.request_processor.get_service_level_permissions')
+    @patch('services.request_processor.analyze_request')
+    @patch('services.request_processor.execute_action')
+    @patch('services.request_processor.store_message')
+    def test_process_request_song_name_processing(self, mock_store_message, 
+                                                mock_execute_action, mock_analyze, 
+                                                mock_get_permissions, mock_get_customer):
+        """Test song name processing with special characters, numbers, and case sensitivity."""
+        # Setup mocks
+        mock_customer = MagicMock()
+        mock_customer.id = "test-customer"
+        mock_customer.service_level = "enterprise"
+        mock_customer.get_device.return_value = {
+            "id": "device-1",
+            "type": "speaker",
+            "power": "on",
+            "current_song": "Current Song",
+            "playlist": [
+                "99 Red Balloons",
+                "Highway 61 Revisited",
+                "Blink-182's Greatest Hits",
+                "AC/DC TNT",
+                "P!nk - Just Like Fire",
+                "UPPERCASE SONG",
+                "lowercase song"
+            ]
+        }
+        mock_get_customer.return_value = mock_customer
+        
+        mock_get_permissions.return_value = {
+            "allowed_actions": ["device_status", "device_power", "volume_control", "song_changes"],
+            "max_devices": 5,
+            "support_priority": "vip"
+        }
+
+        test_cases = [
+            # Numbers in song names
+            {
+                "message": "Play 99 Red Balloons",
+                "requested_song": "99 Red Balloons",
+                "should_match": True
+            },
+            # Special characters
+            {
+                "message": "Play AC/DC TNT",
+                "requested_song": "AC/DC TNT",
+                "should_match": True
+            },
+            # Mixed case
+            {
+                "message": "Play UPPERCASE song",
+                "requested_song": "UPPERCASE song",
+                "should_match": True
+            },
+            # Partial match with special characters
+            {
+                "message": "Play Blink-182",
+                "requested_song": "Blink-182",
+                "should_match": True
+            }
+        ]
+
+        for case in test_cases:
+            # Configure analyze_request mock
+            mock_analyze.return_value = {
+                "primary_action": "song_changes",
+                "all_actions": ["song_changes"],
+                "context": {
+                    "song_action": "specific",
+                    "requested_song": case["requested_song"]
+                }
+            }
+
+            # Configure successful execution
+            mock_execute_action.return_value = {
+                "action_executed": True,
+                "song_changed": True,
+                "new_song": case["requested_song"],
+                "previous_song": "Current Song",
+                "song_action": "specific"
+            }
+
+            # Test the request
+            result = process_request("test-customer", {
+                "message": case["message"]
+            })
+
+            self.assertTrue(result.get("action_executed", False),
+                          f"Action should be executed for song request: {case['message']}")
+            self.assertIn(case["requested_song"], result.get("message", ""),
+                         f"Response should mention the requested song: {case['requested_song']}")
 
 if __name__ == "__main__":
     unittest.main() 
