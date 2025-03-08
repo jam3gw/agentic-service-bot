@@ -44,16 +44,20 @@ class DeviceState(TypedDict):
     current_song: str
     type: str
     location: str
+    playlist: list[str]
+
+class DynamoDBItem(TypedDict):
+    id: str
+    device: Dict[str, Any]
 
 class DynamoDBResponse(TypedDict):
-    Item: Dict[str, Any]
+    Item: DynamoDBItem
 
-class DecimalEncoder(json.JSONEncoder):
-    """Custom JSON encoder to handle Decimal types from DynamoDB"""
-    def default(self, obj):
+class DynamoDBEncoder(json.JSONEncoder):
+    def default(self, obj: Any) -> Any:
         if isinstance(obj, Decimal):
-            return float(obj)
-        return super(DecimalEncoder, self).default(obj)
+            return str(obj)
+        return super().default(obj)
 
 def test_device_status_action(test_data: Dict[str, str]) -> None:
     """
@@ -412,13 +416,16 @@ def test_volume_control_action(test_data):
     # Verify the device state in DynamoDB and via status request
     verify_device_volume(60, 'set specific volume')
 
-def test_song_changes_action(test_data):
+def test_song_changes_action(test_data: Dict[str, str]) -> None:
     """
     Test the song_control action through the chat API.
     
     This test verifies that:
     1. Premium users cannot change songs (permission denied)
-    2. After upgrading to enterprise, users can change songs
+    2. After upgrading to enterprise, users can:
+       - Play specific songs by name
+       - Play next/previous songs
+       - Handle errors for non-existent songs
     3. DynamoDB state reflects song changes
     4. Subsequent status requests confirm the song changes
     """
@@ -430,16 +437,22 @@ def test_song_changes_action(test_data):
     dynamodb = boto3.resource('dynamodb', region_name=REGION)
     table = dynamodb.Table(CUSTOMERS_TABLE)
     
-    def verify_song_state(expected_song: str, operation: str):
+    def verify_song_state(expected_song: str, operation: str) -> None:
         """Helper function to verify song state in DynamoDB and via status request"""
+        print(f"\n🔍 Verifying song state after {operation}")
+        print(f"  Expected song: {expected_song}")
+        
         # Wait a moment for DynamoDB to propagate the change
         time.sleep(2)
         
         # 1. Verify DynamoDB state
         response = table.get_item(Key={'id': customer_id})
-        assert 'Item' in response, f"Customer {customer_id} not found in DynamoDB after {operation}"
-        customer = response['Item']
-        device = customer.get('device')
+        response_typed = cast(DynamoDBResponse, response)
+        print(f"  DynamoDB response: {json.dumps(response_typed, indent=2, cls=DynamoDBEncoder)}")
+        assert 'Item' in response_typed, f"Customer {customer_id} not found in DynamoDB after {operation}"
+        customer = response_typed['Item']
+        device = cast(DeviceState, customer.get('device', {}))
+        print(f"  Device state: {json.dumps(device, indent=2, cls=DynamoDBEncoder)}")
         assert device is not None, f"Device not found in customer data after {operation}"
         assert device['id'] == test_data['device_id'], f"Device ID mismatch after {operation}"
         
@@ -449,153 +462,204 @@ def test_song_changes_action(test_data):
                 f"Song should not change for premium users. Expected {expected_song}, got {device.get('current_song')}"
             return
         
-        assert device.get('current_song') == expected_song, \
-            f"Expected current song in DynamoDB to be {expected_song} after {operation}, got {device.get('current_song')}"
+        # 2. Verify the current song matches expected
+        current_song = device.get('current_song')
+        print(f"  Current song in DynamoDB: {current_song}")
+        assert current_song == expected_song, \
+            f"Song mismatch after {operation}. Expected {expected_song}, got {current_song}"
         
-        # 2. Verify via status request
+        # 3. Verify via status request
+        print(f"  Making status request to verify song...")
         status_response = requests.post(
             f"{REST_API_URL}/chat",
             json={
-                "customerId": customer_id,
-                "message": "What song is playing?"
+                "message": "What's playing now?",
+                "customerId": customer_id
             }
         )
-        
-        if status_response.status_code == 502:
-            pytest.skip("Status check returned 502 Bad Gateway error (known issue)")
-            
-        assert status_response.status_code == 200, \
-            f"Expected status code 200 for status check after {operation}, got {status_response.status_code}"
-        
+        print(f"  Status response: {json.dumps(status_response.json(), indent=2)}")
+        assert status_response.status_code == 200, f"Status request failed after {operation}"
         status_data = status_response.json()
-        assert "message" in status_data, f"Status response after {operation} should contain 'message' field"
-        status_message = status_data["message"].lower()
-        
-        if operation == 'premium user song change attempt':
-            # For premium users, verify the response indicates service level restriction
-            assert any(phrase in status_message for phrase in ["not available", "enterprise", "upgrade"]), \
-                f"Status message should indicate song control requires enterprise level: {status_message}"
-            return
-        
-        # For other operations, verify the status message reflects the correct song
-        assert expected_song.lower() in status_message, \
-            f"Status message after {operation} should indicate current song is {expected_song}: {status_message}"
+        assert expected_song in status_data.get('message', ''), \
+            f"Status response doesn't mention current song after {operation}"
     
-    # First, turn on the device
-    power_message = "Turn on my speaker"
-    power_body = {
-        "customerId": customer_id,
-        "message": power_message
-    }
+    # Step 1: Verify premium user cannot change songs
+    initial_song = "Test Song 1"
+    print("\n🔒 Testing premium user permissions...")
     
-    power_response = requests.post(
+    # Try to play next song as premium user
+    response = requests.post(
         f"{REST_API_URL}/chat",
-        json=power_body
+        json={
+            "message": "Play next song",
+            "customerId": customer_id
+        }
     )
+    print(f"Premium user response: {json.dumps(response.json(), indent=2)}")
+    assert response.status_code == 200
+    assert any(phrase in response.json()['message'].lower() for phrase in 
+              ["only available with", "enterprise service plan", "please upgrade"]), \
+        "Response should indicate that song control requires enterprise plan"
+    verify_song_state(initial_song, "premium user song change attempt")
     
-    # Check for 502 Bad Gateway error (known issue)
-    if power_response.status_code == 502:
-        pytest.skip("Chat endpoint returned 502 Bad Gateway error (known issue)")
-    
-    print(f"Power response status: {power_response.status_code}")
-    print(f"Power response body: {power_response.text}")
-    
-    # Verify device was turned on
-    assert power_response.status_code == 200
-    power_data = power_response.json()
-    assert "message" in power_data
-    assert "on" in power_data["message"].lower()
-    
-    # Get initial song
-    initial_response = table.get_item(Key={'id': customer_id})
-    initial_song = initial_response['Item'].get('device', {}).get('current_song', 'Unknown')
-    
-    # Test 1: Premium user should not be able to change songs
-    next_message = "next song"
-    next_body = {
-        "customerId": customer_id,
-        "message": next_message
-    }
-    
-    print("\nTesting song control as premium user (should be denied)")
-    next_response = requests.post(
-        f"{REST_API_URL}/chat",
-        json=next_body
-    )
-    
-    print(f"Next song response status: {next_response.status_code}")
-    print(f"Next song response body: {next_response.text}")
-    
-    # Verify permission denied for premium user
-    assert next_response.status_code == 200
-    next_data = next_response.json()
-    assert "message" in next_data
-    message = next_data["message"].lower()
-    assert any(phrase in message for phrase in ["not available", "not allowed", "service level", "enterprise"]), \
-        f"Response should indicate song control requires enterprise level: {message}"
-    
-    # Verify song hasn't changed in DynamoDB
-    verify_song_state(initial_song, 'premium user song change attempt')
-    
-    # Test 2: Upgrade to enterprise and try again
-    print("\nUpgrading customer to enterprise level")
+    # Step 2: Upgrade to enterprise
+    print("\n⬆️ Upgrading to enterprise service level...")
     try:
-        response = table.update_item(
-            Key={'id': customer_id},
-            UpdateExpression="set #level = :level",
-            ExpressionAttributeNames={'#level': 'level'},
-            ExpressionAttributeValues={':level': 'enterprise'},
-            ReturnValues="UPDATED_NEW"
-        )
-        print(f"Upgrade response: {response}")
-        
-        # Wait a moment for the change to propagate
-        time.sleep(2)
-    except Exception as e:
-        print(f"Error upgrading customer: {e}")
-        pytest.fail("Failed to upgrade customer to enterprise level")
-    
-    # Try changing songs again as enterprise user
-    print("\nTesting song control as enterprise user (should work)")
-    next_response = requests.post(
-        f"{REST_API_URL}/chat",
-        json=next_body
-    )
-    
-    print(f"Next song response status: {next_response.status_code}")
-    print(f"Next song response body: {next_response.text}")
-    
-    # Verify song change works for enterprise user
-    assert next_response.status_code == 200
-    next_data = next_response.json()
-    assert "message" in next_data
-    message = next_data["message"].lower()
-    assert not any(phrase in message for phrase in ["not available", "not allowed", "service level", "upgrade"]), \
-        f"Response should not indicate permission denied: {message}"
-    assert any(phrase in message for phrase in ["next song", "playing", "changed", "switched", "now playing"]), \
-        f"Response should confirm the song was changed: {message}"
-    
-    # Get the new song from DynamoDB
-    response = table.get_item(Key={'id': customer_id})
-    new_song = response['Item'].get('device', {}).get('current_song', 'Unknown')
-    assert new_song != initial_song, "Song should have changed after successful request"
-    
-    # Verify the song change in DynamoDB and via status request
-    verify_song_state(new_song, 'enterprise user song change')
-    
-    customers_table = dynamodb.Table(CUSTOMERS_TABLE)
-    
-    # Clean up - restore premium service level
-    print("\nRestoring customer to premium level")
-    try:
-        customers_table.update_item(
+        # Update service level directly in DynamoDB
+        update_response = table.update_item(
             Key={'id': customer_id},
             UpdateExpression="SET #lvl = :val",
             ExpressionAttributeNames={'#lvl': 'level'},
-            ExpressionAttributeValues={':val': 'premium'}
+            ExpressionAttributeValues={':val': 'enterprise'},
+            ReturnValues="UPDATED_NEW"
         )
+        print(f"DynamoDB update response: {json.dumps(update_response, indent=2, cls=DynamoDBEncoder)}")
+        print("✅ Upgraded to enterprise service level")
+        
+        # Wait for the change to propagate
+        time.sleep(2)
     except Exception as e:
-        print(f"Warning: Failed to restore premium service level: {e}")
+        print(f"❌ Failed to upgrade service level: {e}")
+        raise
+    
+    # Step 3: Test specific song requests
+    print("\n🎯 Testing specific song selection...")
+    
+    # Test different phrasings for specific song requests
+    test_cases = [
+        ("Play Test Song 2", "Test Song 2"),
+        ("Put on Test Song 2", "Test Song 2"),
+        ("Switch to Test Song 3", "Test Song 3"),
+        ("Change song to Test Song 2", "Test Song 2")
+    ]
+    
+    for command, expected_song in test_cases:
+        print(f"\nTesting command: {command}")
+        response = requests.post(
+            f"{REST_API_URL}/chat",
+            json={
+                "message": command,
+                "customerId": customer_id
+            }
+        )
+        print(f"Response: {json.dumps(response.json(), indent=2)}")
+        assert response.status_code == 200
+        assert expected_song in response.json()['message']
+        verify_song_state(expected_song, f"play specific song ({command})")
+    
+    # Try to play a non-existent song
+    print("\n❌ Testing non-existent song request...")
+    response = requests.post(
+        f"{REST_API_URL}/chat",
+        json={
+            "message": "Play NonexistentSong",
+            "customerId": customer_id
+        }
+    )
+    print(f"Non-existent song response: {json.dumps(response.json(), indent=2)}")
+    assert response.status_code == 200
+    assert "Could not find a song" in response.json()['message']
+    verify_song_state("Test Song 2", "play non-existent song")
+    
+    # Step 4: Test next/previous functionality with various phrasings
+    print("\n⏭️ Testing next song functionality with different phrasings...")
+    next_commands = [
+        "Play next song",
+        "Skip this song",
+        "Skip to next",
+        "Play something different",
+        "Change song",
+        "Next song"
+    ]
+    
+    for command in next_commands:
+        print(f"\nTesting command: {command}")
+        response = requests.post(
+            f"{REST_API_URL}/chat",
+            json={
+                "message": command,
+                "customerId": customer_id
+            }
+        )
+        print(f"Response: {json.dumps(response.json(), indent=2)}")
+        assert response.status_code == 200
+        assert "Test Song 3" in response.json()['message']
+        verify_song_state("Test Song 3", f"next song command ({command})")
+    
+    # Test previous song functionality with different phrasings
+    print("\n⏮️ Testing previous song functionality with different phrasings...")
+    previous_commands = [
+        "Play previous song",
+        "Go back to previous track",
+        "Play the previous song",
+        "Previous song"
+    ]
+    
+    for command in previous_commands:
+        print(f"\nTesting command: {command}")
+        response = requests.post(
+            f"{REST_API_URL}/chat",
+            json={
+                "message": command,
+                "customerId": customer_id
+            }
+        )
+        print(f"Response: {json.dumps(response.json(), indent=2)}")
+        assert response.status_code == 200
+        assert "Test Song 2" in response.json()['message']
+        verify_song_state("Test Song 2", f"previous song command ({command})")
+    
+    # Test edge cases
+    print("\n🔄 Testing edge cases...")
+    edge_cases = [
+        ("Can you play the next song please?", "Test Song 3"),
+        ("PLAY NEXT SONG", "Test Song 3"),
+        ("play something else", "Test Song 3"),
+        ("i don't like this song", "Test Song 3")
+    ]
+    
+    for command, expected_song in edge_cases:
+        print(f"\nTesting edge case: {command}")
+        response = requests.post(
+            f"{REST_API_URL}/chat",
+            json={
+                "message": command,
+                "customerId": customer_id
+            }
+        )
+        print(f"Response: {json.dumps(response.json(), indent=2)}")
+        assert response.status_code == 200
+        assert expected_song in response.json()['message']
+        verify_song_state(expected_song, f"edge case ({command})")
+    
+    # Step 5: Test error cases
+    print("\n🔌 Testing device power off scenario...")
+    # Turn off the device
+    response = requests.post(
+        f"{REST_API_URL}/chat",
+        json={
+            "message": "Turn off the device",
+            "customerId": customer_id
+        }
+    )
+    print(f"Device power off response: {json.dumps(response.json(), indent=2)}")
+    assert response.status_code == 200
+    time.sleep(2)
+    
+    # Try to change song while device is off
+    print("\n❌ Testing song change with powered off device...")
+    response = requests.post(
+        f"{REST_API_URL}/chat",
+        json={
+            "message": "Play next song",
+            "customerId": customer_id
+        }
+    )
+    print(f"Powered off song change response: {json.dumps(response.json(), indent=2)}")
+    assert response.status_code == 200
+    assert "powered off" in response.json()['message']
+    
+    print("✅ Song control tests completed successfully")
 
 def test_service_level_permissions(test_data: Dict[str, str]) -> None:
     """

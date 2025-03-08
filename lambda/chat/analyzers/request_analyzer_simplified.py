@@ -43,7 +43,8 @@ class RequestAnalyzer:
             "working", "functioning", "how are", "can you check",
             "doing", "condition", "current state", "what state",
             "current status", "what is the state", "what is the current state",
-            "what's the state", "what's the current state"
+            "what's the state", "what's the current state",
+            "is my", "is the", "check if", "check my", "check the"
         ],
         "device_power": [
             "turn on", "turn off", "switch on", "switch off", 
@@ -52,7 +53,9 @@ class RequestAnalyzer:
             "turned on", "turned off", "can you turn", "please turn",
             "want it on", "want it off", "want the", "would you",
             "disable it", "enable it", "disable the", "enable the",
-            "change the power", "change power"
+            "change the power", "change power", "start the", "stop the",
+            "start my", "stop my", "turn it on", "turn it off",
+            "can you start", "can you stop", "please start", "please stop"
         ],
         "volume_control": [
             "volume", "louder", "quieter", "increase volume", 
@@ -60,7 +63,9 @@ class RequestAnalyzer:
             "set volume", "change volume", "adjust volume",
             "barely hear", "too loud", "too quiet",
             "make it louder", "make it quieter", "bit louder",
-            "bit quieter", "raise volume", "lower volume"
+            "bit quieter", "raise volume", "lower volume",
+            "can't hear", "hard to hear", "increase the volume",
+            "decrease the volume", "adjust the volume"
         ],
         "song_changes": [
             "next song", "previous song", "skip song", "change song",
@@ -73,98 +78,99 @@ class RequestAnalyzer:
             "skip it", "change the song", "switch track", "switch to another",
             "another track", "change to another", "change to different",
             "switch to different", "skip this track", "skip this song",
-            "skip that", "skip to next", "don't want this", "change it"
+            "skip that", "skip to next", "don't want this", "change it",
+            "play next", "play previous", "play the next", "play the previous",
+            "play next song", "play previous song", "play the next song",
+            "play the previous song", "play", "can you play", "please play",
+            "put on", "switch to", "change to", "forward", "put on", "switch to"
         ]
     }
     
     @classmethod
     def identify_request_type(cls, text: str) -> Optional[str]:
         """
-        Identify the type of request from user text.
+        Identify the type of request based on the text.
         
         Args:
             text: The user's request text
             
         Returns:
-            The identified request type or None if no type is identified
+            The identified request type or None if unknown
         """
         if not text:
             return None
-        
-        text = text.lower().strip()
-        scores = {request_type: 0 for request_type in cls.REQUEST_TYPES}
+            
+        text_lower = text.lower().strip()
         
         # Score each request type based on keyword matches
+        scores = {request_type: 0 for request_type in cls.REQUEST_TYPES}
+        
         for request_type, keywords in cls.KEYWORDS.items():
             for keyword in keywords:
                 keyword_lower = keyword.lower()
-                if keyword_lower in text:
+                if keyword_lower in text_lower:
                     # Give higher score for exact matches or longer phrases
-                    if keyword_lower == text or len(keyword_lower.split()) > 1:
+                    if keyword_lower == text_lower or len(keyword_lower.split()) > 1:
                         scores[request_type] += 2
                     else:
                         scores[request_type] += 1
         
-        # Special handling for status queries
-        if any(q in text for q in ["what", "how", "is", "check"]):
+        # Special handling for device status queries
+        if any(q in text_lower for q in ["what", "how", "is", "check"]):
             # Only increment score if there's device-related context
-            if any(w in text for w in ["device", "speaker", "it", "system"]):
-                if any(w in text for w in ["status", "state", "working", "doing", "condition", "on", "off"]):
+            if any(w in text_lower for w in ["device", "speaker", "it", "system", "my"]):
+                if any(w in text_lower for w in ["status", "state", "working", "doing", "condition", "on", "off"]):
                     scores["device_status"] += 2
-                    scores["device_power"] = 0
+                    scores["device_power"] = 0  # Clear power score for status checks
                 
-                if "is" in text and any(state in text for state in ["on", "off", "turned on", "turned off"]):
+                if "is" in text_lower and any(state in text_lower for state in ["on", "off", "turned on", "turned off"]):
                     scores["device_status"] += 2
-                    scores["device_power"] = 0
+                    scores["device_power"] = 0  # Clear power score for status checks
         
-        # Special handling for song-related queries
-        if "skip" in text:
-            scores["song_changes"] += 2  # Base score for skip command
-            
-            # Check for skip targets
-            skip_targets = ["track", "song", "one", "this", "that", "it"]
-            matching_targets = [target for target in skip_targets if target in text]
-            
-            # Add points for each matching target
-            if matching_targets:
-                scores["song_changes"] += len(matching_targets)
-                
-            # Extra points for complete skip phrases
-            skip_phrases = ["skip this track", "skip this song", "skip this one", "skip that"]
-            if any(phrase in text for phrase in skip_phrases):
-                scores["song_changes"] += 2
-        
-        # Handle negative sentiment about current song
-        negative_phrases = ["don't like", "not like", "hate", "don't want"]
-        if any(phrase in text for phrase in negative_phrases):
-            scores["song_changes"] += 2  # Base score for negative sentiment
-            
-            # Check for song/track references
-            song_targets = ["song", "track", "this", "it"]
-            matching_targets = [target for target in song_targets if target in text]
-            if matching_targets:
-                scores["song_changes"] += len(matching_targets)
-                
-            # Extra points for complete negative phrases
-            if any(f"{phrase} this song" in text or f"{phrase} this track" in text for phrase in negative_phrases):
-                scores["song_changes"] += 2
+        # Special handling for power commands
+        if any(cmd in text_lower for cmd in ["start", "stop", "turn", "switch"]):
+            if any(w in text_lower for w in ["device", "speaker", "it", "system", "my"]):
+                scores["device_power"] += 2
+                # If this is about power, reduce volume score to avoid confusion
+                if "power" in text_lower:
+                    scores["volume_control"] = 0
         
         # Special handling for volume-related queries
-        if "volume" in text:
+        if "volume" in text_lower:
             scores["volume_control"] += 2
-            if any(phrase in text for phrase in ["change volume", "set volume", "adjust volume"]):
-                scores["volume_control"] += 1
+            # If explicitly about changing volume, prioritize over other actions
+            if any(phrase in text_lower for phrase in ["change volume", "set volume", "adjust volume"]):
+                scores["volume_control"] += 2
+                scores["device_power"] = 0  # Clear power score for explicit volume commands
+                scores["song_changes"] = 0  # Clear song score for explicit volume commands
         
-        # Special handling for power-related queries
-        if "power" in text:
-            scores["device_power"] += 2
-            if any(phrase in text for phrase in ["change power", "change the power"]):
-                scores["device_power"] += 1
-                scores["volume_control"] = max(0, scores["volume_control"] - 1)
+        # Special handling for song-related queries
+        if any(word in text_lower for word in ["song", "music", "track"]):
+            scores["song_changes"] += 2
+            # If explicitly about changing songs, prioritize
+            if any(word in text_lower for word in ["next", "previous", "skip", "change", "different", "another"]):
+                scores["song_changes"] += 2
+                scores["volume_control"] = 0  # Clear volume score for explicit song commands
+
+        # Additional song change indicators with more variations
+        if any(phrase in text_lower for phrase in [
+            "different song", "another song", "something else", "change the music",
+            "different music", "another track", "change track", "change song",
+            "switch song", "switch track", "switch music", "change the song",
+            "change the track", "don't like this", "hate this", "not this one"
+        ]):
+            scores["song_changes"] += 3  # Higher score for explicit song change requests
+            
+        # Handle implicit song change requests
+        if any(phrase in text_lower for phrase in [
+            "something different", "play something", "put something else",
+            "change it", "switch it", "skip it", "different one"
+        ]):
+            scores["song_changes"] += 2
         
         # Get the request type with the highest score
         max_score = max(scores.values())
-        if max_score == 0:  # Only require non-zero score
+        if max_score == 0:
             return None
             
         # Get all types with the max score
@@ -174,18 +180,19 @@ class RequestAnalyzer:
         if len(top_types) == 1:
             return top_types[0]
         
-        # If there's a tie, prioritize based on context
-        if any(w in text for w in ["turn", "switch", "power", "start", "stop", "enable", "disable"]) and "device_power" in top_types:
-            return "device_power"
-        if any(w in text for w in ["status", "state", "how is", "is it", "what is"]) and "device_status" in top_types:
-            return "device_status"
-        if any(w in text for w in ["volume", "loud", "quiet", "hear"]) and "volume_control" in top_types:
-            return "volume_control"
-        if any(w in text for w in ["skip", "track", "song", "change", "switch", "don't like", "next", "previous"]) and "song_changes" in top_types:
-            return "song_changes"
+        # If there's a tie, use context to break it
+        if "power" in text_lower:
+            if "device_power" in top_types:
+                return "device_power"
+        elif "volume" in text_lower:
+            if "volume_control" in top_types:
+                return "volume_control"
+        elif any(word in text_lower for word in ["song", "track", "music"]):
+            if "song_changes" in top_types:
+                return "song_changes"
         
-        # Default priority if no context-based decision
-        priority_order = ["device_status", "device_power", "volume_control", "song_changes"]
+        # If still tied, use the priority order
+        priority_order = ["device_power", "volume_control", "song_changes", "device_status"]
         for request_type in priority_order:
             if request_type in top_types:
                 return request_type
@@ -286,10 +293,51 @@ class RequestAnalyzer:
                         }
             
             elif request_type == "song_changes":
-                # Determine if the user wants to play the next or previous song
-                song_action = "next" if any(phrase in text.lower() for phrase in ["next", "skip", "forward"]) else "previous"
-                logger.info(f"Extracted song action: {song_action}")
-                result["context"]["song_action"] = song_action
+                text_lower = text.lower()
+                song_action = None
+                
+                # Check for next/previous commands first (including with "play")
+                if any(phrase in text_lower for phrase in [
+                    "next song", "next track", "skip", "forward",
+                    "play next", "play the next", "play next song",
+                    "play the next song", "skip to next"
+                ]):
+                    song_action = "next"
+                elif any(phrase in text_lower for phrase in [
+                    "previous song", "previous track", "back", "backward",
+                    "play previous", "play the previous", "play previous song",
+                    "play the previous song", "go back"
+                ]):
+                    song_action = "previous"
+                # Check for specific song requests before generic change requests
+                elif any(phrase in text_lower for phrase in ["play", "put on", "switch to"]):
+                    # Find which phrase was used
+                    phrases = ["play", "put on", "switch to"]
+                    used_phrase = next(phrase for phrase in phrases if phrase in text_lower)
+                    phrase_index = text_lower.index(used_phrase)
+                    requested_song = text[phrase_index + len(used_phrase):].strip()
+                    
+                    # Don't treat next/previous commands as song names
+                    if requested_song and not any(word in requested_song.lower() for word in ["next", "previous"]):
+                        if not any(phrase in requested_song.lower() for phrase in ["next song", "previous song"]):
+                            song_action = "specific"
+                            result["context"]["requested_song"] = requested_song
+                # Check for generic change requests
+                elif any(phrase in text_lower for phrase in [
+                    "change", "different", "another", "something else",
+                    "don't like this", "hate this", "not this one",
+                    "play something different", "play another song"
+                ]):
+                    song_action = "next"  # Default to next for generic change requests
+                
+                # Only set song_action if we have a valid action
+                if song_action:
+                    logger.info(f"Extracted song action: {song_action}")
+                    result["context"]["song_action"] = song_action
+                else:
+                    # If we can't determine a valid action, remove the song_changes request type
+                    result["request_type"] = None
+                    result["required_actions"] = []
         else:
             logger.info("No request type identified")
         
