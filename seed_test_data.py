@@ -6,16 +6,20 @@ This script creates test customers with different service levels (basic, premium
 and their associated devices to help with testing the UI and API.
 """
 
+import json
 import boto3
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from boto3.resources.base import ServiceResource
+import logging
 
 # DynamoDB configuration
 REGION = "us-west-2"
 CUSTOMERS_TABLE = "dev-customers"
 SERVICE_LEVELS_TABLE = "dev-service-levels"
+
+logger = logging.getLogger(__name__)
 
 def print_separator():
     """Print a separator line."""
@@ -51,7 +55,7 @@ def list_dynamodb_tables():
         print(f"Error listing DynamoDB tables: {str(e)}")
         return []
 
-def create_test_customer(dynamodb, customer_id: str, name: str, level: str, device_type: str = "speaker") -> Dict[str, Any]:
+def create_test_customer(dynamodb, customer_id: str, name: str, level: str, device_type: str = "speaker") -> Optional[Dict[str, Any]]:
     """
     Create a test customer in DynamoDB.
     
@@ -63,9 +67,9 @@ def create_test_customer(dynamodb, customer_id: str, name: str, level: str, devi
         device_type: Type of device to create for the customer
         
     Returns:
-        The created customer record
+        The created customer record or None if there was an error
     """
-    table = dynamodb.Table(CUSTOMERS_TABLE)
+    table = dynamodb.Table(CUSTOMERS_TABLE)  # type: ignore
     
     # Set capabilities based on service level
     capabilities = ["device_status", "device_power"]  # Basic level capabilities
@@ -76,26 +80,53 @@ def create_test_customer(dynamodb, customer_id: str, name: str, level: str, devi
     if level == 'enterprise':
         capabilities.append("song_changes")
     
+    # Create device object with all necessary fields
+    device = {
+        'id': f"{customer_id}-device-1",
+        'name': f"{name}'s {device_type.title()}",
+        'type': device_type,
+        'power': 'off',  # Initial state is off
+        'status': 'online',  # Initial status is online
+        'lastUpdated': datetime.now().isoformat()
+    }
+    
+    # Add volume and playlist for all audio devices, but control is based on service level
+    if device_type in ['speaker', 'audio']:
+        device['volume'] = str(40)  # Set volume to 40%
+        device['currentSong'] = "Let's Get It Started - The Black Eyed Peas"  # Set default song
+        device['playlist'] = json.dumps([
+            "Let's Get It Started - The Black Eyed Peas",
+            "Imagine - John Lennon",
+            "Don't Stop Believin' - Journey",
+            "Sweet Caroline - Neil Diamond",
+            "I Wanna Dance with Somebody - Whitney Houston",
+            "Walking on Sunshine - Katrina & The Waves",
+            "Happy - Pharrell Williams",
+            "Uptown Funk - Mark Ronson ft. Bruno Mars",
+            "Can't Stop the Feeling! - Justin Timberlake",
+            "Good Vibrations - The Beach Boys",
+            "Three Little Birds - Bob Marley & The Wailers"
+        ])
+        device['currentSongIndex'] = "0"  # Add current song index as string
+    
     # Create customer record
     customer = {
         'id': customer_id,
         'name': name,
         'level': level,
+        'email': f"{name.lower().replace(' ', '.')}@example.com",
         'createdAt': datetime.now().isoformat(),
-        'device': {
-            'id': f"{customer_id}-device-1",
-            'type': device_type,
-            'state': 'off',
-            'location': 'living_room',
-            'capabilities': capabilities
-        }
+        'device': device,
+        'capabilities': capabilities
     }
     
-    # Put the item in the table
-    table.put_item(Item=customer)
-    
-    print(f"✅ Created test customer: {customer_id} ({level})")
-    return customer
+    try:
+        table.put_item(Item=customer)
+        logger.info(f"Created test customer: {customer_id}")
+        return customer
+    except Exception as e:
+        logger.error(f"Error creating test customer: {str(e)}")
+        return None
 
 def delete_test_customer(dynamodb, customer_id):
     """
@@ -166,6 +197,39 @@ def create_test_service_levels(dynamodb) -> None:
         table.put_item(Item=level_data)
         print(f"✅ Created service level: {level_data['name']}")
 
+def create_test_data(dynamodb) -> None:
+    """Create test data in DynamoDB."""
+    # Create test customers with different service levels
+    customers = [
+        {
+            'id': 'cust_basic_001',
+            'name': 'Jake',
+            'level': 'basic',
+            'device_type': 'speaker'
+        },
+        {
+            'id': 'cust_premium_001',
+            'name': 'Mo',
+            'level': 'premium',
+            'device_type': 'speaker'
+        },
+        {
+            'id': 'cust_enterprise_001',
+            'name': 'Tom',
+            'level': 'enterprise',
+            'device_type': 'speaker'
+        }
+    ]
+    
+    for customer in customers:
+        create_test_customer(
+            dynamodb,
+            customer['id'],
+            customer['name'],
+            customer['level'],
+            customer['device_type']
+        )
+
 def main():
     """Run the test data setup process."""
     print("\n🔧 Setting up test data for the Agentic Service Bot...\n")
@@ -216,7 +280,7 @@ def main():
     basic_customer = create_test_customer(
         dynamodb,
         basic_customer_id,
-        "Basic User",
+        "Jake",
         "basic",
         "speaker"
     )
@@ -226,7 +290,7 @@ def main():
     premium_customer = create_test_customer(
         dynamodb,
         premium_customer_id,
-        "Premium User",
+        "Mo",
         "premium",
         "speaker"
     )
@@ -236,7 +300,7 @@ def main():
     enterprise_customer = create_test_customer(
         dynamodb,
         enterprise_customer_id,
-        "Enterprise User",
+        "Sonja",
         "enterprise",
         "speaker"
     )

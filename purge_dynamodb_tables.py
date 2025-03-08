@@ -19,7 +19,6 @@ REGION = "us-west-2"  # Change to your region
 TABLES_TO_PURGE = [
     "dev-customers",
     "dev-messages",
-    "dev-service-levels",
     "dev-connections"
 ]
 

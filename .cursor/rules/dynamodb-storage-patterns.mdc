@@ -14,11 +14,11 @@ This rule provides guidance on best practices for storing and retrieving data in
   "name": "dynamodb_storage_patterns",
   "description": "Best practices for storing and retrieving data in DynamoDB",
   "priority": "high",
-  "version": "1.0",
+  "version": "1.1",
   "filters": [
     {
       "extension": [".py", ".js", ".ts"],
-      "content_patterns": ["dynamodb", "DynamoDB", "put_item", "update_item", "batch_write"]
+      "content_patterns": ["dynamodb", "DynamoDB", "put_item", "update_item", "batch_write", "service_level", "capabilities"]
     }
   ],
   "actions": [
@@ -41,6 +41,16 @@ This rule provides guidance on best practices for storing and retrieving data in
       "pattern": "batch_write_item\\(",
       "suggestion": "Implement retry logic for batch operations and handle partial failures",
       "explanation": "Batch operations can partially succeed, requiring careful error handling"
+    },
+    {
+      "pattern": "device\\s*=\\s*\\{[^}]*\\}",
+      "suggestion": "Ensure device data includes all required fields based on service level",
+      "explanation": "Device data structure should adapt based on the customer's service level"
+    },
+    {
+      "pattern": "capabilities\\s*=\\s*\\[[^\\]]*\\]",
+      "suggestion": "Include service-level-specific capabilities in the correct order",
+      "explanation": "Capabilities should be ordered from basic to advanced (e.g., device_status, device_power, volume_control, song_changes)"
     }
   ]
 }
@@ -239,4 +249,134 @@ def process_message(message_id):
         )
     except dynamodb.exceptions.ConditionalCheckFailedException:
         logger.warning(f"Message {message_id} processed by another instance")
-``` 
+```
+
+### 7. Service-Level-Specific Data Modeling
+
+When storing data that varies based on service levels (e.g., basic, premium, enterprise), follow these guidelines:
+
+#### Base Data Structure
+Always include the base fields that are common across all service levels:
+
+**Good Practice:**
+```python
+def create_device(customer_id: str, device_type: str, service_level: str) -> Dict[str, Any]:
+    # Base device structure - required for all service levels
+    device = {
+        'id': f"{customer_id}-device-1",
+        'type': device_type,
+        'state': 'off',
+        'location': 'living_room',
+        'capabilities': ["device_status", "device_power"]  # Basic capabilities
+    }
+    return device
+```
+
+#### Conditional Fields Based on Service Level
+Add fields conditionally based on service level to avoid unnecessary data:
+
+**Bad Practice:**
+```python
+# Including all fields regardless of service level
+device = {
+    'id': device_id,
+    'type': device_type,
+    'state': 'off',
+    'location': location,
+    'capabilities': capabilities,
+    'volume': 50,  # Not needed for basic level
+    'currentSong': 'No song playing'  # Not needed for basic/premium
+}
+```
+
+**Good Practice:**
+```python
+def create_device_with_capabilities(customer_id: str, device_type: str, service_level: str) -> Dict[str, Any]:
+    # Start with base device structure
+    device = {
+        'id': f"{customer_id}-device-1",
+        'type': device_type,
+        'state': 'off',
+        'location': 'living_room',
+        'capabilities': ["device_status", "device_power"]  # Basic capabilities
+    }
+    
+    # Add premium features
+    if service_level in ['premium', 'enterprise']:
+        device['capabilities'].append("volume_control")
+        device['volume'] = 50  # Default volume level
+    
+    # Add enterprise features
+    if service_level == 'enterprise':
+        device['capabilities'].append("song_changes")
+        device['currentSong'] = 'No song playing'
+    
+    return device
+```
+
+#### Service Level Validation
+Implement validation to ensure data consistency with service levels:
+
+**Good Practice:**
+```python
+def validate_device_data(device: Dict[str, Any], service_level: str) -> bool:
+    """Validate device data matches service level capabilities."""
+    required_fields = {'id', 'type', 'state', 'location', 'capabilities'}
+    
+    # Check base fields
+    if not all(field in device for field in required_fields):
+        return False
+        
+    # Validate capabilities match service level
+    capabilities = device.get('capabilities', [])
+    
+    if service_level == 'basic':
+        allowed_capabilities = {"device_status", "device_power"}
+        if not set(capabilities).issubset(allowed_capabilities):
+            return False
+            
+    elif service_level == 'premium':
+        if 'volume' not in device or 'volume_control' not in capabilities:
+            return False
+            
+    elif service_level == 'enterprise':
+        if ('currentSong' not in device or 
+            'song_changes' not in capabilities or
+            'volume_control' not in capabilities):
+            return False
+            
+    return True
+```
+
+#### Testing Service Level Data
+Include tests for each service level's data structure:
+
+**Good Practice:**
+```python
+def test_device_data_structure():
+    # Test basic level device
+    basic_device = create_device_with_capabilities("cust1", "speaker", "basic")
+    assert "volume" not in basic_device
+    assert "currentSong" not in basic_device
+    assert set(basic_device['capabilities']) == {"device_status", "device_power"}
+    
+    # Test premium level device
+    premium_device = create_device_with_capabilities("cust2", "speaker", "premium")
+    assert "volume" in premium_device
+    assert "currentSong" not in premium_device
+    assert "volume_control" in premium_device['capabilities']
+    
+    # Test enterprise level device
+    enterprise_device = create_device_with_capabilities("cust3", "speaker", "enterprise")
+    assert "volume" in enterprise_device
+    assert "currentSong" in enterprise_device
+    assert "song_changes" in enterprise_device['capabilities']
+```
+
+### Benefits of Service-Level Data Modeling
+
+1. **Data Efficiency**: Only store fields that are relevant to each service level
+2. **Reduced Errors**: Prevent accidental access to features not available at certain service levels
+3. **Clear Capabilities**: Explicit capability lists make it easy to check feature availability
+4. **Upgrade Path**: Clear structure for adding features when customers upgrade
+5. **Consistent Validation**: Easy to validate data against service level requirements 
