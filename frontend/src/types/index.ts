@@ -8,12 +8,12 @@ export interface Message {
 
 export interface Device {
     id: string;
-    name: string;
     type: string;
-    location: string;
-    status: 'online' | 'offline' | 'standby';
     power: string;
-    lastUpdated: string;
+    volume: number;
+    currentSong?: string;
+    status?: string;
+    capabilities?: string[];
 }
 
 export interface Capability {
@@ -23,4 +23,12 @@ export interface Capability {
     category: string;
     serviceTier: 'basic' | 'premium' | 'enterprise';
     available: boolean;
+}
+
+export interface ChatResponse {
+    message: string;
+    timestamp: string;
+    messageId: string;
+    conversationId: string;
+    error?: string;
 } 

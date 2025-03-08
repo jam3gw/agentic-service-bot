@@ -13,7 +13,8 @@ import {
     Select,
     FormControl,
     FormLabel,
-    HStack,
+    VStack,
+    ButtonGroup,
 } from '@chakra-ui/react';
 import MessageList from './MessageList';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -47,10 +48,12 @@ export const Chat: React.FC<ChatProps> = ({ onCustomerChange, onMessageSent }) =
     const bgColor = useColorModeValue('gray.50', 'gray.700');
     const borderColor = useColorModeValue('gray.200', 'gray.600');
 
-    // Scroll to bottom of messages
-    const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    };
+    // Notify parent when customer changes
+    useEffect(() => {
+        if (customerId) {
+            onCustomerChange(customerId);
+        }
+    }, [customerId, onCustomerChange]);
 
     // Handle input change
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -66,11 +69,6 @@ export const Chat: React.FC<ChatProps> = ({ onCustomerChange, onMessageSent }) =
             onMessageSent();
         }
     };
-
-    // Scroll to bottom when messages change
-    useEffect(() => {
-        scrollToBottom();
-    }, [messages]);
 
     // Focus input when component mounts
     useEffect(() => {
@@ -100,23 +98,21 @@ export const Chat: React.FC<ChatProps> = ({ onCustomerChange, onMessageSent }) =
 
     return (
         <ErrorBoundary>
-            <Box
+            <VStack
                 width="100%"
-                height="calc(100vh - 300px)"
-                display="flex"
-                flexDirection="column"
+                height="calc(100vh - 200px)"
+                spacing={4}
+                align="stretch"
             >
-                <HStack mb={4} spacing={4}>
+                {/* Customer Selection Section */}
+                <Box>
                     <FormControl>
                         <FormLabel>Customer</FormLabel>
                         <Select
                             value={customerId}
                             onChange={(e) => {
-                                const newCustomerId = e.target.value;
-                                setCustomerId(newCustomerId);
-                                onCustomerChange(newCustomerId);
+                                setCustomerId(e.target.value);
                             }}
-                            placeholder="Select customer"
                             isDisabled={isLoadingCustomers}
                         >
                             {customers.map(customer => (
@@ -126,56 +122,57 @@ export const Chat: React.FC<ChatProps> = ({ onCustomerChange, onMessageSent }) =
                             ))}
                         </Select>
                     </FormControl>
-
-                    <Button
-                        colorScheme="blue"
-                        onClick={startNewConversation}
-                        isDisabled={!customerId || isLoading}
-                        mt="auto"
-                    >
-                        New Conversation
-                    </Button>
-                </HStack>
-
-                {renderError()}
-
-                <Box
-                    flex="1"
-                    bg={bgColor}
-                    borderRadius="md"
-                    borderWidth="1px"
-                    borderColor={borderColor}
-                    p={4}
-                    mb={4}
-                    overflowY="auto"
-                    minH="0"
-                >
-                    <MessageList messages={messages} />
-                    <div ref={messagesEndRef} />
                 </Box>
 
-                <form onSubmit={handleSubmit}>
-                    <Flex>
-                        <Input
-                            ref={inputRef}
-                            value={input}
-                            onChange={handleInputChange}
-                            placeholder="Type your message..."
-                            mr={2}
-                            isDisabled={isLoading || !customerId}
-                        />
-                        <Button
-                            type="submit"
-                            colorScheme="blue"
-                            isLoading={isLoading}
-                            loadingText="Sending..."
-                            isDisabled={!input.trim() || !customerId}
-                        >
-                            Send
-                        </Button>
-                    </Flex>
-                </form>
-            </Box>
+                {/* Chat Interface Section */}
+                <Box flex="1" display="flex" flexDirection="column">
+                    {renderError()}
+
+                    <Box
+                        flex="1"
+                        bg={bgColor}
+                        p={4}
+                        borderRadius="md"
+                        boxShadow="sm"
+                        borderWidth="1px"
+                        borderColor={borderColor}
+                        overflowY="auto"
+                        mb={4}
+                    >
+                        <MessageList messages={messages} />
+                        <div ref={messagesEndRef} />
+                    </Box>
+
+                    <form onSubmit={handleSubmit}>
+                        <Flex gap={2}>
+                            <Input
+                                ref={inputRef}
+                                value={input}
+                                onChange={handleInputChange}
+                                placeholder="Type your message..."
+                                isDisabled={isLoading || !customerId}
+                            />
+                            <ButtonGroup>
+                                <Button
+                                    type="submit"
+                                    colorScheme="blue"
+                                    isLoading={isLoading}
+                                    isDisabled={!input.trim() || !customerId}
+                                >
+                                    Send
+                                </Button>
+                                <Button
+                                    colorScheme="gray"
+                                    onClick={startNewConversation}
+                                    isDisabled={!customerId || isLoading}
+                                >
+                                    New Conversation
+                                </Button>
+                            </ButtonGroup>
+                        </Flex>
+                    </form>
+                </Box>
+            </VStack>
         </ErrorBoundary>
     );
 }; 

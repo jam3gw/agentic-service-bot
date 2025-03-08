@@ -14,20 +14,13 @@ import {
     useColorModeValue,
     Tag,
     HStack,
-    Switch,
     IconButton,
     Tooltip,
     Alert,
     AlertIcon,
     Flex,
-    Slider,
-    SliderTrack,
-    SliderFilledTrack,
-    SliderThumb,
-    ButtonGroup,
-    Button,
 } from '@chakra-ui/react';
-import { RepeatIcon, ChevronLeftIcon, ChevronRightIcon } from '@chakra-ui/icons';
+import { RepeatIcon } from '@chakra-ui/icons';
 import * as apiService from '../utils/apiService';
 import { Device } from '../types';
 
@@ -38,7 +31,7 @@ interface UserDevicesTableProps {
 
 const UserDevicesTable: React.FC<UserDevicesTableProps> = ({ customerId, lastUpdate }) => {
     const [devices, setDevices] = useState<Device[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
+    const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [lastRefreshed, setLastRefreshed] = useState(new Date());
 
@@ -47,7 +40,10 @@ const UserDevicesTable: React.FC<UserDevicesTableProps> = ({ customerId, lastUpd
 
     // Load devices from API
     const loadDevices = async () => {
-        if (!customerId) return;
+        if (!customerId) {
+            setDevices([]);
+            return;
+        }
 
         setIsLoading(true);
         setError(null);
@@ -58,6 +54,7 @@ const UserDevicesTable: React.FC<UserDevicesTableProps> = ({ customerId, lastUpd
             setLastRefreshed(new Date());
         } catch (err) {
             setError(`Failed to load devices: ${err instanceof Error ? err.message : String(err)}`);
+            setDevices([]);
         } finally {
             setIsLoading(false);
         }
@@ -65,44 +62,14 @@ const UserDevicesTable: React.FC<UserDevicesTableProps> = ({ customerId, lastUpd
 
     // Load devices when customer changes or lastUpdate changes
     useEffect(() => {
-        loadDevices();
+        if (customerId) {
+            loadDevices();
+        }
     }, [customerId, lastUpdate]);
 
     // Refresh devices
     const refreshDevices = () => {
         loadDevices();
-    };
-
-    // Get status badge
-    const getStatusBadge = (status: string) => {
-        switch (status) {
-            case 'online':
-                return <Badge colorScheme="green">Online</Badge>;
-            case 'offline':
-                return <Badge colorScheme="red">Offline</Badge>;
-            case 'standby':
-                return <Badge colorScheme="yellow">Standby</Badge>;
-            default:
-                return <Badge>Unknown</Badge>;
-        }
-    };
-
-    // Toggle device power
-    const toggleDevicePower = async (deviceId: string, currentPower: string) => {
-        try {
-            const newPower = currentPower === 'on' ? 'off' : 'on';
-            await apiService.updateDevicePower(deviceId, newPower, customerId);
-
-            // Update local state
-            setDevices(devices.map(device => {
-                if (device.id === deviceId) {
-                    return { ...device, power: newPower };
-                }
-                return device;
-            }));
-        } catch (err) {
-            setError(`Failed to update device: ${err instanceof Error ? err.message : String(err)}`);
-        }
     };
 
     return (
@@ -162,7 +129,7 @@ const UserDevicesTable: React.FC<UserDevicesTableProps> = ({ customerId, lastUpd
                         </Tr>
                     </Thead>
                     <Tbody>
-                        {devices.map((device) => (
+                        {devices.map(device => (
                             <Tr key={device.id}>
                                 <Td>
                                     <Box>
@@ -174,9 +141,8 @@ const UserDevicesTable: React.FC<UserDevicesTableProps> = ({ customerId, lastUpd
                                                         device.type === 'climate' ? 'blue' :
                                                             device.type === 'audio' ? 'purple' : 'gray'
                                             }>
-                                                {device.type}
+                                                <Text fontSize="md" fontWeight="medium">{device.type}</Text>
                                             </Tag>
-                                            <Text fontSize="xs" color="gray.500">{device.location}</Text>
                                         </HStack>
                                     </Box>
                                 </Td>
@@ -188,14 +154,14 @@ const UserDevicesTable: React.FC<UserDevicesTableProps> = ({ customerId, lastUpd
                                 <Td>
                                     {(device.type === 'audio' || device.type === 'speaker') && (
                                         <Text fontSize="sm">
-                                            {device.volume || 0}%
+                                            {device.power === 'off' ? '0' : device.volume || 0}%
                                         </Text>
                                     )}
                                 </Td>
                                 <Td>
                                     {(device.type === 'audio' || device.type === 'speaker') && (
                                         <Text fontSize="sm" noOfLines={1}>
-                                            {device.currentSong || 'No song playing'}
+                                            {device.power === 'off' ? 'None' : device.currentSong || 'No song playing'}
                                         </Text>
                                     )}
                                 </Td>
