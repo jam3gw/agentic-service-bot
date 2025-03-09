@@ -44,6 +44,66 @@ const InstructionsSection: React.FC = () => {
                     demonstrating the capabilities of autonomous agents in real-world applications.
                 </Text>
 
+                <Box p={4} bg={useColorModeValue('blue.50', 'blue.900')} borderRadius="md">
+                    <VStack align="stretch" spacing={3}>
+                        <Text fontWeight="medium" fontSize="lg">
+                            🎯 What You Can Do:
+                        </Text>
+                        <List spacing={2}>
+                            <ListItem>
+                                <ListIcon as={CheckCircleIcon} color="green.500" />
+                                Control your smart speakers and devices with natural language commands
+                            </ListItem>
+                            <ListItem>
+                                <ListIcon as={CheckCircleIcon} color="green.500" />
+                                Manage device power, volume, and music playback (based on your service tier)
+                            </ListItem>
+                            <ListItem>
+                                <ListIcon as={CheckCircleIcon} color="green.500" />
+                                View real-time device status and current playlists
+                            </ListItem>
+                            <ListItem>
+                                <ListIcon as={CheckCircleIcon} color="green.500" />
+                                Get instant feedback and suggestions for optimal device management
+                            </ListItem>
+                        </List>
+                    </VStack>
+                </Box>
+
+                <Box p={4} bg={useColorModeValue('purple.50', 'purple.900')} borderRadius="md">
+                    <VStack align="stretch" spacing={3}>
+                        <Text fontWeight="medium" fontSize="lg">
+                            🤖 Powered by Advanced AI:
+                        </Text>
+                        <Text>
+                            Our service bot uses Anthropic's Claude AI to understand your requests naturally and provide intelligent responses.
+                            It adapts to your service level, ensures secure operations, and helps you get the most out of your smart home devices.
+                        </Text>
+                    </VStack>
+                </Box>
+
+                <Box p={4} bg={useColorModeValue('green.50', 'green.900')} borderRadius="md">
+                    <VStack align="stretch" spacing={3}>
+                        <Text fontWeight="medium" fontSize="lg">
+                            🚀 Getting Started:
+                        </Text>
+                        <List spacing={2}>
+                            <ListItem>
+                                <ListIcon as={CheckCircleIcon} color="green.500" />
+                                Select a customer profile to explore different service tiers
+                            </ListItem>
+                            <ListItem>
+                                <ListIcon as={CheckCircleIcon} color="green.500" />
+                                Try sending commands in the chat interface below
+                            </ListItem>
+                            <ListItem>
+                                <ListIcon as={CheckCircleIcon} color="green.500" />
+                                Check the Capabilities table to see what's available at your service level
+                            </ListItem>
+                        </List>
+                    </VStack>
+                </Box>
+
                 <Accordion allowMultiple>
                     <AccordionItem>
                         <AccordionButton>
