@@ -15,17 +15,24 @@ logger.setLevel(logging.INFO)
 def convert_decimal_to_float(obj: Any) -> Any:
     """
     Recursively convert Decimal objects to floats in a data structure.
+    Special handling for volume values to keep them as strings.
     
     Args:
         obj: The object to convert
         
     Returns:
-        The object with all Decimal values converted to floats
+        The object with Decimal values converted appropriately
     """
     if isinstance(obj, Decimal):
-        return float(obj)
+        return str(obj)  # Convert all Decimal values to strings for consistency
     elif isinstance(obj, dict):
-        return {k: convert_decimal_to_float(v) for k, v in obj.items()}
+        result = {}
+        for k, v in obj.items():
+            if k == 'currentSongIndex':
+                result[k] = int(float(v)) if isinstance(v, Decimal) else v
+            else:
+                result[k] = convert_decimal_to_float(v)
+        return result
     elif isinstance(obj, list):
         return [convert_decimal_to_float(item) for item in obj]
     return obj

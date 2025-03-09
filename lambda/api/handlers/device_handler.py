@@ -88,8 +88,6 @@ def handle_get_devices(customer_id: str, cors_headers: Dict[str, str]) -> Dict[s
             # Add volume and currentSong for audio devices
             if device.get('type') in ['audio', 'speaker']:
                 enhanced_device['volume'] = device.get('volume', '0')
-                enhanced_device['currentSongIndex'] = device.get('currentSongIndex', 0)
-                enhanced_device['currentSong'] = device.get('currentSong', enhanced_device['playlist'][enhanced_device['currentSongIndex']] if enhanced_device.get('playlist') else 'No song playing')
                 enhanced_device['playlist'] = device.get('playlist', [
                     "Let's Get It Started - The Black Eyed Peas",
                     "Imagine - John Lennon",
@@ -103,6 +101,14 @@ def handle_get_devices(customer_id: str, cors_headers: Dict[str, str]) -> Dict[s
                     "Good Vibrations - The Beach Boys",
                     "Three Little Birds - Bob Marley & The Wailers"
                 ])
+                # Convert Decimal to int for list indexing
+                current_song_index = int(device.get('currentSongIndex', 0))
+                enhanced_device['currentSongIndex'] = current_song_index
+                # Always determine current song from the index
+                if enhanced_device.get('playlist'):
+                    enhanced_device['currentSong'] = enhanced_device['playlist'][current_song_index]
+                else:
+                    enhanced_device['currentSong'] = 'No song playing'
 
             devices.append(enhanced_device)
         
@@ -173,7 +179,8 @@ def handle_update_device(customer_id: str, device_id: str, body: Dict[str, Any],
         # Handle playlist operations
         if 'songAction' in body:
             current_playlist = device.get('playlist', [])
-            current_index = device.get('currentSongIndex', 0)
+            # Convert Decimal to int for list indexing
+            current_index = int(device.get('currentSongIndex', 0))
             
             if not current_playlist:
                 return {
@@ -196,7 +203,7 @@ def handle_update_device(customer_id: str, device_id: str, body: Dict[str, Any],
                 updates['currentSong'] = current_playlist[prev_index]
             elif body['songAction'] == 'specific' and 'songIndex' in body:
                 # Change to specific song by index
-                requested_index = body['songIndex']
+                requested_index = int(body['songIndex'])  # Convert to int in case it's a string
                 if 0 <= requested_index < len(current_playlist):
                     updates['currentSongIndex'] = requested_index
                     updates['currentSong'] = current_playlist[requested_index]

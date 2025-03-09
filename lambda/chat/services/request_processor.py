@@ -363,14 +363,14 @@ def execute_action(action: str, device: Dict[str, Any], context: Dict[str, Any])
             return {"error": error_msg}
         
         # Get current volume as previous volume
-        previous_volume = device.get("volume", 50)  # Default to 50 if not set
+        previous_volume = int(device.get("volume", 50))  # Convert to int, default to 50 if not set
         
         # Determine new volume based on direction and amount or specific level
         if "new" in volume_change:
-            new_volume = volume_change["new"]
+            new_volume = int(volume_change["new"])
         else:
             # Use amount if specified, otherwise default to 10
-            amount = volume_change.get("amount", 10)
+            amount = int(volume_change.get("amount", 10))
             direction = volume_change.get("direction", "up")
             
             if direction == "set":
