@@ -1,46 +1,163 @@
 # API Documentation
 
-This directory contains the API specification for the Agentic Service Bot.
+This document provides the API specification for the Agentic Service Bot.
 
-## API Specification
+## API Endpoints
 
-The `api-specification.yaml` file is an OpenAPI 3.0 specification that documents the contract between the backend and frontend. It defines:
+### Chat API
 
-- Available endpoints
-- Request and response formats
-- Required and optional fields
-- Data types and descriptions
+#### POST /api/chat
+Send a chat message to the bot.
 
-## Field Definitions
+**Request:**
+```typescript
+{
+  customerId: string;  // Required: The ID of the customer sending the message
+  message: string;     // Required: The message text
+}
+```
 
-### Chat Endpoint
+**Response:**
+```typescript
+{
+  message: string;        // The bot's response message
+  timestamp: string;      // ISO 8601 timestamp
+  messageId: string;      // Unique message identifier
+  conversationId: string; // Conversation thread identifier
+}
+```
 
-The `/chat` POST endpoint returns a response with the following fields:
+### Device API
 
-- `message`: The response message from the bot
-- `timestamp`: Unix timestamp when the message was created
-- `messageId`: Unique identifier for the message (legacy field)
-- `id`: Unique identifier for the message
-- `conversationId`: Identifier for the conversation this message belongs to
-- `customerId`: Identifier for the customer who sent the message
+#### GET /api/customers/{customerId}/devices
+Get all devices for a customer.
 
-Note: Both `messageId` and `id` are included for backward compatibility. New implementations should use the `id` field.
+**Response:**
+```typescript
+{
+  devices: Array<{
+    id: string;           // Device identifier
+    name: string;         // Display name
+    type: string;         // Device type (e.g., "speaker")
+    power: string;        // "on" or "off"
+    status: string;       // "online" or "offline"
+    volume?: number;      // 0-100 (for audio devices)
+    currentSong?: string; // Currently playing song
+    playlist?: string[];  // List of songs in playlist
+  }>;
+}
+```
 
-## Using the API Specification
+### Service Level API
 
-This specification can be used to:
+#### GET /api/service/capabilities
+Get available service capabilities.
 
-1. **Generate Client Code**: Use tools like OpenAPI Generator to create client libraries
-2. **Validate API Responses**: Ensure responses conform to the defined schema
-3. **Document API Changes**: Update this specification when making changes to the API
-4. **API Testing**: Use as a reference for writing API tests
+**Response:**
+```typescript
+{
+  capabilities: Array<{
+    id: string;           // Capability identifier
+    name: string;         // Display name
+    description: string;  // Detailed description
+    tiers: {
+      basic: boolean;     // Available in basic tier
+      premium: boolean;   // Available in premium tier
+      enterprise: boolean;// Available in enterprise tier
+    };
+  }>;
+}
+```
 
-## Viewing the API Documentation
+## Service Levels
 
-You can view this documentation using tools like:
+The API enforces the following service level permissions:
 
-- [Swagger UI](https://swagger.io/tools/swagger-ui/)
-- [Redoc](https://github.com/Redocly/redoc)
-- [Stoplight Studio](https://stoplight.io/studio)
+### Basic Level
+- View device status
+- Control device power (on/off)
 
-Simply import the `api-specification.yaml` file into any of these tools to visualize the API documentation. 
+### Premium Level
+- All Basic level capabilities
+- Control device volume
+- View and set device location
+
+### Enterprise Level
+- All Premium level capabilities
+- Control music playback
+- Manage playlists
+
+## Error Handling
+
+All API endpoints follow this error response format:
+
+```typescript
+{
+  error: {
+    code: string;      // Error code
+    message: string;   // Human-readable error message
+    details?: any;     // Additional error details
+  }
+}
+```
+
+Common error codes:
+- `UNAUTHORIZED`: Invalid or missing authentication
+- `FORBIDDEN`: Action not allowed for customer's service level
+- `NOT_FOUND`: Requested resource not found
+- `BAD_REQUEST`: Invalid request parameters
+- `INTERNAL_ERROR`: Server-side error
+
+## Rate Limiting
+
+API endpoints are rate limited to:
+- 10 requests per second per customer
+- 1000 requests per hour per customer
+
+Rate limit headers are included in responses:
+```
+X-RateLimit-Limit: 10
+X-RateLimit-Remaining: 8
+X-RateLimit-Reset: 1234567890
+```
+
+## Data Types
+
+### Customer Service Levels
+```typescript
+type ServiceLevel = 'basic' | 'premium' | 'enterprise';
+```
+
+### Device Types
+```typescript
+type DeviceType = 'speaker' | 'audio';
+```
+
+### Device Status
+```typescript
+type DeviceStatus = 'online' | 'offline';
+```
+
+### Power State
+```typescript
+type PowerState = 'on' | 'off';
+```
+
+## Testing
+
+Use the provided test data generation script to create test customers:
+
+```bash
+python seed_test_data.py
+```
+
+This will create test customers with different service levels for API testing.
+
+## Versioning
+
+The current API version is v1. The version is included in the response headers:
+```
+X-API-Version: 1.0
+```
+
+Future versions will be available at `/api/v2/`, etc. 
