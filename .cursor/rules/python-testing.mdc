@@ -174,6 +174,139 @@ actions:
       
       19. Aim for high test coverage of critical paths, not 100% coverage
 
+      20. **State Management Best Practices**
+         - Always ensure tests start and end in a known state
+         - Use `try`/`finally` blocks to restore original states
+         - Include multiple verification steps after state changes
+         - Allow sufficient time for state changes to propagate
+         - Document expected state transitions
+         - Verify state through multiple channels (e.g., DynamoDB and API)
+
+      21. **Error Handling and Debugging**
+         - Handle known issues gracefully (e.g., 502 Bad Gateway errors)
+         - Use `pytest.skip()` for known transient issues
+         - Include descriptive error messages in assertions
+         - Log extensively for debugging purposes
+         - Implement multiple cleanup strategies as fallbacks
+         - Log cleanup failures without failing tests
+
+      22. **Type Safety with DynamoDB**
+         - Use TypedDict for better type safety
+         - Be cautious with dictionary access (use `.get()` with defaults)
+         - Consider all possible types DynamoDB might return
+         - Handle Decimal types appropriately
+         - Use proper type casting for numeric values
+         - Implement type-safe helper functions for common operations
+
+      23. **Test Structure and Organization**
+         - Break down complex tests into smaller, focused functions
+         - Use helper functions for common verification tasks
+         - Include comprehensive docstrings
+         - Structure tests in a logical flow (setup → test → verify → cleanup)
+         - Keep test files organized and maintainable
+         - Use constants for common values
+
+      24. **Logging Best Practices**
+         - Include detailed logging at each step
+         - Log both requests and responses
+         - Use descriptive log messages that help with debugging
+         - Include relevant context in log messages
+         - Use appropriate log levels (INFO, WARNING, ERROR)
+         - Add timestamps to important operations
+
+      25. **Development Workflow**
+         - Ignore linter warnings during initial development
+         - Focus on getting the test logic right first
+         - Address linter warnings in a separate pass
+         - Document known linter issues that can be safely ignored
+         - Use type: ignore comments judiciously
+         - Keep a list of technical debt items to address later
+
+      ### Example of State Management:
+      ```python
+      def test_service_level_permissions(test_data: Dict[str, str]) -> None:
+          """Test service level permissions through the chat API."""
+          customer_id = test_data['customer_id']
+          dynamodb = boto3.resource('dynamodb', region_name=REGION)
+          table = dynamodb.Table(CUSTOMERS_TABLE)
+          
+          # Store initial state
+          initial_state = None
+          try:
+              response = table.get_item(Key={'id': customer_id})
+              initial_state = response.get('Item', {}).get('level')
+              
+              # Set to premium for test
+              table.update_item(
+                  Key={'id': customer_id},
+                  UpdateExpression="SET #lvl = :val",
+                  ExpressionAttributeNames={'#lvl': 'level'},
+                  ExpressionAttributeValues={':val': 'premium'}
+              )
+              
+              # Test premium features
+              # ... test code ...
+              
+          finally:
+              # Restore initial state
+              if initial_state:
+                  try:
+                      table.update_item(
+                          Key={'id': customer_id},
+                          UpdateExpression="SET #lvl = :val",
+                          ExpressionAttributeNames={'#lvl': 'level'},
+                          ExpressionAttributeValues={':val': initial_state}
+                      )
+                  except Exception as e:
+                      logging.error(f"Failed to restore initial state: {e}")
+      ```
+
+      ### Example of Type-Safe DynamoDB Access:
+      ```python
+      from typing import TypedDict, Optional
+
+      class DeviceState(TypedDict):
+          id: str
+          power: str
+          volume: int
+          type: str
+          location: str
+
+      def get_device_state(table: Table, customer_id: str) -> Optional[DeviceState]:
+          """Get device state with type safety."""
+          try:
+              response = table.get_item(Key={'id': customer_id})
+              if 'Item' not in response:
+                  return None
+                  
+              device = response['Item'].get('device', {})
+              return DeviceState(
+                  id=str(device.get('id', '')),
+                  power=str(device.get('power', 'off')),
+                  volume=int(float(device.get('volume', 0))),
+                  type=str(device.get('type', '')),
+                  location=str(device.get('location', ''))
+              )
+          except Exception as e:
+              logging.error(f"Error getting device state: {e}")
+              return None
+      ```
+
+      ### Example of Development Workflow with Linter Warnings:
+      ```python
+      # During development, use type: ignore for known issues
+      def verify_device_state(response: Dict[str, Any]) -> None:
+          # type: ignore  # Known issue with DynamoDB types
+          device = response['Item'].get('device', {})
+          
+          # TODO: Fix type issues in cleanup phase
+          assert device.get('power') == 'on'  # type: ignore
+          
+          # Document why we're ignoring the warning
+          # type: ignore  # DynamoDB returns Decimal, but we know it's safe to compare
+          assert int(device.get('volume')) <= 100
+      ```
+
       ### Example of API URL Construction:
       ```python
       # Define the base URL with clear documentation
