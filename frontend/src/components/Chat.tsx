@@ -41,12 +41,19 @@ export const Chat: React.FC<ChatProps> = ({ onCustomerChange, onMessageSent }) =
         clearError
     } = useChat();
 
-    const messagesEndRef = useRef<HTMLDivElement>(null);
+    const chatBoxRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
     // Colors
     const bgColor = useColorModeValue('gray.50', 'gray.700');
     const borderColor = useColorModeValue('gray.200', 'gray.600');
+
+    // Auto-scroll to bottom when messages change
+    useEffect(() => {
+        if (chatBoxRef.current) {
+            chatBoxRef.current.scrollTop = chatBoxRef.current.scrollHeight;
+        }
+    }, [messages]);
 
     // Notify parent when customer changes
     useEffect(() => {
@@ -129,6 +136,7 @@ export const Chat: React.FC<ChatProps> = ({ onCustomerChange, onMessageSent }) =
                     {renderError()}
 
                     <Box
+                        ref={chatBoxRef}
                         flex="1"
                         bg={bgColor}
                         p={4}
@@ -138,9 +146,22 @@ export const Chat: React.FC<ChatProps> = ({ onCustomerChange, onMessageSent }) =
                         borderColor={borderColor}
                         overflowY="auto"
                         mb={4}
+                        maxH="calc(100vh - 400px)"
+                        minH="400px"
+                        sx={{
+                            '&::-webkit-scrollbar': {
+                                width: '4px',
+                            },
+                            '&::-webkit-scrollbar-track': {
+                                width: '6px',
+                            },
+                            '&::-webkit-scrollbar-thumb': {
+                                background: 'gray.300',
+                                borderRadius: '24px',
+                            },
+                        }}
                     >
                         <MessageList messages={messages} />
-                        <div ref={messagesEndRef} />
                     </Box>
 
                     <form onSubmit={handleSubmit}>

@@ -16,7 +16,7 @@ import {
     Spinner,
 } from '@chakra-ui/react';
 import * as apiService from '../utils/apiService';
-import { Capability, Customer } from '../types';
+import { Capability } from '../types';
 
 interface CapabilitiesTableProps {
     customerId?: string;  // Make customerId optional
@@ -27,7 +27,6 @@ const CapabilitiesTable: React.FC<CapabilitiesTableProps> = ({ customerId }) => 
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [customerLevel, setCustomerLevel] = useState<'basic' | 'premium' | 'enterprise'>('basic');
-    const [selectedCustomerId, setSelectedCustomerId] = useState<string | undefined>(customerId);
 
     // Colors
     const bgColor = useColorModeValue('white', 'gray.800');
@@ -36,6 +35,10 @@ const CapabilitiesTable: React.FC<CapabilitiesTableProps> = ({ customerId }) => 
     // Load capabilities from API
     useEffect(() => {
         const loadCapabilities = async () => {
+            if (!customerId) {
+                return;
+            }
+
             setIsLoading(true);
             setError(null);
 
@@ -44,23 +47,14 @@ const CapabilitiesTable: React.FC<CapabilitiesTableProps> = ({ customerId }) => 
                 const fetchedCapabilities = await apiService.fetchServiceCapabilities();
                 setCapabilities(fetchedCapabilities);
 
-                // Fetch customers and use first one if no customerId provided
+                // Fetch customers to get the current customer's level
                 const customers = await apiService.fetchCustomers();
-                let targetCustomer: Customer | undefined;
-
-                if (selectedCustomerId) {
-                    targetCustomer = customers.find(c => c.id === selectedCustomerId);
-                }
-
-                if (!targetCustomer && customers.length > 0) {
-                    targetCustomer = customers[0];
-                    setSelectedCustomerId(targetCustomer.id);
-                }
+                const targetCustomer = customers.find(c => c.id === customerId);
 
                 if (targetCustomer) {
                     setCustomerLevel(targetCustomer.level as 'basic' | 'premium' | 'enterprise');
                 } else {
-                    setError('No customers found');
+                    setError('Customer not found');
                 }
             } catch (err) {
                 setError(`Failed to load capabilities: ${err instanceof Error ? err.message : String(err)}`);
@@ -70,7 +64,7 @@ const CapabilitiesTable: React.FC<CapabilitiesTableProps> = ({ customerId }) => 
         };
 
         loadCapabilities();
-    }, [selectedCustomerId]);
+    }, [customerId]);  // Only depend on customerId prop
 
     if (isLoading) {
         return (

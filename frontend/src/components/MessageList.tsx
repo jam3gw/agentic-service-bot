@@ -22,13 +22,10 @@ const MessageList: React.FC<MessageListProps> = ({ messages }) => {
 
     return (
         <Box
-            height="100%"
             width="100%"
-            overflowY="auto"
             display="flex"
             flexDirection="column"
             gap={2}
-            p={2}
         >
             {messages.map((message) => (
                 <MessageItem key={message.id} message={message} />
@@ -55,6 +52,7 @@ const MessageItem: React.FC<MessageItemProps> = React.memo(({ message }) => {
             align="start"
             maxW="100%"
             mb={2}
+            flexShrink={0}
         >
             <Avatar
                 size="sm"
@@ -63,6 +61,7 @@ const MessageItem: React.FC<MessageItemProps> = React.memo(({ message }) => {
                 bg={isBot ? 'blue.500' : 'gray.500'}
                 mr={isBot ? 2 : 0}
                 ml={isBot ? 0 : 2}
+                flexShrink={0}
             />
             <Box
                 bg={bgColor}
@@ -72,6 +71,7 @@ const MessageItem: React.FC<MessageItemProps> = React.memo(({ message }) => {
                 borderRadius="lg"
                 maxW="80%"
                 position="relative"
+                wordBreak="break-word"
             >
                 <Text fontSize="md" whiteSpace="pre-wrap">
                     {message.text}
