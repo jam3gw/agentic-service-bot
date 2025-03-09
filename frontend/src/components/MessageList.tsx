@@ -56,8 +56,7 @@ const MessageItem: React.FC<MessageItemProps> = React.memo(({ message }) => {
         >
             <Avatar
                 size="sm"
-                name={isBot ? 'Bot' : 'User'}
-                src={isBot ? '/bot-avatar.png' : undefined}
+                name={isBot ? 'Service Bot' : 'User'}
                 bg={isBot ? 'blue.500' : 'gray.500'}
                 mr={isBot ? 2 : 0}
                 ml={isBot ? 0 : 2}
