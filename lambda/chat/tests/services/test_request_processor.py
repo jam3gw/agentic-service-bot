@@ -1675,5 +1675,315 @@ class TestRequestProcessor(unittest.TestCase):
             self.assertIn(case["requested_song"], result.get("message", ""),
                          f"Response should mention the requested song: {case['requested_song']}")
 
+    @patch('services.request_processor.get_customer')
+    @patch('services.request_processor.get_service_level_permissions')
+    @patch('services.request_processor.analyze_request')
+    @patch('services.request_processor.execute_action')
+    @patch('services.request_processor.store_message')
+    def test_process_request_volume_control_set_direction(self, mock_store_message, 
+                                                        mock_execute_action, mock_analyze, 
+                                                        mock_get_permissions, mock_get_customer):
+        """Test processing a request to set volume to a specific level using 'set' direction."""
+        # Setup mocks
+        mock_customer = MagicMock()
+        mock_customer.id = "test-customer"
+        mock_customer.service_level = "premium"
+        mock_customer.get_device.return_value = {
+            "id": "device-1", 
+            "type": "speaker", 
+            "power": "on",
+            "location": "living room",
+            "volume": 50
+        }
+        mock_get_customer.return_value = mock_customer
+        
+        mock_get_permissions.return_value = {
+            "allowed_actions": ["device_status", "device_power", "volume_control"],
+            "max_devices": 1,
+            "support_priority": "priority"
+        }
+        
+        # Test setting volume to specific level
+        mock_analyze.return_value = {
+            "primary_action": "volume_control",
+            "all_actions": ["volume_control"],
+            "context": {
+                "volume_change": {
+                    "new": 80,
+                    "previous": 50
+                }
+            }
+        }
+        
+        mock_execute_action.return_value = {
+            "action_executed": True,
+            "volume_change": {
+                "previous": 50,
+                "new": 80
+            }
+        }
+        
+        result = process_request("test-customer", {
+            "message": "Set the volume to 80",
+            "metadata": {"conversation_id": "test-conv-123"}
+        })
+        
+        # Verify the result
+        self.assertTrue(result.get("action_executed", False), 
+                       "Action should be executed for premium service level")
+        self.assertIn("volume", result.get("message", "").lower(),
+                     "Response should mention volume change")
+        self.assertIn(str(80), result.get("message", ""),
+                     "Response should mention the new volume level")
+        
+        # Verify execute_action was called correctly
+        mock_execute_action.assert_called_once()
+        action, device, context = mock_execute_action.call_args[0]
+        self.assertEqual(action, "volume_control")
+        self.assertEqual(context["volume_change"]["new"], 80)
+        self.assertEqual(context["volume_change"]["previous"], 50)
+
+    @patch('services.request_processor.get_customer')
+    @patch('services.request_processor.get_service_level_permissions')
+    @patch('services.request_processor.analyze_request')
+    @patch('services.request_processor.execute_action')
+    @patch('services.request_processor.store_message')
+    def test_process_request_volume_control_powered_off(self, mock_store_message, 
+                                                      mock_execute_action, mock_analyze, 
+                                                      mock_get_permissions, mock_get_customer):
+        """Test that volume control requests are rejected when device is powered off."""
+        # Setup mocks
+        mock_customer = MagicMock()
+        mock_customer.id = "test-customer"
+        mock_customer.service_level = "premium"
+        mock_customer.get_device.return_value = {
+            "id": "device-1", 
+            "type": "speaker", 
+            "power": "off",  # Device is powered off
+            "location": "living room",
+            "volume": 50
+        }
+        mock_get_customer.return_value = mock_customer
+        
+        mock_get_permissions.return_value = {
+            "allowed_actions": ["device_status", "device_power", "volume_control"],
+            "max_devices": 1,
+            "support_priority": "priority"
+        }
+        
+        # Test cases for different volume control requests
+        test_cases = [
+            {
+                "message": "Set the volume to 80",
+                "analysis": {
+                    "primary_action": "volume_control",
+                    "all_actions": ["volume_control"],
+                    "context": {
+                        "volume_change": {
+                            "direction": "set",
+                            "amount": 80
+                        }
+                    }
+                }
+            },
+            {
+                "message": "Turn up the volume",
+                "analysis": {
+                    "primary_action": "volume_control",
+                    "all_actions": ["volume_control"],
+                    "context": {
+                        "volume_change": {
+                            "direction": "up",
+                            "amount": 10
+                        }
+                    }
+                }
+            },
+            {
+                "message": "Lower the volume by 20",
+                "analysis": {
+                    "primary_action": "volume_control",
+                    "all_actions": ["volume_control"],
+                    "context": {
+                        "volume_change": {
+                            "direction": "down",
+                            "amount": 20
+                        }
+                    }
+                }
+            }
+        ]
+        
+        for case in test_cases:
+            with self.subTest(message=case["message"]):
+                mock_analyze.return_value = case["analysis"]
+                
+                mock_execute_action.return_value = {
+                    "error": "Cannot change volume when device is powered off"
+                }
+                
+                result = process_request("test-customer", {
+                    "message": case["message"],
+                    "metadata": {"conversation_id": "test-conv-123"}
+                })
+                
+                # Verify the result
+                self.assertFalse(result.get("action_executed", True), 
+                                "Action should not be executed when device is off")
+                self.assertIn("powered off", result.get("message", "").lower(),
+                            "Response should mention device is powered off")
+                self.assertIn("volume", result.get("message", "").lower(),
+                            "Response should mention volume")
+                
+                # Verify execute_action was called correctly
+                mock_execute_action.assert_called_once()
+                mock_execute_action.reset_mock()
+
+    @patch('services.request_processor.get_customer')
+    @patch('services.request_processor.get_service_level_permissions')
+    @patch('services.request_processor.analyze_request')
+    @patch('services.request_processor.execute_action')
+    @patch('services.request_processor.store_message')
+    def test_process_request_volume_control_edge_cases(self, mock_store_message, 
+                                                     mock_execute_action, mock_analyze, 
+                                                     mock_get_permissions, mock_get_customer):
+        """Test volume control edge cases like invalid directions, missing amounts, etc."""
+        # Setup mocks
+        mock_customer = MagicMock()
+        mock_customer.id = "test-customer"
+        mock_customer.service_level = "premium"
+        mock_customer.get_device.return_value = {
+            "id": "device-1", 
+            "type": "speaker", 
+            "power": "on",
+            "location": "living room",
+            "volume": 50
+        }
+        mock_get_customer.return_value = mock_customer
+        
+        mock_get_permissions.return_value = {
+            "allowed_actions": ["device_status", "device_power", "volume_control"],
+            "max_devices": 1,
+            "support_priority": "priority"
+        }
+        
+        # Test cases for different edge cases
+        test_cases = [
+            {
+                "name": "missing_direction",
+                "message": "Change the volume",
+                "analysis": {
+                    "primary_action": "volume_control",
+                    "all_actions": ["volume_control"],
+                    "context": {
+                        "volume_change": {
+                            "amount": 10
+                        }
+                    }
+                },
+                "expected_volume": 60  # Default to up direction
+            },
+            {
+                "name": "missing_amount",
+                "message": "Turn up the volume",
+                "analysis": {
+                    "primary_action": "volume_control",
+                    "all_actions": ["volume_control"],
+                    "context": {
+                        "volume_change": {
+                            "direction": "up"
+                        }
+                    }
+                },
+                "expected_volume": 60  # Default increment of 10
+            },
+            {
+                "name": "invalid_direction",
+                "message": "Move the volume sideways",
+                "analysis": {
+                    "primary_action": "volume_control",
+                    "all_actions": ["volume_control"],
+                    "context": {
+                        "volume_change": {
+                            "direction": "sideways",
+                            "amount": 10
+                        }
+                    }
+                },
+                "expected_volume": 60  # Default to up direction
+            },
+            {
+                "name": "negative_amount",
+                "message": "Set the volume to -20",
+                "analysis": {
+                    "primary_action": "volume_control",
+                    "all_actions": ["volume_control"],
+                    "context": {
+                        "volume_change": {
+                            "direction": "set",
+                            "amount": -20
+                        }
+                    }
+                },
+                "expected_volume": 0  # Should be clamped to 0
+            },
+            {
+                "name": "amount_over_100",
+                "message": "Set the volume to 150",
+                "analysis": {
+                    "primary_action": "volume_control",
+                    "all_actions": ["volume_control"],
+                    "context": {
+                        "volume_change": {
+                            "direction": "set",
+                            "amount": 150
+                        }
+                    }
+                },
+                "expected_volume": 100  # Should be clamped to 100
+            }
+        ]
+        
+        for case in test_cases:
+            with self.subTest(name=case["name"]):
+                mock_analyze.return_value = case["analysis"]
+                
+                mock_execute_action.return_value = {
+                    "action_executed": True,
+                    "volume_change": {
+                        "previous": 50,
+                        "new": case["expected_volume"]
+                    }
+                }
+                
+                result = process_request("test-customer", {
+                    "message": case["message"],
+                    "metadata": {"conversation_id": "test-conv-123"}
+                })
+                
+                # Verify the result
+                self.assertTrue(result.get("action_executed", False), 
+                              f"Action should be executed for case: {case['name']}")
+                self.assertIn("volume", result.get("message", "").lower(),
+                            f"Response should mention volume for case: {case['name']}")
+                self.assertIn(str(case["expected_volume"]), result.get("message", ""),
+                            f"Response should mention the expected volume for case: {case['expected_volume']}")
+                
+                # Verify execute_action was called correctly
+                mock_execute_action.assert_called_once()
+                action, device, context = mock_execute_action.call_args[0]
+                self.assertEqual(action, "volume_control")
+                
+                # Verify volume is within bounds
+                volume_change = context.get("volume_change", {})
+                if "new" in volume_change:
+                    self.assertGreaterEqual(volume_change["new"], 0)
+                    self.assertLessEqual(volume_change["new"], 100)
+                elif "amount" in volume_change:
+                    self.assertGreaterEqual(case["expected_volume"], 0)
+                    self.assertLessEqual(case["expected_volume"], 100)
+                
+                mock_execute_action.reset_mock()
+
 if __name__ == "__main__":
     unittest.main() 
