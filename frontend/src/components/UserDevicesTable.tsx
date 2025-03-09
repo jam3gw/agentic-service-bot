@@ -83,7 +83,7 @@ const UserDevicesTable: React.FC<UserDevicesTableProps> = ({ customerId, lastUpd
             borderWidth="1px"
             borderColor={borderColor}
             mb={4}
-            maxH="400px"
+            maxH="800px"
             overflowY="auto"
         >
             <HStack justifyContent="space-between" mb={3}>
