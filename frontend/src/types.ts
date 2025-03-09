@@ -23,6 +23,8 @@ export interface Device {
     power?: string;
     volume?: string;
     currentSong?: string;
+    currentSongIndex?: number;
+    playlist?: string[];
 }
 
 // Capability type for service level capabilities
