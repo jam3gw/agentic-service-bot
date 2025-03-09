@@ -25,9 +25,12 @@ parent_dir = os.path.dirname(current_dir)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-# Configure logging
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+# Configure logging with more detailed format
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Local application imports
 from models.customer import Customer
@@ -293,25 +296,30 @@ def update_device_state(customer_id: str, device_id: str, state_updates: Dict[st
         True if successful, False otherwise
     """
     try:
+        logger.info(f"[DYNAMO_UPDATE] Starting update for device {device_id} with updates: {state_updates}")
+        
         # Convert any float values to Decimal for DynamoDB
         state_updates = convert_float_to_decimal(state_updates)
+        logger.debug(f"[DYNAMO_UPDATE] Converted updates: {state_updates}")
         
         # Get the customer to find the device
+        logger.info(f"[DYNAMO_UPDATE] Fetching customer {customer_id}")
         response = customers_table.get_item(Key={'id': customer_id})
         if 'Item' not in response:
-            logger.error(f"Customer {customer_id} not found")
+            logger.error(f"[DYNAMO_UPDATE] Customer {customer_id} not found")
             return False
             
         customer_data = response['Item']
         device = customer_data.get('device', {})
+        logger.info(f"[DYNAMO_UPDATE] Current device state: {device}")
         
         if not device:
-            logger.error(f"No device found for customer {customer_id}")
+            logger.error(f"[DYNAMO_UPDATE] No device found for customer {customer_id}")
             return False
             
         # Verify it's the correct device
         if device.get('id') != device_id:
-            logger.error(f"Device {device_id} does not match customer's device {device.get('id')}")
+            logger.error(f"[DYNAMO_UPDATE] Device ID mismatch: expected {device_id}, found {device.get('id')}")
             return False
             
         # Create update expression for each attribute
@@ -320,20 +328,18 @@ def update_device_state(customer_id: str, device_id: str, state_updates: Dict[st
         expression_attribute_names = {}
         
         for key, value in state_updates.items():
-            # For 'state' updates, map to 'power' in the database
-            if key == 'state':
-                update_key = 'power'
-            else:
-                update_key = key
-            
             # Use expression attribute names to avoid reserved words
-            attr_name = f"#attr_{update_key}"
-            expression_attribute_names[attr_name] = update_key
+            attr_name = f"#attr_{key}"
+            expression_attribute_names[attr_name] = key
             
             update_expression_parts.append(f"device.{attr_name} = :val_{key}")
             expression_attribute_values[f":val_{key}"] = value
         
         update_expression = "SET " + ", ".join(update_expression_parts)
+        
+        logger.info(f"[DYNAMO_UPDATE] Update expression: {update_expression}")
+        logger.info(f"[DYNAMO_UPDATE] Expression attribute names: {expression_attribute_names}")
+        logger.info(f"[DYNAMO_UPDATE] Expression attribute values: {expression_attribute_values}")
         
         # Update the device in DynamoDB
         update_response = customers_table.update_item(
@@ -344,12 +350,17 @@ def update_device_state(customer_id: str, device_id: str, state_updates: Dict[st
             ReturnValues='UPDATED_NEW'
         )
         
-        logger.info(f"Updated device {device_id} for customer {customer_id}: {state_updates}")
-        logger.debug(f"Update response: {update_response}")
+        logger.info(f"[DYNAMO_UPDATE] Update response: {update_response}")
         
-        return update_response['ResponseMetadata']['HTTPStatusCode'] == 200
+        if update_response['ResponseMetadata']['HTTPStatusCode'] == 200:
+            logger.info(f"[DYNAMO_UPDATE] Successfully updated device {device_id} for customer {customer_id}: {state_updates}")
+            return True
+        else:
+            logger.error(f"[DYNAMO_UPDATE] Update failed with status code: {update_response['ResponseMetadata']['HTTPStatusCode']}")
+            return False
+            
     except Exception as e:
-        logger.error(f"Error updating device state: {str(e)}")
+        logger.error(f"[DYNAMO_UPDATE] Error updating device state: {str(e)}", exc_info=True)
         return False
 
 def save_message(message: Message) -> bool:

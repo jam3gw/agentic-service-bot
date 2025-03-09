@@ -74,15 +74,17 @@ except ImportError:
 
 def analyze_request(user_input: str) -> Dict[str, Any]:
     """
-    Use Claude to analyze a user request and determine which action(s) it maps to.
+    Use Claude to analyze a user request in two stages:
+    1. Identify the high-level request type
+    2. Extract detailed context based on the identified type
     
     Args:
         user_input: The user's request text
         
     Returns:
         A dictionary containing the analysis results, including:
-        - request_type: The primary action the request maps to, or None
-        - required_actions: List of all actions required to fulfill the request
+        - primary_action: The primary action the request maps to, or None
+        - all_actions: List of all actions required to fulfill the request
         - context: Additional context extracted from the request
         - ambiguous: Boolean indicating if the request could map to multiple actions
         - out_of_scope: Boolean indicating if the request doesn't map to any actions
@@ -90,23 +92,34 @@ def analyze_request(user_input: str) -> Dict[str, Any]:
     logger.info("=" * 80)
     logger.info(f"Starting request analysis for input: {user_input}")
     
-    system_prompt = """You are an AI assistant analyzing user requests for a smart home device system.
+    # Stage 1: Identify request type
+    stage1_prompt = """You are an AI assistant analyzing user requests for a smart home device system.
     
 AVAILABLE ACTIONS:
 - device_status: Check if devices are online/offline and view basic status info
 - device_power: Turn devices on/off
 - volume_control: Adjust device volume up/down
-- song_changes: Change songs (next, previous, or random)
+- song_changes: Change songs (next, previous, or specific song)
 
 YOUR TASK:
-Analyze the user's request and determine which action(s) it maps to. If it maps to multiple actions, list them in order of execution. If it doesn't map to any action, indicate that it's out of scope.
+Analyze the user's request and determine which action(s) it maps to. Focus ONLY on identifying the correct action type.
+If it maps to multiple actions, list them in order of execution.
+If it doesn't map to any action, indicate that it's out of scope.
+
+AMBIGUITY GUIDELINES:
+1. A request is ambiguous ONLY if:
+   - It explicitly mentions multiple distinct actions (e.g., "turn up volume and play next song")
+   - The intent is genuinely unclear between multiple possible actions
+2. A request is NOT ambiguous if:
+   - It uses different words/phrases for the same action (e.g., "skip this song" = "play next song")
+   - It provides additional context that doesn't change the action (e.g., "I don't like this song" = "play next song")
+   - It uses informal or colloquial language that maps to a clear action
 
 RESPONSE FORMAT:
 You must respond with a valid JSON object containing:
 {
   "primary_action": "string or null",
   "all_actions": ["array of strings"],
-  "context": {"object with details"},
   "ambiguous": "boolean",
   "out_of_scope": "boolean"
 }
@@ -116,43 +129,30 @@ User: "Turn on my speaker"
 {
   "primary_action": "device_power",
   "all_actions": ["device_power"],
-  "context": {"power_state": "on"},
   "ambiguous": false,
   "out_of_scope": false
 }
 
-User: "Next song"
+User: "Turn up the volume and play next song"
+{
+  "primary_action": "volume_control",
+  "all_actions": ["volume_control", "song_changes"],
+  "ambiguous": true,
+  "out_of_scope": false
+}
+
+User: "Set the volume to 80%"
+{
+  "primary_action": "volume_control",
+  "all_actions": ["volume_control"],
+  "ambiguous": false,
+  "out_of_scope": false
+}
+
+User: "I don't like this song"
 {
   "primary_action": "song_changes",
   "all_actions": ["song_changes"],
-  "context": {"song_action": "next"},
-  "ambiguous": false,
-  "out_of_scope": false
-}
-
-User: "Turn up the volume"
-{
-  "primary_action": "volume_control",
-  "all_actions": ["volume_control"],
-  "context": {
-    "volume_change": {
-      "direction": "up",
-      "amount": 10
-    }
-  },
-  "ambiguous": false,
-  "out_of_scope": false
-}
-
-User: "Set the volume to 60%"
-{
-  "primary_action": "volume_control",
-  "all_actions": ["volume_control"],
-  "context": {
-    "volume_change": {
-      "new": 60
-    }
-  },
   "ambiguous": false,
   "out_of_scope": false
 }
@@ -161,120 +161,324 @@ User: "What's the weather like today?"
 {
   "primary_action": null,
   "all_actions": [],
-  "context": {},
   "ambiguous": false,
   "out_of_scope": true
 }
 
-IMPORTANT: Your response must be a valid JSON object. Do not include any explanatory text before or after the JSON."""
+User: "Play Let's Get It Started"
+{
+  "primary_action": "song_changes",
+  "all_actions": ["song_changes"],
+  "ambiguous": false,
+  "out_of_scope": false
+}
 
-    logger.info("System Prompt:")
-    logger.info("-" * 40)
-    logger.info(system_prompt)
-    logger.info("-" * 40)
-    
+User: "Play the next song"
+{
+  "primary_action": "song_changes",
+  "all_actions": ["song_changes"],
+  "ambiguous": false,
+  "out_of_scope": false
+}
+
+User: "Play next"
+{
+  "primary_action": "song_changes",
+  "all_actions": ["song_changes"],
+  "ambiguous": false,
+  "out_of_scope": false
+}
+
+IMPORTANT: Your response must be a valid JSON object. Do not include any explanatory text."""
+
     # If Anthropic client is not available, return a mock response
     if not anthropic_client:
         logger.info("Using mock response for local development")
-        
-        # Check if this is a device status query
-        if "status" in user_input.lower():
-            mock_response = "Your speaker is currently on and the volume is set to 60%."
-        else:
-            mock_response = f"This is a mock response for local development. Your prompt was: '{user_input}'"
-            
-        logger.info(f"Mock Response: {mock_response}")
-        return mock_response
-    
+        return _generate_mock_response(user_input)
+
     try:
-        logger.info("Sending request to Anthropic API...")
-        message = anthropic_client.messages.create(
+        # Stage 1: Get high-level request type
+        logger.info("Stage 1: Identifying request type...")
+        stage1_message = anthropic_client.messages.create(
             model=ANTHROPIC_MODEL,
-            system=system_prompt,
-            messages=[
-                {"role": "user", "content": user_input}
-            ],
-            max_tokens=500,
-            temperature=0.0  # Use 0 temperature for consistent, deterministic responses
+            system=stage1_prompt,
+            messages=[{"role": "user", "content": user_input}],
+            max_tokens=300,
+            temperature=0.0
         )
         
-        logger.info("Received response from Anthropic API")
-        # Log the response for debugging
-        logger.info("Claude response:")
-        logger.info(f"Response type: {type(message)}")
-        logger.info(f"Content type: {type(message.content)}")
+        stage1_result = _parse_json_response(stage1_message.content[0].text if stage1_message.content else "")
+        logger.info(f"Stage 1 result: {json.dumps(stage1_result, indent=2)}")
         
-        # Get the text content from the first ContentBlock
-        response_text = message.content[0].text if message.content else ""
-        logger.info(f"Response text: {response_text}")
-        
-        # Extract the JSON object from the response
-        try:
-            # First try to parse the entire response as JSON
-            result = json.loads(response_text)
-        except json.JSONDecodeError:
-            # If that fails, try to extract the JSON object from the response
-            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
-            if json_match:
-                json_str = json_match.group(0)
-                # Clean up any potential Unicode escapes
-                json_str = json_str.encode('utf-8').decode('unicode_escape')
-                try:
-                    result = json.loads(json_str)
-                except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse extracted JSON: {e}")
-                    logger.error(f"Extracted JSON string: {json_str}")
-                    result = {
-                        "primary_action": None,
-                        "all_actions": [],
-                        "context": {},
-                        "ambiguous": False,
-                        "out_of_scope": True
-                    }
-            else:
-                logger.error("No JSON object found in response")
-                result = {
-                    "primary_action": None,
-                    "all_actions": [],
-                    "context": {},
-                    "ambiguous": False,
-                    "out_of_scope": True
-                }
-        
-        # Ensure consistent response structure
-        if not isinstance(result, dict):
-            result = {
+        # If no valid action identified, return early
+        if not stage1_result.get("primary_action"):
+            return {
                 "primary_action": None,
                 "all_actions": [],
                 "context": {},
-                "ambiguous": False,
-                "out_of_scope": True
+                "ambiguous": stage1_result.get("ambiguous", False),
+                "out_of_scope": stage1_result.get("out_of_scope", True)
             }
         
-        # Ensure all required fields are present
-        required_fields = ["primary_action", "all_actions", "context", "ambiguous", "out_of_scope"]
-        for field in required_fields:
-            if field not in result:
-                result[field] = None if field == "primary_action" else [] if field == "all_actions" else {} if field == "context" else False
+        # Stage 2: Extract detailed context based on identified action type
+        primary_action = stage1_result["primary_action"]
+        stage2_prompt = _build_context_extraction_prompt(primary_action)
         
-        logger.info("Final Result:")
-        logger.info("-" * 40)
-        logger.info(json.dumps(result, indent=2))
-        logger.info("-" * 40)
+        logger.info("Stage 2: Extracting detailed context...")
+        stage2_message = anthropic_client.messages.create(
+            model=ANTHROPIC_MODEL,
+            system=stage2_prompt,
+            messages=[{"role": "user", "content": user_input}],
+            max_tokens=300,
+            temperature=0.0
+        )
         
-        return result
+        stage2_result = _parse_json_response(stage2_message.content[0].text if stage2_message.content else "")
+        logger.info(f"Stage 2 result: {json.dumps(stage2_result, indent=2)}")
+        
+        # Combine results
+        final_result = {
+            "primary_action": stage1_result["primary_action"],
+            "all_actions": stage1_result["all_actions"],
+            "context": stage2_result.get("context", {}),
+            "ambiguous": stage1_result["ambiguous"],
+            "out_of_scope": stage1_result["out_of_scope"]
+        }
+        
+        return final_result
+        
     except Exception as e:
-        logger.error(f"Error analyzing request with Claude: {str(e)}", exc_info=True)
-        # Fallback to a safe default
-        fallback = {
+        logger.error(f"Error analyzing request: {str(e)}", exc_info=True)
+        return {
             "primary_action": None,
             "all_actions": [],
             "context": {},
             "ambiguous": False,
             "out_of_scope": True
         }
-        logger.info(f"Returning fallback response: {json.dumps(fallback, indent=2)}")
-        return fallback
+
+def _build_context_extraction_prompt(action_type: str) -> str:
+    """
+    Build a prompt for extracting detailed context based on the action type.
+    
+    Args:
+        action_type: The type of action identified in stage 1
+        
+    Returns:
+        A prompt string for context extraction
+    """
+    if action_type == "volume_control":
+        return """You are an AI assistant analyzing volume control requests.
+
+YOUR TASK:
+Extract specific details about how the volume should be changed.
+
+RESPONSE FORMAT:
+You must respond with a valid JSON object containing:
+{
+  "context": {
+    "volume_change": {
+      "direction": "up/down/set",
+      "amount": number (1-100)
+    }
+  }
+}
+
+EXAMPLES:
+User: "Turn up the volume"
+{
+  "context": {
+    "volume_change": {
+      "direction": "up",
+      "amount": 10
+    }
+  }
+}
+
+User: "Set volume to 75%"
+{
+  "context": {
+    "volume_change": {
+      "direction": "set",
+      "amount": 75
+    }
+  }
+}
+
+IMPORTANT: Your response must be a valid JSON object. Do not include any explanatory text."""
+    
+    elif action_type == "song_changes":
+        return """You are an AI assistant analyzing song change requests.
+
+YOUR TASK:
+Extract specific details about how the song should be changed.
+
+RESPONSE FORMAT:
+You must respond with a valid JSON object containing:
+{
+  "context": {
+    "song_action": "next/previous/specific",
+    "requested_song": "song name" (only for specific songs)
+  }
+}
+
+EXAMPLES:
+User: "Play next song"
+{
+  "context": {
+    "song_action": "next"
+  }
+}
+
+User: "Go back to the previous song"
+{
+  "context": {
+    "song_action": "previous"
+  }
+}
+
+User: "Play Bohemian Rhapsody"
+{
+  "context": {
+    "song_action": "specific",
+    "requested_song": "Bohemian Rhapsody"
+  }
+}
+
+User: "I don't like this song"
+{
+  "context": {
+    "song_action": "next"
+  }
+}
+
+IMPORTANT: Your response must be a valid JSON object. Do not include any explanatory text."""
+    
+    elif action_type == "device_power":
+        return """You are an AI assistant analyzing device power requests.
+
+YOUR TASK:
+Extract specific details about how the device power should be changed.
+
+RESPONSE FORMAT:
+You must respond with a valid JSON object containing:
+{
+  "context": {
+    "power_state": "on/off"
+  }
+}
+
+EXAMPLES:
+User: "Turn on my speaker"
+{
+  "context": {
+    "power_state": "on"
+  }
+}
+
+User: "Power off the device"
+{
+  "context": {
+    "power_state": "off"
+  }
+}
+
+IMPORTANT: Your response must be a valid JSON object. Do not include any explanatory text."""
+    
+    elif action_type == "device_status":
+        return """You are an AI assistant analyzing device status requests.
+
+YOUR TASK:
+Extract specific details about what status information is being requested.
+
+RESPONSE FORMAT:
+You must respond with a valid JSON object containing:
+{
+  "context": {
+    "query_type": "all/power/volume/song"
+  }
+}
+
+EXAMPLES:
+User: "What's the status of my speaker?"
+{
+  "context": {
+    "query_type": "all"
+  }
+}
+
+User: "Is my device on?"
+{
+  "context": {
+    "query_type": "power"
+  }
+}
+
+IMPORTANT: Your response must be a valid JSON object. Do not include any explanatory text."""
+    
+    else:
+        return """You are an AI assistant analyzing user requests.
+
+YOUR TASK:
+Extract any relevant context from the request.
+
+RESPONSE FORMAT:
+You must respond with a valid JSON object containing:
+{
+  "context": {}
+}
+
+IMPORTANT: Your response must be a valid JSON object. Do not include any explanatory text."""
+
+def _parse_json_response(response_text: str) -> Dict[str, Any]:
+    """Parse JSON from Anthropic's response, handling various edge cases."""
+    try:
+        # First try to parse the entire response as JSON
+        return json.loads(response_text)
+    except json.JSONDecodeError:
+        # If that fails, try to extract the JSON object from the response
+        json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(0)
+            # Clean up any potential Unicode escapes
+            json_str = json_str.encode('utf-8').decode('unicode_escape')
+            try:
+                return json.loads(json_str)
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse extracted JSON: {e}")
+                logger.error(f"Extracted JSON string: {json_str}")
+        else:
+            logger.error("No JSON object found in response")
+        
+        # Return default structure if parsing fails
+        return {
+            "primary_action": None,
+            "all_actions": [],
+            "context": {},
+            "ambiguous": False,
+            "out_of_scope": True
+        }
+
+def _generate_mock_response(user_input: str) -> Dict[str, Any]:
+    """Generate a mock response for local development."""
+    text_lower = user_input.lower()
+    
+    if "status" in text_lower:
+        return {
+            "primary_action": "device_status",
+            "all_actions": ["device_status"],
+            "context": {"query_type": "all"},
+            "ambiguous": False,
+            "out_of_scope": False
+        }
+    
+    return {
+        "primary_action": None,
+        "all_actions": [],
+        "context": {},
+        "ambiguous": False,
+        "out_of_scope": True
+    }
 
 def generate_response(prompt: str, context: Optional[Dict[str, Any]] = None) -> str:
     """
@@ -294,6 +498,34 @@ def generate_response(prompt: str, context: Optional[Dict[str, Any]] = None) -> 
     if context and "customer" in context and hasattr(context["customer"], "to_dict"):
         context = context.copy()  # Create a copy to avoid modifying the original
         context["customer"] = context["customer"].to_dict()
+    
+    # Add service level permissions to context
+    if context and "customer" in context:
+        service_level = context["customer"].get("service_level", "basic").lower()
+        from .dynamodb_service import get_service_level_permissions
+        permissions = get_service_level_permissions(service_level)
+        context["permissions"] = permissions
+        
+        # Add action execution information based on permissions and device state
+        if "request" in context:
+            primary_action = context["request"].get("primary_action")
+            if primary_action:
+                allowed = primary_action in permissions.get("allowed_actions", [])
+                
+                # Check device state for actions that require the device to be on
+                device_power = context["customer"].get("device", {}).get("power", "").lower()
+                requires_power = primary_action in ["song_changes", "volume_control"]
+                
+                if allowed and requires_power and device_power != "on":
+                    context["action_execution"] = {
+                        "success": False,
+                        "details": "Device is currently powered off. Please turn on your device first."
+                    }
+                else:
+                    context["action_execution"] = {
+                        "success": allowed,
+                        "details": f"Action {primary_action} is {'allowed' if allowed else 'not allowed'} for service level {service_level}"
+                    }
     
     if context:
         logger.info(f"Context: {json.dumps(context, indent=2)}")

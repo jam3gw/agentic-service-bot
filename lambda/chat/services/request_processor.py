@@ -373,9 +373,11 @@ def execute_action(action: str, device: Dict[str, Any], context: Dict[str, Any])
             amount = volume_change.get("amount", 10)
             direction = volume_change.get("direction", "up")
             
-            if direction == "up":
+            if direction == "set":
+                new_volume = amount  # For "set", use amount as the target volume
+            elif direction == "up":
                 new_volume = previous_volume + amount
-            else:
+            else:  # direction == "down"
                 new_volume = previous_volume - amount
         
         # Ensure volume is within bounds
@@ -441,14 +443,16 @@ def execute_action(action: str, device: Dict[str, Any], context: Dict[str, Any])
             # Find the best matching song
             best_match = None
             best_match_score = 0
+            best_match_index = -1
             
-            for song in playlist:
+            for i, song in enumerate(playlist):
                 # Calculate similarity score
                 song_lower = song.lower()
                 
                 # Exact match
                 if requested_song == song_lower:
                     best_match = song
+                    best_match_index = i
                     break
                 
                 # Check if requested song is a substring
@@ -457,6 +461,7 @@ def execute_action(action: str, device: Dict[str, Any], context: Dict[str, Any])
                     if score > best_match_score:
                         best_match = song
                         best_match_score = score
+                        best_match_index = i
                 
                 # Check if any word in the requested song matches
                 requested_words = requested_song.split()
@@ -466,9 +471,23 @@ def execute_action(action: str, device: Dict[str, Any], context: Dict[str, Any])
                         if score > best_match_score:
                             best_match = song
                             best_match_score = score
+                            best_match_index = i
             
             if best_match:
                 new_song = best_match
+                success = update_device_state(customer_id, device_id, {
+                    "current_song": new_song,
+                    "currentSongIndex": best_match_index
+                })
+                
+                if success:
+                    return {
+                        "action_executed": True,
+                        "song_changed": True,
+                        "new_song": new_song,
+                        "previous_song": current_song,
+                        "song_action": song_action
+                    }
             else:
                 error_msg = f"Could not find a song matching '{context.get('requested_song')}' in the playlist"
                 logger.warning(f"[ACTION_EXEC] {error_msg}")
