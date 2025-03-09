@@ -130,41 +130,70 @@ const UserDevicesTable: React.FC<UserDevicesTableProps> = ({ customerId, lastUpd
                     </Thead>
                     <Tbody>
                         {devices.map(device => (
-                            <Tr key={device.id}>
-                                <Td>
-                                    <Box>
-                                        <HStack spacing={1}>
-                                            <Tag size="sm" colorScheme={
-                                                device.type === 'security' ? 'red' :
-                                                    device.type === 'light' ? 'yellow' :
-                                                        device.type === 'climate' ? 'blue' :
-                                                            device.type === 'audio' || device.type === 'speaker' ? 'purple' : 'gray'
-                                            }>
-                                                <Text fontSize="md" fontWeight="medium" textTransform="capitalize">{device.type}</Text>
-                                            </Tag>
-                                        </HStack>
-                                    </Box>
-                                </Td>
-                                <Td>
-                                    <Badge colorScheme={device.power?.toLowerCase() === 'on' ? 'green' : 'gray'}>
-                                        {device.power || 'Unknown'}
-                                    </Badge>
-                                </Td>
-                                <Td>
-                                    {(device.type === 'audio' || device.type === 'speaker') && (
-                                        <Text fontSize="sm">
-                                            {device.power === 'off' ? '0' : device.volume || 0}%
-                                        </Text>
-                                    )}
-                                </Td>
-                                <Td>
-                                    {(device.type === 'audio' || device.type === 'speaker') && (
-                                        <Text fontSize="sm" noOfLines={1}>
-                                            {device.power === 'off' ? 'None' : device.currentSong || 'No song playing'}
-                                        </Text>
-                                    )}
-                                </Td>
-                            </Tr>
+                            <React.Fragment key={device.id}>
+                                <Tr>
+                                    <Td>
+                                        <Box>
+                                            <HStack spacing={1}>
+                                                <Tag size="sm" colorScheme={
+                                                    device.type === 'security' ? 'red' :
+                                                        device.type === 'light' ? 'yellow' :
+                                                            device.type === 'climate' ? 'blue' :
+                                                                device.type === 'audio' || device.type === 'speaker' ? 'purple' : 'gray'
+                                                }>
+                                                    <Text fontSize="md" fontWeight="medium" textTransform="capitalize">{device.type}</Text>
+                                                </Tag>
+                                            </HStack>
+                                        </Box>
+                                    </Td>
+                                    <Td>
+                                        <Badge colorScheme={device.power?.toLowerCase() === 'on' ? 'green' : 'gray'}>
+                                            {device.power || 'Unknown'}
+                                        </Badge>
+                                    </Td>
+                                    <Td>
+                                        {(device.type === 'audio' || device.type === 'speaker') && (
+                                            <Text fontSize="sm">
+                                                {device.power === 'off' ? '0' : device.volume || 0}%
+                                            </Text>
+                                        )}
+                                    </Td>
+                                    <Td>
+                                        {(device.type === 'audio' || device.type === 'speaker') && (
+                                            <Text fontSize="sm" noOfLines={1}>
+                                                {device.power === 'off' ? 'None' : device.currentSong || 'No song playing'}
+                                            </Text>
+                                        )}
+                                    </Td>
+                                </Tr>
+                                {(device.type === 'audio' || device.type === 'speaker') && device.playlist && device.power === 'on' && (
+                                    <Tr>
+                                        <Td colSpan={4}>
+                                            <Box pl={4} py={2} borderLeft="2px" borderColor="purple.200">
+                                                <Text fontSize="sm" fontWeight="medium" mb={2}>Playlist:</Text>
+                                                <Box maxH="150px" overflowY="auto">
+                                                    {device.playlist.map((song, index) => (
+                                                        <HStack
+                                                            key={index}
+                                                            spacing={2}
+                                                            mb={1}
+                                                            bg={index === device.currentSongIndex ? "purple.50" : "transparent"}
+                                                            p={1}
+                                                            borderRadius="md"
+                                                        >
+                                                            <Text fontSize="xs" color="gray.500" w="20px">{index + 1}.</Text>
+                                                            <Text fontSize="sm" noOfLines={1}>{song}</Text>
+                                                            {index === device.currentSongIndex && (
+                                                                <Badge colorScheme="purple" fontSize="xs">Now Playing</Badge>
+                                                            )}
+                                                        </HStack>
+                                                    ))}
+                                                </Box>
+                                            </Box>
+                                        </Td>
+                                    </Tr>
+                                )}
+                            </React.Fragment>
                         ))}
                     </Tbody>
                 </Table>
