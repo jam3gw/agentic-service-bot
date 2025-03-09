@@ -122,11 +122,13 @@ const UserDevicesTable: React.FC<UserDevicesTableProps> = ({ customerId, lastUpd
                         <ListItem>See what's currently playing on each device</ListItem>
                         <ListItem>Browse the full playlist when a device is powered on</ListItem>
                         <ListItem>Use the chat interface below to control your devices with natural language</ListItem>
+                        <ListItem>For music control, you can only play songs from the device's existing playlist</ListItem>
                     </UnorderedList>
                 </Box>
                 <Text fontSize="sm" mt={2}>
-                    Try saying: <Text as="span" fontWeight="medium">"Turn on the living room speaker"</Text> or{' '}
-                    <Text as="span" fontWeight="medium">"Set the volume to 50%"</Text>
+                    Try saying: <Text as="span" fontWeight="medium">"Turn on the living room speaker"</Text>,{' '}
+                    <Text as="span" fontWeight="medium">"Set the volume to 50%"</Text>, or{' '}
+                    <Text as="span" fontWeight="medium">"Play the next song"</Text>
                 </Text>
             </Box>
 
@@ -199,7 +201,7 @@ const UserDevicesTable: React.FC<UserDevicesTableProps> = ({ customerId, lastUpd
                                         <Td colSpan={4}>
                                             <Box pl={4} py={2} borderLeft="2px" borderColor="purple.200">
                                                 <Text fontSize="sm" fontWeight="medium" mb={2}>Playlist:</Text>
-                                                <Box maxH="150px" overflowY="auto">
+                                                <Box maxH="300px" overflowY="auto">
                                                     {device.playlist.map((song, index) => (
                                                         <HStack
                                                             key={index}

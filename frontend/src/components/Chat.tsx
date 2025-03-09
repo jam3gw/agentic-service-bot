@@ -74,13 +74,15 @@ export const Chat: React.FC<ChatProps> = ({ onCustomerChange, onMessageSent }) =
             await sendMessage(input.trim());
             setInput('');
             onMessageSent();
+            // Focus the input after sending a message
+            inputRef.current?.focus();
         }
     };
 
-    // Focus input when component mounts
+    // Focus input when component mounts or when customerId changes
     useEffect(() => {
         inputRef.current?.focus();
-    }, []);
+    }, [customerId]); // Also focus when customer changes
 
     // Render error message
     const renderError = () => {
@@ -146,7 +148,7 @@ export const Chat: React.FC<ChatProps> = ({ onCustomerChange, onMessageSent }) =
                         borderColor={borderColor}
                         overflowY="auto"
                         mb={4}
-                        maxH="calc(100vh - 400px)"
+                        maxH="calc(100vh - 500px)"
                         minH="400px"
                         sx={{
                             '&::-webkit-scrollbar': {
