@@ -16,8 +16,7 @@ import sys
 from config import ANTHROPIC_API_KEY, ANTHROPIC_MODEL, DATA_PATH, DEFAULT_CUSTOMER_ID, DEBUG_MODE
 
 from models.customer import CustomerDB
-from utils.llm_client import LLMClient
-from agents.service_agent import ServiceAgent
+from services.anthropic_service import AnthropicService
 
 def main():
     """Main application entry point"""
@@ -26,8 +25,7 @@ def main():
     # Initialize components
     try:
         customer_db = CustomerDB(DATA_PATH)
-        llm_client = LLMClient(ANTHROPIC_API_KEY, ANTHROPIC_MODEL)
-        agent = ServiceAgent(llm_client, customer_db)
+        anthropic_service = AnthropicService(ANTHROPIC_API_KEY, ANTHROPIC_MODEL)
         
         # Get customer for this session
         customer_id = DEFAULT_CUSTOMER_ID
@@ -55,13 +53,12 @@ def main():
                 break
             
             if DEBUG_MODE and user_input.lower() == "debug":
-                summary = agent.get_conversation_summary()
-                print(f"DEBUG: Conversation summary: {summary}")
+                print("DEBUG: Conversation history not available in new implementation")
                 continue
             
-            # Process the request
-            response = agent.process_request(customer_id, user_input)
-            print(response)
+            # Process the request using Anthropic service
+            response = anthropic_service.process_request(customer_id, user_input)
+            print(response.get("message", "Sorry, I couldn't process that request."))
             
     except Exception as e:
         print(f"Error: {e}")
