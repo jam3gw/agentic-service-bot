@@ -19,6 +19,8 @@ import {
     Alert,
     AlertIcon,
     Flex,
+    UnorderedList,
+    ListItem,
 } from '@chakra-ui/react';
 import { RepeatIcon } from '@chakra-ui/icons';
 import * as apiService from '../utils/apiService';
@@ -101,6 +103,32 @@ const UserDevicesTable: React.FC<UserDevicesTableProps> = ({ customerId, lastUpd
                     />
                 </Tooltip>
             </HStack>
+
+            <Box
+                bg={useColorModeValue('purple.50', 'purple.900')}
+                p={4}
+                borderRadius="md"
+                mb={4}
+            >
+                <Text fontSize="sm" fontWeight="medium" mb={2}>
+                    🎵 Welcome to Your Smart Home Control Center!
+                </Text>
+                <Text fontSize="sm" mb={2}>
+                    Here you can monitor and control all your smart devices. For audio devices and speakers:
+                </Text>
+                <Box pl={4}>
+                    <UnorderedList fontSize="sm" spacing={2}>
+                        <ListItem>View device power status (on/off) and current volume level</ListItem>
+                        <ListItem>See what's currently playing on each device</ListItem>
+                        <ListItem>Browse the full playlist when a device is powered on</ListItem>
+                        <ListItem>Use the chat interface below to control your devices with natural language</ListItem>
+                    </UnorderedList>
+                </Box>
+                <Text fontSize="sm" mt={2}>
+                    Try saying: <Text as="span" fontWeight="medium">"Turn on the living room speaker"</Text> or{' '}
+                    <Text as="span" fontWeight="medium">"Set the volume to 50%"</Text>
+                </Text>
+            </Box>
 
             {error && (
                 <Alert status="error" mb={4}>
