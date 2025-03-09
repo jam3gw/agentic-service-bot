@@ -133,15 +133,14 @@ const UserDevicesTable: React.FC<UserDevicesTableProps> = ({ customerId, lastUpd
                             <Tr key={device.id}>
                                 <Td>
                                     <Box>
-                                        <Text fontWeight="medium">{device.name}</Text>
-                                        <HStack spacing={1} mt={1}>
+                                        <HStack spacing={1}>
                                             <Tag size="sm" colorScheme={
                                                 device.type === 'security' ? 'red' :
                                                     device.type === 'light' ? 'yellow' :
                                                         device.type === 'climate' ? 'blue' :
-                                                            device.type === 'audio' ? 'purple' : 'gray'
+                                                            device.type === 'audio' || device.type === 'speaker' ? 'purple' : 'gray'
                                             }>
-                                                <Text fontSize="md" fontWeight="medium">{device.type}</Text>
+                                                <Text fontSize="md" fontWeight="medium" textTransform="capitalize">{device.type}</Text>
                                             </Tag>
                                         </HStack>
                                     </Box>
