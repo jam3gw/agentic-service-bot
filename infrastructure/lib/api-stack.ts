@@ -63,12 +63,12 @@ export class ApiStack extends BaseStack {
                 MESSAGES_TABLE: messagesTable.tableName,
                 CUSTOMERS_TABLE: customersTable.tableName,
                 SERVICE_LEVELS_TABLE: serviceLevelsTable.tableName,
-                ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || 'your-api-key-here',
-                ANTHROPIC_MODEL: 'claude-3-haiku-20240307',
+                ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',
+                ANTHROPIC_MODEL: 'claude-3-opus-20240229',
                 ENVIRONMENT: config.environment,
                 ALLOWED_ORIGIN: config.environment === 'prod'
-                    ? 'https://agentic-service-bot.jake-moses.com'
-                    : 'https://agentic-service-bot.dev.jake-moses.com,http://localhost:5173', // Add localhost for development
+                    ? 'https://agentic-service-bot.example.com'
+                    : 'https://agentic-service-bot.dev.example.com,http://localhost:3000',
             },
             bundling: {
                 assetExcludes: [
@@ -91,7 +91,7 @@ export class ApiStack extends BaseStack {
                 SERVICE_LEVELS_TABLE: serviceLevelsTable.tableName,
                 ENVIRONMENT: config.environment,
                 ALLOWED_ORIGIN: config.environment === 'prod'
-                    ? 'https://agentic-service-bot.jake-moses.com'
+                    ? 'https://agentic-service-bot.jake-moses.com,http://localhost:5173'
                     : 'https://agentic-service-bot.dev.jake-moses.com,http://localhost:5173', // Add localhost for development
             },
             bundling: {
@@ -118,7 +118,7 @@ export class ApiStack extends BaseStack {
             description: 'API for device, capability, and chat management',
             defaultCorsPreflightOptions: {
                 allowOrigins: config.environment === 'prod'
-                    ? ['https://agentic-service-bot.jake-moses.com']
+                    ? ['https://agentic-service-bot.jake-moses.com', 'http://localhost:5173']
                     : ['https://agentic-service-bot.dev.jake-moses.com', 'http://localhost:5173'], // Add localhost for development
                 allowMethods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
                 allowHeaders: ['Content-Type', 'Authorization'],
