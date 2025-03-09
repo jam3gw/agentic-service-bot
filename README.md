@@ -5,12 +5,16 @@ An agentic service bot that handles customer interactions using AI. The bot proc
 ## Features
 
 - Natural language processing of customer requests
-- Service level-based permission system (Basic, Premium, Enterprise)
-- Device management with tier-based limitations
+- Three-tiered service level system:
+  - Basic: Device status and power control
+  - Premium: Basic features plus volume control
+  - Enterprise: All features including song control
+- Device management with tier-based capabilities
 - Conversation history tracking
 - Intelligent request analysis and response generation
-- Support for device control based on service level
+- Modern React frontend with Chakra UI
 - REST API for communication between frontend and backend
+- DynamoDB for data persistence
 
 ## Prerequisites
 
@@ -18,6 +22,7 @@ An agentic service bot that handles customer interactions using AI. The bot proc
 - Node.js 14 or higher
 - AWS CLI configured with appropriate credentials
 - An Anthropic API key (for Claude LLM integration)
+- AWS DynamoDB tables set up for your environment
 
 ## Project Structure
 
@@ -25,23 +30,21 @@ An agentic service bot that handles customer interactions using AI. The bot proc
 agentic-service-bot/
 ├── frontend/                # React frontend application
 │   ├── src/                 # Source code
-│   │   ├── components/      # React components
-│   │   ├── utils/           # Utility functions
-│   │   └── types.ts         # TypeScript type definitions
-├── infrastructure/          # AWS CDK infrastructure code
-│   ├── lib/                 # CDK stack definitions
-│   └── deploy.sh            # Deployment script
-├── lambda/                  # Lambda function code
-│   ├── chat/                # Chat service Lambda
-│   │   ├── handlers/        # Request handlers
-│   │   ├── models/          # Data models
-│   │   └── services/        # Service implementations
-├── tests/                   # Test scripts
-│   ├── e2e/                 # End-to-end tests
-│   └── run_api_tests.py     # API test runner
-├── docs/                    # Documentation
-│   └── websocket-to-rest-migration.md  # Migration guide
-└── README.md                # This file
+│   │   ├── components/      # React components including CapabilitiesTable
+│   │   ├── utils/          # Utility functions and API service
+│   │   └── types.ts        # TypeScript type definitions
+├── infrastructure/         # AWS CDK infrastructure code
+│   ├── lib/               # CDK stack definitions
+│   └── deploy.sh          # Deployment script
+├── lambda/                # Lambda function code
+│   ├── chat/             # Chat service Lambda
+│   │   ├── handlers/     # Request handlers
+│   │   ├── models/       # Data models
+│   │   └── services/     # Service implementations
+├── tests/                # Test scripts
+│   ├── e2e/             # End-to-end tests
+│   └── run_api_tests.py # API test runner
+└── README.md            # This file
 ```
 
 ## Setup Instructions
@@ -69,36 +72,38 @@ npm install
 # Copy the example environment file
 cp .env.example .env
 
-# Edit .env file and add your Anthropic API key
-# Replace 'your-api-key-here' with your actual API key
+# Edit .env file with your configuration
 ```
 
-Your `.env` file should look like this:
+Your `.env` file should include:
 ```
 ANTHROPIC_API_KEY=your-api-key-here
 ANTHROPIC_MODEL=claude-3-opus-20240229
+AWS_REGION=us-west-2
+CUSTOMERS_TABLE=dev-customers
+SERVICE_LEVELS_TABLE=dev-service-levels
 ```
 
 ## Deployment
 
 ### Deploy the Backend
 
-Use the deployment script to deploy the backend infrastructure:
+Deploy the backend infrastructure:
 
 ```bash
 cd infrastructure
 ./deploy.sh --env=dev
 ```
 
-This will deploy the following resources:
-- Lambda functions for handling API requests
-- DynamoDB tables for storing data
-- REST API Gateway for exposing endpoints
-- IAM roles and policies for security
+This will deploy:
+- Lambda functions for the API
+- DynamoDB tables (customers and service levels)
+- REST API Gateway
+- Required IAM roles and policies
 
 ### Deploy the Frontend
 
-Deploy the frontend to your hosting service:
+Deploy the frontend:
 
 ```bash
 cd frontend
@@ -116,73 +121,112 @@ npm start
 
 2. Access the application at http://localhost:3000
 
+## Service Levels and Capabilities
+
+The application supports three service levels:
+
+1. **Basic**
+   - Device status checking
+   - Power control (on/off)
+
+2. **Premium**
+   - All Basic features
+   - Volume control
+   - Device location information
+
+3. **Enterprise**
+   - All Premium features
+   - Song control (play, pause, skip)
+   - Playlist management
+
 ## API Endpoints
 
-The application uses REST API endpoints for communication:
+The application provides the following REST endpoints:
 
-- **POST /api/chat**: Send a chat message to the bot
-  - Request: `{ "customerId": "string", "message": "string" }`
-  - Response: `{ "message": "string", "timestamp": "string", "messageId": "string", "conversationId": "string" }`
+- **POST /api/chat**
+  ```typescript
+  Request: {
+    customerId: string;
+    message: string;
+  }
+  Response: {
+    message: string;
+    timestamp: string;
+    messageId: string;
+    conversationId: string;
+  }
+  ```
 
-- **GET /api/chat/history/{customerId}**: Get chat history for a customer
-  - Response: `{ "messages": [{ "id": "string", "text": "string", "sender": "string", "timestamp": "string", "conversationId": "string" }], "customerId": "string" }`
+- **GET /api/customers/{customerId}/devices**
+  ```typescript
+  Response: {
+    devices: Array<{
+      id: string;
+      name: string;
+      type: string;
+      power: string;
+      status: string;
+      volume?: number;
+      currentSong?: string;
+      playlist?: string[];
+    }>;
+  }
+  ```
 
-- **GET /api/customers/{customerId}/devices**: Get devices for a customer
-  - Response: `{ "devices": [{ "id": "string", "name": "string", "type": "string", "location": "string", "status": "string", "capabilities": ["string"] }] }`
-
-- **GET /api/capabilities**: Get service capabilities
-  - Response: `{ "capabilities": [{ "id": "string", "name": "string", "description": "string", "tiers": { "basic": boolean, "premium": boolean, "enterprise": boolean }, "category": "string" }] }`
+- **GET /api/service/capabilities**
+  ```typescript
+  Response: {
+    capabilities: Array<{
+      id: string;
+      name: string;
+      description: string;
+      tiers: {
+        basic: boolean;
+        premium: boolean;
+        enterprise: boolean;
+      };
+    }>;
+  }
+  ```
 
 ## Testing
 
+Run the test suite:
+
 ```bash
-# Run all tests
-./tests/run_api_tests.py
+# Set up test data
+python seed_test_data.py
 
-# Run a specific test
-./tests/run_api_tests.py --test=capabilities
+# Run API tests
+python tests/run_api_tests.py
 
-# Run tests with a specific customer ID
-./tests/run_api_tests.py --customer=cust_002
-
-# Run a conversation test for 2 minutes
-./tests/run_api_tests.py --test=conversation --duration=120
-
-# Enable verbose logging
-./tests/run_api_tests.py --verbose
+# Run specific test categories
+python tests/run_api_tests.py --test=capabilities
+python tests/run_api_tests.py --test=chat
 ```
 
-Available test types:
-- `all`: Run all tests
-- `capabilities`: Test the capabilities endpoint
+The test suite includes:
+- API endpoint testing
+- Service level permission verification
+- Device control testing
+- Chat functionality testing
 
-## Debug Mode
+## Development Tools
 
-The application includes a debug mode that can be enabled in the frontend:
-
-1. Open the browser console
-2. Set `localStorage.setItem('debug', 'true')`
-3. Refresh the page
-
-When debug mode is enabled:
-- API requests and responses are logged to the console
-- Additional debugging information is displayed
-- Error details are shown
+- **Debug Mode**: Enable in browser console with `localStorage.setItem('debug', 'true')`
+- **Test Data Generation**: Use `seed_test_data.py` to create test customers
+- **API Testing**: Use the provided test scripts in the `tests` directory
 
 ## Documentation
 
-For more information about the project, refer to the following documentation:
-
-- [WebSocket to REST Migration Guide](docs/websocket-to-rest-migration.md): Details about the migration from WebSocket to REST API
-- [Architecture](specs/architecture.md): System architecture and components
-- [Frontend](specs/frontend.md): Frontend components and design
-- [API Documentation](docs/README.md): Detailed documentation of the API endpoints and contracts
+- [API Documentation](docs/README.md): Detailed API specifications
+- [Testing Guidelines](tests/README.md): Testing procedures and guidelines
 
 ## Contributing
 
 1. Fork the repository
 2. Create a feature branch
-3. Commit your changes
+3. Commit your changes using conventional commits
 4. Push to the branch
 5. Create a Pull Request
 
