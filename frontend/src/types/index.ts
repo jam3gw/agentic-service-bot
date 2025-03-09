@@ -12,6 +12,8 @@ export interface Device {
     power: string;
     volume: number;
     currentSong?: string;
+    currentSongIndex?: number;
+    playlist?: string[];
     status?: string;
     capabilities?: string[];
 }
