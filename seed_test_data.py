@@ -19,6 +19,21 @@ REGION = "us-west-2"
 CUSTOMERS_TABLE = "dev-customers"
 SERVICE_LEVELS_TABLE = "dev-service-levels"
 
+# Permission definitions - must match documentation and implementation
+PERMISSIONS = {
+    'DEVICE_STATUS': 'device_status',
+    'DEVICE_POWER': 'device_power',
+    'VOLUME_CONTROL': 'volume_control',
+    'SONG_CHANGES': 'song_changes'
+}
+
+# Service level definitions
+SERVICE_LEVELS = {
+    'BASIC': 'basic',
+    'PREMIUM': 'premium',
+    'ENTERPRISE': 'enterprise'
+}
+
 logger = logging.getLogger(__name__)
 
 def print_separator():
@@ -71,14 +86,14 @@ def create_test_customer(dynamodb, customer_id: str, name: str, level: str, devi
     """
     table = dynamodb.Table(CUSTOMERS_TABLE)  # type: ignore
     
-    # Set capabilities based on service level
-    capabilities = ["device_status", "device_power"]  # Basic level capabilities
+    # Set capabilities based on service level - using standardized permission names
+    capabilities = [PERMISSIONS['DEVICE_STATUS'], PERMISSIONS['DEVICE_POWER']]  # Basic level capabilities
     
-    if level in ['premium', 'enterprise']:
-        capabilities.append("volume_control")
+    if level in [SERVICE_LEVELS['PREMIUM'], SERVICE_LEVELS['ENTERPRISE']]:
+        capabilities.append(PERMISSIONS['VOLUME_CONTROL'])
         
-    if level == 'enterprise':
-        capabilities.append("song_changes")
+    if level == SERVICE_LEVELS['ENTERPRISE']:
+        capabilities.append(PERMISSIONS['SONG_CHANGES'])
     
     # Create device object with all necessary fields
     device = {
@@ -90,11 +105,12 @@ def create_test_customer(dynamodb, customer_id: str, name: str, level: str, devi
         'lastUpdated': datetime.now().isoformat()
     }
     
-    # Add volume and playlist for all audio devices, but control is based on service level
+    # Add volume and playlist for all audio devices, regardless of service level
+    # Control is enforced through permissions, not by omitting fields
     if device_type in ['speaker', 'audio']:
-        device['volume'] = str(40)  # Set volume to 40%
-        device['currentSong'] = "Let's Get It Started - The Black Eyed Peas"  # Set default song
-        device['playlist'] = json.dumps([
+        device['volume'] = 40  # Store as number, not string
+        device['currentSong'] = "Let's Get It Started - The Black Eyed Peas"
+        device['playlist'] = [  # Store as native list, not JSON string
             "Let's Get It Started - The Black Eyed Peas",
             "Imagine - John Lennon",
             "Don't Stop Believin' - Journey",
@@ -106,8 +122,8 @@ def create_test_customer(dynamodb, customer_id: str, name: str, level: str, devi
             "Can't Stop the Feeling! - Justin Timberlake",
             "Good Vibrations - The Beach Boys",
             "Three Little Birds - Bob Marley & The Wailers"
-        ])
-        device['currentSongIndex'] = "0"  # Add current song index as string
+        ]
+        device['currentSongIndex'] = 0  # Store as number, not string
     
     # Create customer record
     customer = {
@@ -167,28 +183,37 @@ def create_test_service_levels(dynamodb) -> None:
     """Create test service levels in DynamoDB."""
     table = dynamodb.Table(SERVICE_LEVELS_TABLE)
     
-    # Define service levels
+    # Define service levels using standardized permission names
     service_levels = {
-        'basic': {
-            'level': 'basic',
+        SERVICE_LEVELS['BASIC']: {
+            'level': SERVICE_LEVELS['BASIC'],
             'name': 'Basic',
             'description': 'Basic service level with device status and power control',
             'price': 0,
-            'allowed_actions': ['device_status', 'device_power']
+            'allowed_actions': [PERMISSIONS['DEVICE_STATUS'], PERMISSIONS['DEVICE_POWER']]
         },
-        'premium': {
-            'level': 'premium',
+        SERVICE_LEVELS['PREMIUM']: {
+            'level': SERVICE_LEVELS['PREMIUM'],
             'name': 'Premium',
             'description': 'Premium service level with volume control',
             'price': 9.99,
-            'allowed_actions': ['device_status', 'device_power', 'volume_control']
+            'allowed_actions': [
+                PERMISSIONS['DEVICE_STATUS'],
+                PERMISSIONS['DEVICE_POWER'],
+                PERMISSIONS['VOLUME_CONTROL']
+            ]
         },
-        'enterprise': {
-            'level': 'enterprise',
+        SERVICE_LEVELS['ENTERPRISE']: {
+            'level': SERVICE_LEVELS['ENTERPRISE'],
             'name': 'Enterprise',
             'description': 'Enterprise service level with full device control',
             'price': 29.99,
-            'allowed_actions': ['device_status', 'device_power', 'volume_control', 'song_changes']
+            'allowed_actions': [
+                PERMISSIONS['DEVICE_STATUS'],
+                PERMISSIONS['DEVICE_POWER'],
+                PERMISSIONS['VOLUME_CONTROL'],
+                PERMISSIONS['SONG_CHANGES']
+            ]
         }
     }
     
@@ -249,6 +274,11 @@ def main():
         print(f"⚠️ Warning: The table '{CUSTOMERS_TABLE}' was not found in the list of available tables.")
         print("Proceeding anyway...")
     
+    # Create service levels first
+    # print_separator()
+    # print("Creating service levels...")
+    # create_test_service_levels(dynamodb)
+    
     # Check for existing test customers
     print_separator()
     print("Checking for existing test customers...")
@@ -281,7 +311,7 @@ def main():
         dynamodb,
         basic_customer_id,
         "Jake",
-        "basic",
+        SERVICE_LEVELS['BASIC'],
         "speaker"
     )
     
@@ -291,7 +321,7 @@ def main():
         dynamodb,
         premium_customer_id,
         "Mo",
-        "premium",
+        SERVICE_LEVELS['PREMIUM'],
         "speaker"
     )
     
@@ -301,7 +331,7 @@ def main():
         dynamodb,
         enterprise_customer_id,
         "Sonja",
-        "enterprise",
+        SERVICE_LEVELS['ENTERPRISE'],
         "speaker"
     )
     
@@ -317,18 +347,21 @@ def main():
     print(f"  Name: {basic_customer['name']}")
     print(f"  Level: {basic_customer['level']}")
     print(f"  Device: {basic_customer['device']['id']}")
+    print(f"  Capabilities: {', '.join(basic_customer['capabilities'])}")
     
     print("\nPremium Customer:")
     print(f"  ID: {premium_customer_id}")
     print(f"  Name: {premium_customer['name']}")
     print(f"  Level: {premium_customer['level']}")
     print(f"  Device: {premium_customer['device']['id']}")
+    print(f"  Capabilities: {', '.join(premium_customer['capabilities'])}")
     
     print("\nEnterprise Customer:")
     print(f"  ID: {enterprise_customer_id}")
     print(f"  Name: {enterprise_customer['name']}")
     print(f"  Level: {enterprise_customer['level']}")
     print(f"  Device: {enterprise_customer['device']['id']}")
+    print(f"  Capabilities: {', '.join(enterprise_customer['capabilities'])}")
     
     print_separator()
     print("You can now use these test customers in the UI and API tests.")

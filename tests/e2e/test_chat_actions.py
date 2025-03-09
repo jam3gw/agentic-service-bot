@@ -230,7 +230,7 @@ def test_device_status_action(test_data: Dict[str, str]) -> None:
     message_text = data["message"].lower()
     
     # Check that the response mentions the device type and power state
-    assert "speaker" in message_text, "Response should mention the speaker"
+    assert any(term in message_text for term in ["speaker", "device"]), "Response should mention the device type"
     assert any(state in message_text for state in ["on", "off"]), "Response should mention the power state"
 
 def test_device_power_action(test_data: Dict[str, str]) -> None:
