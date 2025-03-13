@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
     Box,
     Heading,
@@ -15,7 +15,6 @@ import {
     ModalBody,
     ModalCloseButton,
     useDisclosure,
-    IconButton,
     Flex,
 } from '@chakra-ui/react';
 import { InfoIcon, SearchIcon } from '@chakra-ui/icons';
