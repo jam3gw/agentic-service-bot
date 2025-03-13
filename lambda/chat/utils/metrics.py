@@ -83,6 +83,9 @@ class MetricsClient:
     
     def _emit_detailed_metrics(self, api_name: str, duration_ms: float, tokens: int, success: bool) -> None:
         """Emit metrics with detailed dimensions including ApiName."""
+        # Ensure success value is lowercase string
+        success_str = str(success).lower()
+        
         metric_data = [
             # Track API call count
             {
@@ -92,7 +95,7 @@ class MetricsClient:
                 'Dimensions': [
                     {'Name': 'Environment', 'Value': self._environment},
                     {'Name': 'ApiName', 'Value': api_name},
-                    {'Name': 'Success', 'Value': str(success).lower()}  # Use lowercase 'true'/'false' to match dashboard
+                    {'Name': 'Success', 'Value': success_str}
                 ]
             },
             # Track API call latency
@@ -126,6 +129,9 @@ class MetricsClient:
     
     def _emit_aggregated_metrics(self, duration_ms: float, tokens: int, success: bool) -> None:
         """Emit metrics with aggregated dimensions (without ApiName)."""
+        # Ensure success value is lowercase string
+        success_str = str(success).lower()
+        
         metric_data = [
             # Track API call count - with Environment and Success dimensions
             {
@@ -134,7 +140,7 @@ class MetricsClient:
                 'Unit': 'Count',
                 'Dimensions': [
                     {'Name': 'Environment', 'Value': self._environment},
-                    {'Name': 'Success', 'Value': str(success).lower()}  # Use lowercase 'true'/'false' to match dashboard
+                    {'Name': 'Success', 'Value': success_str}
                 ]
             },
             # Also emit total API calls with just Environment dimension
