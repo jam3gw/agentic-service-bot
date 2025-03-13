@@ -1,0 +1,103 @@
+@startuml Chat Message Sequence
+
+skinparam sequenceArrowThickness 2
+skinparam roundcorner 5
+skinparam maxmessagesize 200
+skinparam sequenceParticipant underline
+
+title Agentic Service Bot - Chat Message Processing Sequence
+
+actor User
+participant "Frontend" as Frontend
+participant "API Gateway" as APIGateway
+participant "Chat Lambda" as ChatLambda
+participant "DynamoDB\nCustomers Table" as CustomersDB
+participant "DynamoDB\nService Levels Table" as ServiceLevelsDB
+participant "Anthropic Claude API" as Claude
+participant "DynamoDB\nMessages Table" as MessagesDB
+participant "CloudWatch" as CloudWatch
+
+User -> Frontend: Send message
+activate Frontend
+
+Frontend -> APIGateway: POST /api/chat
+activate APIGateway
+
+APIGateway -> ChatLambda: Invoke handler
+activate ChatLambda
+
+ChatLambda -> ChatLambda: Parse request
+
+ChatLambda -> CustomersDB: get_customer(customer_id)
+activate CustomersDB
+CustomersDB --> ChatLambda: Customer data
+deactivate CustomersDB
+
+ChatLambda -> ServiceLevelsDB: get_service_level_permissions(service_level)
+activate ServiceLevelsDB
+ServiceLevelsDB --> ChatLambda: Service level permissions
+deactivate ServiceLevelsDB
+
+ChatLambda -> Claude: analyze_request(user_input)
+activate Claude
+
+note right of Claude
+  Stage 1: Identify request type
+end note
+
+Claude -> CloudWatch: Emit metrics (Stage 1)
+activate CloudWatch
+CloudWatch --> Claude: Metrics recorded
+deactivate CloudWatch
+
+note right of Claude
+  Stage 2: Extract context
+end note
+
+Claude -> CloudWatch: Emit metrics (Stage 2)
+activate CloudWatch
+CloudWatch --> Claude: Metrics recorded
+deactivate CloudWatch
+
+Claude --> ChatLambda: Analysis result
+deactivate Claude
+
+ChatLambda -> ChatLambda: Check if action is allowed for service level
+
+alt Action allowed
+    ChatLambda -> ChatLambda: execute_action()
+    
+    ChatLambda -> Claude: generate_response(prompt, context)
+    activate Claude
+    
+    note right of Claude
+      Generate user-friendly response
+    end note
+    
+    Claude -> CloudWatch: Emit metrics (Response)
+    activate CloudWatch
+    CloudWatch --> Claude: Metrics recorded
+    deactivate CloudWatch
+    
+    Claude --> ChatLambda: Generated response
+    deactivate Claude
+    
+else Action not allowed
+    ChatLambda -> ChatLambda: Generate service level limitation message
+end
+
+ChatLambda -> MessagesDB: save_message()
+activate MessagesDB
+MessagesDB --> ChatLambda: Message saved
+deactivate MessagesDB
+
+ChatLambda --> APIGateway: Response
+deactivate ChatLambda
+
+APIGateway --> Frontend: HTTP Response
+deactivate APIGateway
+
+Frontend --> User: Display response
+deactivate Frontend
+
+@enduml

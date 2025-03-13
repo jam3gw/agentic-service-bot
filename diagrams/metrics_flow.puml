@@ -1,0 +1,104 @@
+@startuml Metrics Flow
+
+skinparam componentStyle rectangle
+skinparam linetype ortho
+skinparam backgroundColor white
+skinparam roundcorner 10
+
+title Agentic Service Bot - Metrics Collection and Display Flow
+
+package "Chat Lambda" {
+    component "Anthropic Service" as anthropicService
+    component "Metrics Client" as metricsClient
+}
+
+cloud "Anthropic Claude API" {
+    component "Stage 1: Request Type Identification" as stage1 #LightBlue
+    component "Stage 2: Context Extraction" as stage2 #LightGreen
+    component "Response Generation" as responseGen #LightYellow
+}
+
+cloud "AWS CloudWatch" {
+    database "Metrics" as metrics {
+        component "AnthropicApiCalls" as callsMetric
+        component "AnthropicApiLatency" as latencyMetric
+        component "AnthropicApiTokens" as tokensMetric
+    }
+    
+    component "Dashboards" as dashboards {
+        component "Main Dashboard" as mainDashboard
+        component "Anthropic API Dashboard" as anthropicDashboard
+    }
+    
+    component "Alarms" as alarms {
+        component "API Latency Alarm" as latencyAlarm
+        component "Token Usage Alarm" as tokenAlarm
+    }
+}
+
+cloud "AWS SNS" {
+    component "Alarm Topic" as alarmTopic
+}
+
+component "Email Notification" as email
+
+' Flow for Stage 1
+anthropicService --> stage1 : 1. Call API
+stage1 --> anthropicService : 2. Return result
+anthropicService --> metricsClient : 3. track_anthropic_api_call\n(api_name="messages.create.stage1")
+
+' Flow for Stage 2
+anthropicService --> stage2 : 4. Call API
+stage2 --> anthropicService : 5. Return result
+anthropicService --> metricsClient : 6. track_anthropic_api_call\n(api_name="messages.create.stage2")
+
+' Flow for Response Generation
+anthropicService --> responseGen : 7. Call API
+responseGen --> anthropicService : 8. Return result
+anthropicService --> metricsClient : 9. track_anthropic_api_call\n(api_name="messages.create.response")
+
+' Metrics emission
+metricsClient --> callsMetric : 10. Emit call count metrics
+metricsClient --> latencyMetric : 11. Emit latency metrics
+metricsClient --> tokensMetric : 12. Emit token usage metrics
+
+' Dashboard display
+callsMetric --> mainDashboard : 13. Display in dashboard
+latencyMetric --> mainDashboard : 14. Display in dashboard
+tokensMetric --> mainDashboard : 15. Display in dashboard
+
+callsMetric --> anthropicDashboard : 16. Display in detailed dashboard
+latencyMetric --> anthropicDashboard : 17. Display in detailed dashboard
+tokensMetric --> anthropicDashboard : 18. Display in detailed dashboard
+
+' Alarms
+latencyMetric --> latencyAlarm : 19. Trigger if threshold exceeded
+tokensMetric --> tokenAlarm : 20. Trigger if threshold exceeded
+
+latencyAlarm --> alarmTopic : 21. Publish alarm
+tokenAlarm --> alarmTopic : 22. Publish alarm
+
+alarmTopic --> email : 23. Send notification
+
+note right of metricsClient
+  Emits metrics with dimensions:
+  - Environment (dev/prod)
+  - ApiName (stage1/stage2/response)
+  - Success (true/false)
+end note
+
+note right of anthropicDashboard
+  Detailed dashboard includes:
+  - API calls by endpoint
+  - API latency (avg/p90/max)
+  - Token usage (total/hourly)
+  - Success/failure rates
+end note
+
+note right of tokenAlarm
+  Triggers when token usage
+  exceeds 1 million tokens
+  per hour (cost control)
+end note
+
+@enduml 

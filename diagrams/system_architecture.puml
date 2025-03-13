@@ -1,0 +1,69 @@
+@startuml System Architecture
+
+!define AWSPuml https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/v16.0/dist
+!include AWSPuml/AWSCommon.puml
+!include AWSPuml/ApplicationIntegration/APIGateway.puml
+!include AWSPuml/Compute/Lambda.puml
+!include AWSPuml/Database/DynamoDB.puml
+!include AWSPuml/ManagementGovernance/CloudWatch.puml
+!include AWSPuml/ApplicationIntegration/SimpleNotificationService.puml
+
+skinparam componentStyle rectangle
+skinparam linetype ortho
+
+title Agentic Service Bot - System Architecture
+
+actor "User" as user
+component "Frontend" as frontend
+APIGateway(apiGateway, "API Gateway", "REST API")
+APIGateway(websocketApi, "API Gateway", "WebSocket API")
+Lambda(chatLambda, "Chat Lambda", "Processes chat messages")
+Lambda(apiLambda, "API Lambda", "Handles REST API requests")
+DynamoDB(customersTable, "Customers Table", "Stores customer data")
+DynamoDB(messagesTable, "Messages Table", "Stores message history")
+DynamoDB(serviceLevelsTable, "Service Levels Table", "Stores service level permissions")
+CloudWatch(cloudwatch, "CloudWatch", "Metrics & Logging")
+SimpleNotificationService(sns, "SNS", "Alarm notifications")
+component "Anthropic Claude API" as claude {
+    component "Stage 1 Analysis" as stage1
+    component "Stage 2 Analysis" as stage2
+    component "Response Generation" as response
+}
+
+user --> frontend : Interacts with
+frontend --> apiGateway : REST API calls
+frontend --> websocketApi : WebSocket connections
+apiGateway --> apiLambda : Invokes
+websocketApi --> chatLambda : Invokes
+apiLambda --> customersTable : Reads/Writes
+apiLambda --> messagesTable : Reads/Writes
+apiLambda --> serviceLevelsTable : Reads
+chatLambda --> customersTable : Reads/Writes
+chatLambda --> messagesTable : Reads/Writes
+chatLambda --> serviceLevelsTable : Reads
+chatLambda --> claude : Calls
+claude --> stage1 : 1. Identify request type
+stage1 --> stage2 : 2. Extract context
+stage2 --> response : 3. Generate response
+chatLambda --> cloudwatch : Emits metrics & logs
+apiLambda --> cloudwatch : Emits metrics & logs
+cloudwatch --> sns : Triggers alarms
+
+note right of stage1
+  Identifies the primary action
+  (device_status, device_power, 
+   volume_control, song_changes)
+end note
+
+note right of stage2
+  Extracts specific context
+  based on the action type
+end note
+
+note right of response
+  Generates user-friendly
+  response based on context
+  and service level permissions
+end note
+
+@enduml 

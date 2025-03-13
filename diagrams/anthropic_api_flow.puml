@@ -1,0 +1,110 @@
+@startuml Anthropic API Flow
+
+skinparam componentStyle rectangle
+skinparam linetype ortho
+skinparam backgroundColor white
+skinparam roundcorner 10
+
+title Agentic Service Bot - Anthropic API Interaction Flow
+
+package "Chat Lambda" {
+    component "Request Processor" as requestProcessor
+    component "Anthropic Service" as anthropicService
+    component "Metrics Client" as metricsClient
+    component "DynamoDB Service" as dynamodbService
+}
+
+cloud "Anthropic Claude API" {
+    component "Stage 1: Request Type Identification" as stage1 #LightBlue
+    component "Stage 2: Context Extraction" as stage2 #LightGreen
+    component "Response Generation" as responseGen #LightYellow
+}
+
+cloud "AWS CloudWatch" {
+    database "Metrics" as metrics
+    database "Logs" as logs
+}
+
+requestProcessor --> anthropicService : 1. analyze_request(user_input)
+anthropicService --> stage1 : 2. messages.create\n(system=stage1_prompt)
+stage1 --> anthropicService : 3. Return analysis
+anthropicService --> metricsClient : 4. track_anthropic_api_call\n(api_name="messages.create.stage1")
+metricsClient --> metrics : 5. Emit metrics
+
+anthropicService --> stage2 : 6. messages.create\n(system=stage2_prompt)
+stage2 --> anthropicService : 7. Return context
+anthropicService --> metricsClient : 8. track_anthropic_api_call\n(api_name="messages.create.stage2")
+metricsClient --> metrics : 9. Emit metrics
+
+anthropicService --> requestProcessor : 10. Return analysis result
+
+requestProcessor --> dynamodbService : 11. Check permissions
+dynamodbService --> requestProcessor : 12. Return permissions
+
+requestProcessor --> anthropicService : 13. generate_response(prompt, context)
+anthropicService --> responseGen : 14. messages.create\n(system=system_prompt)
+responseGen --> anthropicService : 15. Return response
+anthropicService --> metricsClient : 16. track_anthropic_api_call\n(api_name="messages.create.response")
+metricsClient --> metrics : 17. Emit metrics
+
+anthropicService --> requestProcessor : 18. Return generated response
+
+note right of stage1
+  Identifies the primary action:
+  - device_status
+  - device_power
+  - volume_control
+  - song_changes
+  
+  Returns:
+  {
+    "primary_action": "action_type",
+    "all_actions": ["action_type"],
+    "ambiguous": boolean,
+    "out_of_scope": boolean
+  }
+end note
+
+note right of stage2
+  Extracts context based on action type:
+  
+  For volume_control:
+  {
+    "context": {
+      "volume_change": {
+        "direction": "up/down/set",
+        "amount": number
+      }
+    }
+  }
+  
+  For device_power:
+  {
+    "context": {
+      "power_state": "on/off"
+    }
+  }
+end note
+
+note right of responseGen
+  Generates user-friendly response
+  based on:
+  - User request
+  - Service level permissions
+  - Device state
+  - Action execution result
+end note
+
+note bottom of metricsClient
+  Emits metrics for each API call:
+  - AnthropicApiCalls
+  - AnthropicApiLatency
+  - AnthropicApiTokens
+  
+  With dimensions:
+  - Environment
+  - ApiName
+  - Success
+end note
+
+@enduml 

@@ -1,0 +1,95 @@
+@startuml Class Diagram
+
+skinparam classAttributeIconSize 0
+skinparam classFontStyle bold
+skinparam classBackgroundColor LightBlue
+skinparam classBorderColor DarkBlue
+skinparam packageBackgroundColor LightGray
+skinparam packageBorderColor Gray
+
+title Agentic Service Bot - Class Diagram
+
+package "Models" {
+    class Customer {
+        +id: str
+        +name: str
+        +email: str
+        +service_level: str
+        +device: Dict
+        +to_dict(): Dict
+        +get_device(): Dict
+    }
+    
+    class Message {
+        +id: str
+        +conversation_id: str
+        +user_id: str
+        +text: str
+        +sender: str
+        +timestamp: str
+        +to_dict(): Dict
+    }
+}
+
+package "Services" {
+    class AnthropicService {
+        +analyze_request(user_input: str): Dict
+        +generate_response(prompt: str, context: Dict): str
+        -_build_context_extraction_prompt(action_type: str): str
+        -_parse_json_response(response_text: str): Dict
+        -_generate_mock_response(user_input: str): Dict
+        +build_system_prompt(context: Dict): str
+    }
+    
+    class DynamoDBService {
+        +get_customer(customer_id: str): Customer
+        +update_customer(customer: Customer): bool
+        +get_service_level_permissions(service_level: str): Dict
+        +save_message(message: Message): bool
+        +get_messages_by_user_id(user_id: str): List[Message]
+        +get_conversation_messages(conversation_id: str): List[Dict]
+        +update_device_state(customer_id: str, device_id: str, state_updates: Dict): bool
+    }
+    
+    class RequestProcessor {
+        +process_request(customer_id: str, message_data: Dict, connection_id: str): Dict
+        +is_action_allowed(service_level, action: str): bool
+        -execute_action(action: str, device: Dict, context: Dict): Dict
+    }
+}
+
+package "Handlers" {
+    class ChatHandler {
+        +handle_chat_message(customer_id: str, message_text: str, event, conversation_id: str): Dict
+        +handle_chat_history(customer_id: str, event, conversation_id: str): Dict
+        -get_cors_headers(event): Dict
+        -convert_decimal_to_float(obj): Any
+    }
+}
+
+package "Utils" {
+    class MetricsClient {
+        -_client: boto3.client
+        -_environment: str
+        +track_anthropic_api_call(api_name: str, duration_ms: float, tokens: int, success: bool): bool
+        -_emit_detailed_metrics(api_name: str, duration_ms: float, tokens: int, success: bool): None
+        -_emit_aggregated_metrics(duration_ms: float, tokens: int, success: bool): None
+    }
+    
+    class MetricNames {
+        +ANTHROPIC_API_LATENCY: str
+        +ANTHROPIC_API_TOKENS: str
+        +ANTHROPIC_API_CALLS: str
+    }
+}
+
+' Relationships
+ChatHandler --> RequestProcessor : uses
+RequestProcessor --> AnthropicService : uses
+RequestProcessor --> DynamoDBService : uses
+AnthropicService --> MetricsClient : uses
+DynamoDBService --> Customer : creates/updates
+DynamoDBService --> Message : creates/reads
+MetricsClient --> MetricNames : uses
+
+@enduml 
