@@ -8,9 +8,9 @@ The Agentic Service Bot frontend provides a user-friendly interface for customer
 
 - **Framework**: React with TypeScript
 - **UI Library**: Chakra UI
-- **State Management**: React Hooks (useState, useEffect)
+- **State Management**: React Hooks (useState, useEffect, custom hooks)
 - **Communication**: REST API for messaging
-- **Build Tool**: Create React App
+- **Build Tool**: Vite
 
 ## Components
 
@@ -19,25 +19,38 @@ The Agentic Service Bot frontend provides a user-friendly interface for customer
 The top-level component that provides the application structure and navigation.
 
 **Features**:
-- Tab-based navigation between Chat, Devices, and Capabilities views
-- Shared customer context across all tabs
+- Grid-based layout with main content and sidebar
+- Shared customer context across all components
 - Responsive layout using Chakra UI
+- State management for customer selection and message updates
 
 **Props**: None (top-level component)
 
 **State**:
 - `customerId`: Currently selected customer ID
+- `lastMessageTimestamp`: Timestamp of the last message sent (for triggering updates)
 
 ### Instructions Section Component
 
-Provides an introduction and usage instructions for the smart home assistant.
+Provides an introduction, system architecture visualization, and usage instructions for the smart home assistant.
 
 **Features**:
 - Welcome message and overview
-- Collapsible instructions on how to use the assistant
-- Example commands for different smart home functions
+- System architecture diagram with zoom functionality
+- Technical highlights and key components
+- Quick demo guide with step-by-step instructions
+- Responsive design with color mode support
 
 **Props**: None
+
+**State**:
+- Modal state for diagram zoom functionality
+
+**Visual Elements**:
+- System architecture sequence diagram
+- Component lists with icons
+- Styled sections with consistent theming
+- Interactive zoom modal for detailed diagram viewing
 
 ### Chat Component
 
@@ -48,96 +61,149 @@ The main component that handles the chat interface and API communication.
 - Message input and submission
 - Customer selection
 - Loading state indicator
-- Error handling and display
-- Automatic scrolling to latest messages
-- Polling for new messages (optional)
+- Error handling with alerts
+- New conversation functionality
+- Auto-scrolling message list
 
 **Props**:
-- `onCustomerChange`: Callback function when customer selection changes
+- `onCustomerChange`: Callback function when customer changes
+- `onMessageSent`: Callback function when a message is sent
 
 **State**:
-- `messages`: Array of message objects
-- `input`: Current text input value
-- `isLoading`: Boolean indicating if a response is being processed
-- `error`: Error message if any
-- `customerId`: Currently selected customer ID
-- `lastMessageTimestamp`: Timestamp of the last message for polling
+- Managed by custom `useChat` hook
 
-### User Devices Table Component
+### UserDevicesTable Component
 
-Displays a table of the user's smart home devices.
+Displays the devices associated with the selected customer.
 
 **Features**:
-- Device listing with status indicators
-- Filtering by device type and location
-- Interactive controls for supported devices
-- Refresh button for device status
+- Tabular display of device information
+- Real-time updates when device state changes
+- Visual indicators for device status
 - Responsive design for different screen sizes
 
 **Props**:
-- `customerId`: ID of the current customer
+- `customerId`: ID of the selected customer
+- `lastUpdate`: Timestamp to trigger refreshes
 
-**State**:
-- `devices`: Array of device objects
-- `isLoading`: Boolean indicating if devices are being loaded
-- `lastRefreshed`: Timestamp of last data refresh
+### CapabilitiesTable Component
 
-### Capabilities Table Component
-
-Provides a reference table for service level capabilities.
+Displays the capabilities and permissions available to the selected customer based on their service level.
 
 **Features**:
-- Comparison of features across service levels
-- Categorized capabilities for easy reference
-- Visual indicators for available/unavailable features
-- Highlighting of current user's service level
+- Service level display
+- Allowed and disallowed actions
+- Visual indicators for permission status
+- Upgrade suggestions for disallowed actions
 
 **Props**:
-- `customerId`: ID of the current customer
+- `customerId`: ID of the selected customer
 
-**State**: None (static reference data)
+### MessageList Component
 
-### Message Component
-
-Displays individual messages in the chat interface.
+Renders the list of messages in the chat.
 
 **Features**:
-- Different styling for user and bot messages
+- Alternating message styles for user and bot
 - Timestamp display
-- Message content formatting
-- Message status indicators (sending, sent, delivered, error)
+- Auto-scrolling to latest message
+- Visual differentiation between message types
 
 **Props**:
-- `message`: Message object containing text, sender, timestamp, and status
+- `messages`: Array of message objects
+- `isLoading`: Boolean indicating if a message is being processed
 
-### Status Indicator Component
+### ErrorBoundary Component
 
-Displays the current API request status.
+Catches and displays errors that occur during rendering.
 
 **Features**:
-- Visual indicators for different request states
-- Error message display
-- Retry button for failed requests
+- Error state display
+- Recovery options
+- Detailed error information for debugging
 
 **Props**:
-- `isLoading`: Boolean indicating if a request is in progress
-- `error`: Error message if any
-- `onRetry`: Callback function for retry action
+- `children`: React nodes to render
 
-### CustomerSelector Component
+## Custom Hooks
 
-Allows selection of different customer profiles for testing.
+### useChat Hook
+
+Custom hook that encapsulates chat functionality.
 
 **Features**:
-- Dropdown of available customers
-- Display of current service level
+- Message state management
+- API communication
+- Error handling
+- Customer data fetching
+- Input handling
 
-**Props**:
+**Returns**:
+- `messages`: Array of message objects
+- `input`: Current input value
+- `isLoading`: Boolean indicating if a message is being processed
+- `error`: Error object if an error occurred
 - `customers`: Array of customer objects
-- `selectedId`: Currently selected customer ID
-- `onChange`: Function to handle customer change
+- `isLoadingCustomers`: Boolean indicating if customers are being loaded
+- `customerId`: ID of the selected customer
+- `setInput`: Function to update input value
+- `sendMessage`: Function to send a message
+- `startNewConversation`: Function to start a new conversation
+- `setCustomerId`: Function to update the selected customer
+- `clearError`: Function to clear the error state
 
-**State**: None (stateless component)
+## API Communication
+
+### Chat API
+
+**Endpoints**:
+- `GET /api/customers`: Fetch list of customers
+- `POST /api/chat`: Send a message to the chat service
+- `GET /api/chat/history/{customerId}`: Fetch chat history for a customer
+- `GET /api/customers/{customerId}/devices`: Fetch devices for a customer
+- `GET /api/service-levels/{serviceLevel}`: Fetch service level permissions
+
+**Request Format**:
+```json
+{
+  "customerId": "string",
+  "message": "string",
+  "conversationId": "string (optional)"
+}
+```
+
+**Response Format**:
+```json
+{
+  "message": "string",
+  "timestamp": "string (ISO date)",
+  "messageId": "string",
+  "id": "string",
+  "conversationId": "string",
+  "customerId": "string",
+  "request_type": "string",
+  "action_executed": "boolean"
+}
+```
+
+## Styling
+
+The application uses Chakra UI for styling with the following features:
+- Responsive design for different screen sizes
+- Light and dark mode support
+- Consistent color scheme
+- Accessible UI components
+- Grid and flex layouts for organization
+
+## User Experience
+
+The frontend is designed to provide a seamless user experience with:
+- Clear instructions and guidance
+- Visual feedback for actions
+- Error handling and recovery
+- Responsive design for different devices
+- Intuitive interface for chat interactions
+- Real-time updates for device state changes
 
 ## Pages
 

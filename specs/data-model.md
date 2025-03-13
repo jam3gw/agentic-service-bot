@@ -23,7 +23,9 @@ The Agentic Service Bot uses DynamoDB as its primary data store. The data model 
 {
   "id": "dev_001",
   "type": "SmartSpeaker",
-  "location": "living_room"
+  "location": "living_room",
+  "state": "off",
+  "volume": 50
 }
 ```
 
@@ -37,7 +39,9 @@ The Agentic Service Bot uses DynamoDB as its primary data store. The data model 
     {
       "id": "dev_001",
       "type": "SmartSpeaker",
-      "location": "living_room"
+      "location": "living_room",
+      "state": "off",
+      "volume": 50
     }
   ]
 }
@@ -51,58 +55,55 @@ The Agentic Service Bot uses DynamoDB as its primary data store. The data model 
 
 **Schema**:
 - `level` (Partition Key): String - Service tier name (basic, premium, enterprise)
-- `allowed_actions`: List - Array of action names allowed at this service level
-- `max_devices`: Number - Maximum number of devices allowed at this service level
-- `support_priority`: String - Support priority level (standard, priority, dedicated)
+- `allowed_actions`: List - Array of action names allowed for this tier
+- `max_devices`: Number - Maximum number of devices allowed for this tier
+- `description`: String - Human-readable description of the tier
 
 **Example Record**:
 ```json
 {
-  "level": "premium",
+  "level": "basic",
   "allowed_actions": [
-    "device_power",
-    "volume_control"
+    "device_status",
+    "volume_control",
+    "device_power"
   ],
   "max_devices": 1,
-  "support_priority": "priority"
+  "description": "Basic tier with limited functionality"
 }
 ```
-
-**Service Level Permissions**:
-- `basic`: Allows `device_power` actions
-- `premium`: Allows `device_power` and `volume_control` actions
-- `enterprise`: Allows `device_power`, `volume_control`, and `song_changes` actions
 
 ### Messages Table
 
 **Table Name**: `{environment}-messages`
 
-**Purpose**: Stores conversation history between customers and the service bot.
+**Purpose**: Stores chat message history.
 
 **Schema**:
-- `conversationId` (Partition Key): String - Unique identifier for the conversation
-- `timestamp` (Sort Key): String - ISO timestamp of the message
-- `userId`: String - Customer ID or "bot" for bot messages
-- `text`: String - Message content
-- `requestType`: String (Optional) - Type of request for customer messages
-- `requiredActions`: List (Optional) - Actions required for the request
-- `allowed`: Boolean (Optional) - Whether the request was allowed
+- `id` (Partition Key): String - Unique identifier for the message
+- `conversationId`: String - ID of the conversation this message belongs to
+- `userId`: String - ID of the customer associated with this message
+- `text`: String - Content of the message
+- `sender`: String - Who sent the message ('user' or 'bot')
+- `timestamp`: String - ISO format timestamp of when the message was sent
 
-**Indexes**:
-- **UserIdIndex** (GSI):
-  - Partition Key: `userId`
-  - Sort Key: `timestamp`
+**GSI**: `conversationId-index`
+- Partition Key: `conversationId`
+- Sort Key: `timestamp`
+
+**GSI**: `userId-index`
+- Partition Key: `userId`
+- Sort Key: `timestamp`
 
 **Example Record**:
 ```json
 {
-  "conversationId": "conv_123",
-  "timestamp": "2023-03-01T14:30:45.123Z",
+  "id": "msg_001",
+  "conversationId": "conv_001",
   "userId": "cust_001",
-  "text": "Move my smart speaker to the bedroom",
-  "requestType": "device_relocation",
-  "requiredActions": ["device_relocation"],
-  "allowed": false
+  "text": "Turn on my living room speaker",
+  "sender": "user",
+  "timestamp": "2023-03-01T12:00:00Z"
 }
 ```
 
@@ -128,61 +129,149 @@ The Agentic Service Bot uses DynamoDB as its primary data store. The data model 
 }
 ```
 
-## Data Relationships
+## Data Models
 
-1. **Customer to Service Level**:
-   - Each customer has a `service_level` attribute that references a record in the Service Levels table
-   - This relationship determines what actions the customer can perform
+### Customer Model
 
-2. **Customer to Devices**:
-   - Devices are embedded within the customer record as a list
-   - Each device has a unique ID, type, and location
+The Customer model represents a customer in the system with their associated data and devices.
 
-3. **Customer to Messages**:
-   - Messages are linked to customers via the `userId` field
-   - The UserIdIndex GSI allows efficient retrieval of a customer's message history
+**Attributes**:
+- `id`: String - Unique identifier for the customer
+- `name`: String - Full name of the customer
+- `service_level`: String - Service tier level (basic, premium, enterprise)
+- `device`: Dict - The customer's smart device
 
-4. **Customer to Connection**:
-   - WebSocket connections are linked to customers via the `userId` field
-   - This allows sending real-time updates to the correct customer
+**Methods**:
+- `__init__(customer_id, name, service_level, device)`: Initialize a Customer instance
+- `__str__()`: Return a string representation of the Customer
+- `get_device()`: Get the customer's device
+- `to_dict()`: Convert the Customer instance to a dictionary
+
+**Example Usage**:
+```python
+customer = Customer(
+    customer_id="cust_001",
+    name="Jane Smith",
+    service_level="basic",
+    device={
+        "id": "dev_001",
+        "type": "SmartSpeaker",
+        "location": "living_room",
+        "state": "off",
+        "volume": 50
+    }
+)
+```
+
+### Message Model
+
+The Message model represents a chat message in the system.
+
+**Attributes**:
+- `id`: String - Unique identifier for the message
+- `conversation_id`: String - ID of the conversation this message belongs to
+- `user_id`: String - ID of the user who sent or received the message
+- `text`: String - Content of the message
+- `sender`: String - Who sent the message ('user' or 'bot')
+- `timestamp`: String - When the message was sent
+
+**Methods**:
+- `__init__(id, conversation_id, user_id, text, sender, timestamp=None)`: Initialize a Message instance
+- `__str__()`: Return a string representation of the Message
+- `to_dict()`: Convert the Message to a dictionary for storage in DynamoDB
+- `from_dict(data)`: Create a Message instance from a dictionary (class method)
+
+**Example Usage**:
+```python
+message = Message(
+    id="msg_001",
+    conversation_id="conv_001",
+    user_id="cust_001",
+    text="Turn on my living room speaker",
+    sender="user"
+)
+```
 
 ## Data Access Patterns
 
-1. **Get Customer by ID**:
-   - Used when a customer connects or sends a message
-   - Direct lookup by partition key on Customers table
+### Customer Access Patterns
 
-2. **Get Service Level Permissions**:
-   - Used to check if a customer can perform a requested action
-   - Lookup by partition key on Service Levels table
+1. **Get customer by ID**:
+   - Used when processing a chat message to retrieve customer information
+   - Query the Customers table using the customer ID as the partition key
 
-3. **Get Conversation History**:
-   - Used to provide context for AI responses
-   - Query Messages table by conversationId and timestamp range
+2. **Update customer device state**:
+   - Used when a device state change is requested
+   - Update the Customers table using the customer ID as the partition key
+   - Modify the specific device in the devices array
 
-4. **Get Customer Message History**:
-   - Used for analytics or customer support
-   - Query UserIdIndex GSI by userId and timestamp range
+### Service Level Access Patterns
 
-5. **Get Active Connection**:
-   - Used to send real-time updates to a customer
-   - Lookup by userId on Connections table
+1. **Get service level permissions**:
+   - Used when checking if a customer can perform a specific action
+   - Query the Service Levels table using the service level as the partition key
+
+### Message Access Patterns
+
+1. **Save new message**:
+   - Used when a new message is sent or received
+   - Put item in the Messages table
+
+2. **Get conversation history**:
+   - Used when retrieving chat history for a specific conversation
+   - Query the Messages table using the GSI with conversationId as the partition key
+   - Sort by timestamp to get messages in chronological order
+
+3. **Get all messages for a customer**:
+   - Used when retrieving all chat history for a customer
+   - Query the Messages table using the GSI with userId as the partition key
+   - Sort by timestamp to get messages in chronological order
+
+## Data Consistency
+
+The system uses DynamoDB's strong consistency for read operations where immediate consistency is required, such as:
+- Checking service level permissions before executing an action
+- Retrieving customer information for processing a request
+
+For other operations where eventual consistency is acceptable, such as retrieving chat history, the system uses DynamoDB's default eventually consistent reads for better performance and lower cost.
 
 ## Data Validation
 
-1. **Customer Data**:
-   - Customer ID must be unique
-   - Service level must be one of: basic, premium, enterprise
-   - Device count must not exceed the maximum allowed for the service level
+Data validation is performed at multiple levels:
 
-2. **Message Data**:
-   - Timestamps must be in ISO format
-   - Message text cannot be empty
-   - Request type must be a valid type if provided
+1. **API Layer**:
+   - Validates request parameters
+   - Ensures required fields are present
+   - Checks data types and formats
 
-3. **Connection Data**:
-   - Connection ID must be unique
-   - TTL must be a valid future timestamp
+2. **Service Layer**:
+   - Validates business rules
+   - Ensures data consistency
+   - Checks permissions and limits
+
+3. **Model Layer**:
+   - Validates data structure
+   - Provides type hints for better code quality
+   - Ensures proper formatting before storage
+
+## Error Handling
+
+The system handles data-related errors in the following ways:
+
+1. **Item Not Found**:
+   - Returns appropriate error messages
+   - Logs the error for monitoring
+   - Provides helpful context in the response
+
+2. **Validation Errors**:
+   - Returns detailed error messages
+   - Indicates which fields failed validation
+   - Suggests correct formats or values
+
+3. **Permission Errors**:
+   - Explains why an action is not allowed
+   - Suggests upgrading service level if applicable
+   - Provides alternative actions that are allowed
 
 ## Data Lifecycle
 

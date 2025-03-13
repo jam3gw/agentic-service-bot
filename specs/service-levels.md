@@ -8,145 +8,177 @@ The Agentic Service Bot implements a tiered service level system that determines
 
 ### Basic Tier
 
-**Description**: Entry-level service for customers with basic needs.
+**Description**: Basic service level with device status and power control.
 
 **Features**:
 - Device status check
 - Device power control
 - Limited to 1 device
 
-**Limitations**:
-- No volume control
-- No song changes
-- No advanced features
+**Allowed Actions**:
+- `device_status`
+- `device_power`
 
-**Support Priority**: Standard
+**Price**: Free
 
 ### Premium Tier
 
-**Description**: Mid-level service for customers with additional control needs.
+**Description**: Premium service level with volume control.
 
 **Features**:
 - All Basic tier features (device status check, device power)
 - Volume control
 - Limited to 1 device
 
-**Limitations**:
-- No song changes
+**Allowed Actions**:
+- `device_status`
+- `device_power`
+- `volume_control`
 
-**Support Priority**: Priority
+**Price**: $9.99/month
 
 ### Enterprise Tier
 
-**Description**: Top-level service for customers with advanced control needs.
+**Description**: Enterprise service level with full device control.
 
 **Features**:
 - All Premium tier features (device status check, device power, volume control)
 - Song changes
 - Limited to 1 device
 
-**Limitations**:
-- None within the system's capabilities
+**Allowed Actions**:
+- `device_status`
+- `device_power`
+- `volume_control`
+- `song_changes`
 
-**Support Priority**: Dedicated
-
-## Permission Matrix
-
-| Action | Basic | Premium | Enterprise |
-|--------|-------|---------|------------|
-| Device Status Check | ✅ | ✅ | ✅ |
-| Device Power | ✅ | ✅ | ✅ |
-| Volume Control | ❌ | ✅ | ✅ |
-| Song Changes | ❌ | ❌ | ✅ |
+**Price**: $29.99/month
 
 ## Action Definitions
 
-### Device Status Check
-- **Description**: Check the status of smart home devices
-- **Example Request**: "What's the status of my living room speaker?"
-- **Required Permission**: `device_status`
+### device_status
 
-### Device Power
-- **Description**: Control device power (on/off)
-- **Example Request**: "Turn on my living room speaker"
-- **Required Permission**: `device_power`
+**Description**: Check the status of a device.
 
-### Volume Control
-- **Description**: Adjust the volume of a device
-- **Example Request**: "Turn up the volume on my kitchen speaker"
-- **Required Permission**: `volume_control`
+**Examples**:
+- "Is my speaker on?"
+- "What's the volume of my speaker?"
+- "Check the status of my living room speaker"
 
-### Song Changes
-- **Description**: Change songs on a speaker device
-- **Example Request**: "Skip to the next song on my living room speaker"
-- **Required Permission**: `song_changes`
+**Required Parameters**:
+- Device ID or location (optional, defaults to the customer's device)
+
+**Response**:
+- Current device state (on/off)
+- Current volume level (if applicable)
+- Current location
+
+### device_power
+
+**Description**: Turn a device on or off.
+
+**Examples**:
+- "Turn on my speaker"
+- "Turn off my living room speaker"
+- "Power on my device"
+
+**Required Parameters**:
+- Device ID or location (optional, defaults to the customer's device)
+- Desired state (on/off)
+
+**Response**:
+- Confirmation of the action
+- New device state
+
+### volume_control
+
+**Description**: Adjust the volume of a device.
+
+**Examples**:
+- "Turn up the volume"
+- "Set volume to 50%"
+- "Lower the volume"
+
+**Required Parameters**:
+- Device ID or location (optional, defaults to the customer's device)
+- Volume level or adjustment direction
+
+**Response**:
+- Confirmation of the action
+- New volume level
+
+### song_changes
+
+**Description**: Change the currently playing song.
+
+**Examples**:
+- "Play the next song"
+- "Skip this track"
+- "Play the previous song"
+
+**Required Parameters**:
+- Device ID or location (optional, defaults to the customer's device)
+- Direction (next, previous) or specific song
+
+**Response**:
+- Confirmation of the action
+- Information about the new song (if available)
 
 ## Permission Enforcement
 
-1. When a customer sends a request, the system:
-   - Identifies the customer
-   - Retrieves their service level
-   - Analyzes the request to determine required actions
-   - Checks if the service level allows those actions
-   - Processes the request if allowed, or returns a permission error if not
+The system enforces permissions at multiple levels:
 
-2. Permission errors include:
-   - Clear explanation of why the request was denied
-   - Information about upgrading to a higher service tier
-   - Alternative actions that are available at the current tier
+1. **API Layer**:
+   - Validates the customer's service level before processing requests
+   - Returns appropriate error messages for unauthorized actions
 
-## Service Level Upgrade Path
+2. **Service Layer**:
+   - Checks permissions before executing device actions
+   - Logs permission denials for monitoring
 
-Customers can upgrade their service level to gain access to additional features:
+3. **Response Generation**:
+   - Provides helpful responses explaining permission limitations
+   - Suggests upgrading to a higher service tier when appropriate
 
-1. **Basic to Premium**:
-   - Gains volume control
-   - Improves support priority
+## Implementation
 
-2. **Premium to Enterprise**:
-   - Gains song changes
-   - Provides dedicated support
+Permissions are stored in the `{environment}-service-levels` DynamoDB table with the following structure:
 
-## Implementation Details
-
-Service levels are stored in the `service_levels_table` in DynamoDB with the following structure:
-
-```json
-{
-  "level": "basic",
-  "allowed_actions": [
-    "device_power"
-  ],
-  "max_devices": 1,
-  "support_priority": "standard"
-}
-```
-
-For the Premium tier:
 ```json
 {
   "level": "premium",
+  "name": "Premium",
+  "description": "Premium service level with volume control",
+  "price": 9.99,
   "allowed_actions": [
+    "device_status",
     "device_power",
     "volume_control"
-  ],
-  "max_devices": 1,
-  "support_priority": "priority"
+  ]
 }
 ```
 
-For the Enterprise tier:
-```json
-{
-  "level": "enterprise",
-  "allowed_actions": [
-    "device_power",
-    "volume_control",
-    "song_changes"
-  ],
-  "max_devices": 1,
-  "support_priority": "dedicated"
-}
+The system retrieves these permissions when processing customer requests and uses them to determine if the requested action is allowed.
+
+## Upgrading Service Levels
+
+When a customer attempts an action that is not allowed at their current service level, the system:
+
+1. Identifies the required service level for the action
+2. Explains the limitation to the customer
+3. Suggests upgrading to the appropriate service level
+4. Provides information about the benefits of upgrading
+
+Example response:
+```
+I'm sorry, but changing songs requires the Enterprise service level. You're currently on the Premium plan. Would you like to upgrade to Enterprise for $29.99/month to access this feature?
 ```
 
-The RequestAnalyzer class maps user requests to required actions, which are then checked against the customer's service level permissions. 
+## Future Enhancements
+
+Planned enhancements to the service level system include:
+
+1. **Custom Service Levels**: Allow creating custom service levels with specific permissions
+2. **Temporary Upgrades**: Enable temporary access to higher-tier features
+3. **Usage-Based Pricing**: Implement pay-per-use options for certain actions
+4. **Family Plans**: Support multiple users with shared devices and permissions 
