@@ -11,6 +11,7 @@ import logging
 import sys
 import json
 import re
+import time
 from typing import Dict, Any, Optional, List, Union, cast
 
 # Third-party imports
@@ -22,6 +23,9 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
+
+# Import custom metrics utility
+from utils.metrics import metrics_client
 
 # Configure logging with more detailed format
 logging.basicConfig(
@@ -199,12 +203,30 @@ IMPORTANT: Your response must be a valid JSON object. Do not include any explana
     try:
         # Stage 1: Get high-level request type
         logger.info("Stage 1: Identifying request type...")
+        
+        # Track API call latency and token usage
+        start_time = time.time()
         stage1_message = anthropic_client.messages.create(
             model=ANTHROPIC_MODEL,
             system=stage1_prompt,
             messages=[{"role": "user", "content": user_input}],
             max_tokens=300,
             temperature=0.0
+        )
+        end_time = time.time()
+        duration_ms = (end_time - start_time) * 1000
+        
+        # Calculate token usage (input + output)
+        input_tokens = stage1_message.usage.input_tokens if hasattr(stage1_message, 'usage') else 0
+        output_tokens = stage1_message.usage.output_tokens if hasattr(stage1_message, 'usage') else 0
+        total_tokens = input_tokens + output_tokens
+        
+        # Emit metrics
+        metrics_client.track_anthropic_api_call(
+            api_name="messages.create.stage1",
+            duration_ms=duration_ms,
+            tokens=total_tokens,
+            success=True
         )
         
         stage1_result = _parse_json_response(stage1_message.content[0].text if stage1_message.content else "")
@@ -225,12 +247,30 @@ IMPORTANT: Your response must be a valid JSON object. Do not include any explana
         stage2_prompt = _build_context_extraction_prompt(primary_action)
         
         logger.info("Stage 2: Extracting detailed context...")
+        
+        # Track API call latency and token usage for stage 2
+        start_time = time.time()
         stage2_message = anthropic_client.messages.create(
             model=ANTHROPIC_MODEL,
             system=stage2_prompt,
             messages=[{"role": "user", "content": user_input}],
             max_tokens=300,
             temperature=0.0
+        )
+        end_time = time.time()
+        duration_ms = (end_time - start_time) * 1000
+        
+        # Calculate token usage (input + output)
+        input_tokens = stage2_message.usage.input_tokens if hasattr(stage2_message, 'usage') else 0
+        output_tokens = stage2_message.usage.output_tokens if hasattr(stage2_message, 'usage') else 0
+        total_tokens = input_tokens + output_tokens
+        
+        # Emit metrics
+        metrics_client.track_anthropic_api_call(
+            api_name="messages.create.stage2",
+            duration_ms=duration_ms,
+            tokens=total_tokens,
+            success=True
         )
         
         stage2_result = _parse_json_response(stage2_message.content[0].text if stage2_message.content else "")
@@ -549,7 +589,9 @@ def generate_response(prompt: str, context: Optional[Dict[str, Any]] = None) -> 
     
     try:
         logger.info("Sending request to Anthropic API...")
-        # Use a lower max_tokens value to reduce costs
+        
+        # Track API call latency and token usage
+        start_time = time.time()
         message = anthropic_client.messages.create(
             model=ANTHROPIC_MODEL,
             system=system_prompt,
@@ -558,6 +600,21 @@ def generate_response(prompt: str, context: Optional[Dict[str, Any]] = None) -> 
             ],
             max_tokens=300,  # Reduced from 500
             temperature=0.5
+        )
+        end_time = time.time()
+        duration_ms = (end_time - start_time) * 1000
+        
+        # Calculate token usage (input + output)
+        input_tokens = message.usage.input_tokens if hasattr(message, 'usage') else 0
+        output_tokens = message.usage.output_tokens if hasattr(message, 'usage') else 0
+        total_tokens = input_tokens + output_tokens
+        
+        # Emit metrics
+        metrics_client.track_anthropic_api_call(
+            api_name="messages.create.response",
+            duration_ms=duration_ms,
+            tokens=total_tokens,
+            success=True
         )
         
         response = str(message.content[0])
@@ -569,6 +626,15 @@ def generate_response(prompt: str, context: Optional[Dict[str, Any]] = None) -> 
         return response
     except Exception as e:
         logger.error(f"Error generating response with Claude: {str(e)}", exc_info=True)
+        
+        # Track failed API call
+        metrics_client.track_anthropic_api_call(
+            api_name="messages.create.response",
+            duration_ms=0,
+            tokens=0,
+            success=False
+        )
+        
         return f"I apologize, but I encountered an error processing your request. Please try again."
 
 def build_system_prompt(context: Dict[str, Any]) -> str:
