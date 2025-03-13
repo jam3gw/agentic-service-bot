@@ -162,6 +162,10 @@ const InstructionsSection: React.FC = () => {
                                         <ListIcon as={InfoIcon} color={accentColor} />
                                         Contextual Response Generation
                                     </ListItem>
+                                    <ListItem>
+                                        <ListIcon as={InfoIcon} color={accentColor} />
+                                        API URL Configuration in config.ts (update for dev/prod)
+                                    </ListItem>
                                 </List>
                             </Box>
                         </SimpleGrid>
