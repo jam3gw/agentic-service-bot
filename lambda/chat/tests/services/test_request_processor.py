@@ -1971,7 +1971,7 @@ class TestRequestProcessor(unittest.TestCase):
                 
                 # Verify execute_action was called correctly
                 mock_execute_action.assert_called_once()
-                action, device, context = mock_execute_action.call_args[0]
+                action, device, context = mock_execute_action.call_args
                 self.assertEqual(action, "volume_control")
                 
                 # Verify volume is within bounds
@@ -1984,6 +1984,143 @@ class TestRequestProcessor(unittest.TestCase):
                     self.assertLessEqual(case["expected_volume"], 100)
                 
                 mock_execute_action.reset_mock()
+
+    @patch('services.request_processor.get_customer')
+    @patch('services.request_processor.get_service_level_permissions')
+    @patch('services.request_processor.analyze_request')
+    @patch('services.request_processor.execute_action')
+    @patch('services.request_processor.store_message')
+    def test_process_request_device_already_on(self, mock_store_message, 
+                                             mock_execute_action, mock_analyze, 
+                                             mock_get_permissions, mock_get_customer):
+        """Test handling when device is already in the requested power state."""
+        # Setup mocks
+        mock_customer = MagicMock()
+        mock_customer.id = "test-customer"
+        mock_customer.service_level = "basic"
+        mock_customer.get_device.return_value = {
+            "id": "device-1", 
+            "type": "speaker", 
+            "power": "on",  # Device is already on
+            "location": "living room"
+        }
+        mock_get_customer.return_value = mock_customer
+        
+        # Set permissions for basic service level
+        mock_get_permissions.return_value = {
+            "allowed_actions": ["device_status", "device_power"],
+            "max_devices": 1
+        }
+        
+        # Configure analyze_request mock to return power on action
+        mock_analyze.return_value = {
+            "primary_action": "device_power",
+            "all_actions": ["device_power"],
+            "context": {
+                "power_state": "on"  # Request to turn on
+            }
+        }
+        
+        # Configure execute_action to indicate device is already on
+        mock_execute_action.return_value = {
+            "action_executed": True,
+            "power_state": "on",
+            "already_in_state": True
+        }
+        
+        # Process the request
+        result = process_request("test-customer", {
+            "message": "Turn on my speaker",
+            "metadata": {"conversation_id": "test-conv-123"}
+        })
+        
+        # Verify the result
+        self.assertTrue(result.get("action_executed", False), 
+                       "Action should be marked as executed")
+        
+        # Check that the response indicates the device was already on
+        message = result.get("message", "").lower()
+        self.assertIn("already", message, 
+                     f"Response should indicate device is already on, got: {message}")
+        self.assertIn("on", message, 
+                     f"Response should mention 'on' state, got: {message}")
+        
+        # Verify execute_action was called with correct parameters
+        mock_execute_action.assert_called_once()
+        args, kwargs = mock_execute_action.call_args
+        self.assertEqual(args[0], "device_power", "Action should be device_power")
+    
+    @patch('services.request_processor.get_customer')
+    @patch('services.request_processor.get_service_level_permissions')
+    @patch('services.request_processor.analyze_request')
+    @patch('services.request_processor.execute_action')
+    @patch('services.request_processor.store_message')
+    def test_process_request_volume_already_at_level(self, mock_store_message, 
+                                                   mock_execute_action, mock_analyze, 
+                                                   mock_get_permissions, mock_get_customer):
+        """Test handling when volume is already at the requested level."""
+        # Setup mocks
+        mock_customer = MagicMock()
+        mock_customer.id = "test-customer"
+        mock_customer.service_level = "premium"
+        mock_customer.get_device.return_value = {
+            "id": "device-1", 
+            "type": "speaker", 
+            "power": "on",
+            "volume": 50,  # Current volume is 50
+            "location": "living room"
+        }
+        mock_get_customer.return_value = mock_customer
+        
+        # Set permissions for premium service level
+        mock_get_permissions.return_value = {
+            "allowed_actions": ["device_status", "device_power", "volume_control"],
+            "max_devices": 3
+        }
+        
+        # Configure analyze_request mock to return volume control action
+        mock_analyze.return_value = {
+            "primary_action": "volume_control",
+            "all_actions": ["volume_control"],
+            "context": {
+                "volume_change": {
+                    "direction": "set",
+                    "amount": 50  # Request to set volume to 50
+                }
+            }
+        }
+        
+        # Configure execute_action to indicate volume is already at requested level
+        mock_execute_action.return_value = {
+            "action_executed": True,
+            "volume_change": {
+                "previous": 50,
+                "new": 50,
+                "already_at_level": True
+            }
+        }
+        
+        # Process the request
+        result = process_request("test-customer", {
+            "message": "Set the volume to 50 percent",
+            "metadata": {"conversation_id": "test-conv-123"}
+        })
+        
+        # Verify the result
+        self.assertTrue(result.get("action_executed", False), 
+                       "Action should be marked as executed")
+        
+        # Check that the response indicates the volume was already at the requested level
+        message = result.get("message", "").lower()
+        self.assertIn("already", message, 
+                     f"Response should indicate volume is already at level, got: {message}")
+        self.assertIn("50", message, 
+                     f"Response should mention the volume level, got: {message}")
+        
+        # Verify execute_action was called with correct parameters
+        mock_execute_action.assert_called_once()
+        args, kwargs = mock_execute_action.call_args
+        self.assertEqual(args[0], "volume_control", "Action should be volume_control")
 
 if __name__ == "__main__":
     unittest.main() 

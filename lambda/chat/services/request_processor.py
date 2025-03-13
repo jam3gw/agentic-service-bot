@@ -335,6 +335,16 @@ def execute_action(action: str, device: Dict[str, Any], context: Dict[str, Any])
             logger.warning(f"[ACTION_EXEC] {error_msg}")
             return {"error": error_msg}
         
+        # Check if device is already in the requested state
+        current_state = device.get("power", "off")
+        if current_state == new_state:
+            logger.info(f"[ACTION_EXEC] Device {device_id} is already {new_state}")
+            return {
+                "action_executed": True,
+                "power_state": new_state,
+                "already_in_state": True
+            }
+        
         logger.info(f"[ACTION_EXEC] Updating device {device_id} power state to {new_state}")
         success = update_device_state(customer_id, device_id, {"power": new_state})
         
@@ -382,6 +392,19 @@ def execute_action(action: str, device: Dict[str, Any], context: Dict[str, Any])
         
         # Ensure volume is within bounds
         new_volume = max(0, min(100, new_volume))
+        
+        # Check if volume is already at the requested level
+        if previous_volume == new_volume:
+            logger.info(f"[ACTION_EXEC] Device {device_id} volume is already at {new_volume}%")
+            return {
+                "action_executed": True,
+                "volume_change": {
+                    "previous": previous_volume,
+                    "new": new_volume,
+                    "already_at_level": True
+                }
+            }
+        
         logger.info(f"[ACTION_EXEC] Updating device {device_id} volume from {previous_volume} to {new_volume}")
         
         success = update_device_state(customer_id, device_id, {"volume": new_volume})
@@ -600,12 +623,21 @@ def generate_response(user_input: str, context: Dict[str, Any]) -> str:
         power_state = context.get("power_state", "unknown")
         device_info = context.get("device_info", {})
         device_type = device_info.get("type", "device").lower()
+        
+        # Check if device was already in the requested state
+        if context.get("already_in_state", False):
+            return f"Your {device_type} is already {power_state}"
+        
         return f"I've turned your {device_type} {power_state}"
     
     elif request_type == "volume_control":
         volume_change = context.get("volume_change", {})
         new_volume = volume_change.get("new", 0)
         previous_volume = volume_change.get("previous", 0)
+        
+        # Check if volume was already at the requested level
+        if volume_change.get("already_at_level", False):
+            return f"The volume is already at {new_volume}%"
         
         if new_volume > previous_volume:
             return f"I've increased the volume to {new_volume}%"
