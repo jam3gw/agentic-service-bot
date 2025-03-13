@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
     Box,
     Heading,
@@ -9,14 +9,25 @@ import {
     ListIcon,
     useColorModeValue,
     SimpleGrid,
+    Modal,
+    ModalOverlay,
+    ModalContent,
+    ModalBody,
+    ModalCloseButton,
+    useDisclosure,
+    IconButton,
+    Flex,
 } from '@chakra-ui/react';
-import { InfoIcon } from '@chakra-ui/icons';
+import { InfoIcon, SearchIcon } from '@chakra-ui/icons';
 
 const InstructionsSection: React.FC = () => {
     const bgColor = useColorModeValue('white', 'gray.800');
     const borderColor = useColorModeValue('gray.200', 'gray.700');
     const accentColor = useColorModeValue('blue.500', 'blue.300');
     const diagramBg = useColorModeValue('gray.50', 'gray.700');
+
+    // Modal control for image zoom
+    const { isOpen, onOpen, onClose } = useDisclosure();
 
     return (
         <Box
@@ -63,13 +74,49 @@ const InstructionsSection: React.FC = () => {
                             borderRadius="md"
                             overflow="hidden"
                             bg={bgColor}
+                            position="relative"
+                            cursor="pointer"
+                            onClick={onOpen}
+                            _hover={{
+                                boxShadow: "lg",
+                                "& .zoom-icon": { opacity: 1 }
+                            }}
                         >
                             <img
                                 src="/images/ui/chat_bot_sequence_diagram.png"
                                 alt="Chat Bot Sequence Diagram"
                                 style={{ width: '100%', height: 'auto' }}
                             />
+                            <Flex
+                                position="absolute"
+                                top="8px"
+                                right="8px"
+                                className="zoom-icon"
+                                opacity="0.7"
+                                transition="opacity 0.2s"
+                                bg="rgba(0,0,0,0.1)"
+                                borderRadius="md"
+                                p={1}
+                            >
+                                <SearchIcon color={accentColor} boxSize={5} />
+                                <Text fontSize="xs" ml={1} fontWeight="medium" color={accentColor}>Click to zoom</Text>
+                            </Flex>
                         </Box>
+
+                        {/* Image Zoom Modal */}
+                        <Modal isOpen={isOpen} onClose={onClose} size="5xl" isCentered>
+                            <ModalOverlay bg="blackAlpha.700" backdropFilter="blur(10px)" />
+                            <ModalContent bg={bgColor}>
+                                <ModalCloseButton size="lg" />
+                                <ModalBody p={4}>
+                                    <img
+                                        src="/images/ui/chat_bot_sequence_diagram.png"
+                                        alt="Chat Bot Sequence Diagram (Enlarged)"
+                                        style={{ width: '100%', height: 'auto', maxHeight: '80vh', objectFit: 'contain' }}
+                                    />
+                                </ModalBody>
+                            </ModalContent>
+                        </Modal>
 
                         <SimpleGrid columns={{ base: 1, md: 2 }} spacing={3} mt={1}>
                             <Box>
