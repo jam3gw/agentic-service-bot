@@ -15,13 +15,17 @@ import {
     useColorModeValue,
     Link,
     Code,
+    Flex,
+    Badge,
+    SimpleGrid,
 } from '@chakra-ui/react';
-import { CheckCircleIcon } from '@chakra-ui/icons';
+import { CheckCircleIcon, InfoIcon } from '@chakra-ui/icons';
 
 const InstructionsSection: React.FC = () => {
     const bgColor = useColorModeValue('white', 'gray.800');
     const borderColor = useColorModeValue('gray.200', 'gray.700');
     const accentColor = useColorModeValue('blue.500', 'blue.300');
+    const diagramBg = useColorModeValue('gray.50', 'gray.700');
 
     return (
         <Box
@@ -33,77 +37,129 @@ const InstructionsSection: React.FC = () => {
             borderColor={borderColor}
             mb={6}
         >
-            <VStack align="stretch" spacing={4}>
-                <Heading size="lg" mb={2} color={accentColor}>
-                    Welcome to the Agentic Service Bot
-                </Heading>
-
-                <Text fontSize="md" lineHeight="tall">
-                    Experience the future of home automation with our intelligent service bot.
-                    Powered by advanced AI, this bot helps you manage your smart devices while
-                    demonstrating the capabilities of autonomous agents in real-world applications.
-                </Text>
-
-                <Box p={4} bg={useColorModeValue('blue.50', 'blue.900')} borderRadius="md">
-                    <VStack align="stretch" spacing={3}>
-                        <Text fontWeight="medium" fontSize="lg">
-                            🎯 What You Can Do:
+            <VStack align="stretch" spacing={6}>
+                <Flex direction={{ base: "column", md: "row" }} align="center" justify="space-between">
+                    <Box>
+                        <Heading size="lg" mb={2} color={accentColor}>
+                            Agentic Service Bot Demo
+                        </Heading>
+                        <Text fontSize="md" lineHeight="tall" maxW="600px">
+                            A demonstration of autonomous agent architecture for smart home device control,
+                            showcasing service level permissions, state management, and AI-powered natural language understanding.
                         </Text>
-                        <List spacing={2}>
-                            <ListItem>
-                                <ListIcon as={CheckCircleIcon} color="green.500" />
-                                Control your smart speakers and devices with natural language commands
-                            </ListItem>
-                            <ListItem>
-                                <ListIcon as={CheckCircleIcon} color="green.500" />
-                                Manage device power, volume, and music playback (based on your service tier)
-                            </ListItem>
-                            <ListItem>
-                                <ListIcon as={CheckCircleIcon} color="green.500" />
-                                View real-time device status and current playlists
-                            </ListItem>
-                            <ListItem>
-                                <ListIcon as={CheckCircleIcon} color="green.500" />
-                                Get instant feedback and suggestions for optimal device management
-                            </ListItem>
-                        </List>
-                    </VStack>
-                </Box>
+                    </Box>
+                    <Box mt={{ base: 4, md: 0 }}>
+                        <Badge colorScheme="green" fontSize="0.8em" p={1} borderRadius="md">
+                            Interview Demo
+                        </Badge>
+                    </Box>
+                </Flex>
 
-                <Box p={4} bg={useColorModeValue('purple.50', 'purple.900')} borderRadius="md">
-                    <VStack align="stretch" spacing={3}>
-                        <Text fontWeight="medium" fontSize="lg">
-                            🤖 Powered by Advanced AI:
-                        </Text>
+                {/* Technical Architecture Highlight Section */}
+                <Box
+                    p={5}
+                    bg={diagramBg}
+                    borderRadius="md"
+                    borderWidth="1px"
+                    borderColor={borderColor}
+                >
+                    <VStack spacing={4} align="stretch">
+                        <Heading size="md" color={accentColor}>
+                            System Architecture & Message Flow
+                        </Heading>
+
                         <Text>
-                            Our service bot uses Anthropic's Claude AI to understand your requests naturally and provide intelligent responses.
-                            It adapts to your service level, ensures secure operations, and helps you get the most out of your smart home devices.
+                            This application demonstrates a complete serverless architecture with AI integration.
+                            The sequence diagram below shows how a user message flows through the system:
                         </Text>
+
+                        <Box
+                            borderWidth="1px"
+                            borderColor={borderColor}
+                            borderRadius="md"
+                            overflow="hidden"
+                            bg={bgColor}
+                        >
+                            <img
+                                src="/images/ui/chat_bot_sequence_diagram.png"
+                                alt="Chat Bot Sequence Diagram"
+                                style={{ width: '100%', height: 'auto' }}
+                            />
+                        </Box>
+
+                        <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4} mt={2}>
+                            <Box>
+                                <Text fontWeight="medium" fontSize="sm" mb={1}>
+                                    Key Components:
+                                </Text>
+                                <List spacing={1} fontSize="sm">
+                                    <ListItem>
+                                        <ListIcon as={InfoIcon} color={accentColor} />
+                                        React Frontend with Chakra UI
+                                    </ListItem>
+                                    <ListItem>
+                                        <ListIcon as={InfoIcon} color={accentColor} />
+                                        AWS API Gateway + Lambda Backend
+                                    </ListItem>
+                                    <ListItem>
+                                        <ListIcon as={InfoIcon} color={accentColor} />
+                                        DynamoDB for Data Persistence
+                                    </ListItem>
+                                    <ListItem>
+                                        <ListIcon as={InfoIcon} color={accentColor} />
+                                        Anthropic Claude API for NLU
+                                    </ListItem>
+                                </List>
+                            </Box>
+                            <Box>
+                                <Text fontWeight="medium" fontSize="sm" mb={1}>
+                                    Technical Highlights:
+                                </Text>
+                                <List spacing={1} fontSize="sm">
+                                    <ListItem>
+                                        <ListIcon as={InfoIcon} color={accentColor} />
+                                        Service Level Permission Management
+                                    </ListItem>
+                                    <ListItem>
+                                        <ListIcon as={InfoIcon} color={accentColor} />
+                                        Two-Stage AI Request Analysis
+                                    </ListItem>
+                                    <ListItem>
+                                        <ListIcon as={InfoIcon} color={accentColor} />
+                                        Real-time State Synchronization
+                                    </ListItem>
+                                    <ListItem>
+                                        <ListIcon as={InfoIcon} color={accentColor} />
+                                        Contextual Response Generation
+                                    </ListItem>
+                                </List>
+                            </Box>
+                        </SimpleGrid>
                     </VStack>
                 </Box>
 
-                <Box p={4} bg={useColorModeValue('green.50', 'green.900')} borderRadius="md">
-                    <VStack align="stretch" spacing={3}>
-                        <Text fontWeight="medium" fontSize="lg">
-                            🚀 Getting Started:
-                        </Text>
-                        <List spacing={2}>
-                            <ListItem>
-                                <ListIcon as={CheckCircleIcon} color="green.500" />
-                                Select a customer profile to explore different service tiers
-                            </ListItem>
-                            <ListItem>
-                                <ListIcon as={CheckCircleIcon} color="green.500" />
-                                Try sending commands in the chat interface below
-                            </ListItem>
-                            <ListItem>
-                                <ListIcon as={CheckCircleIcon} color="green.500" />
-                                Check the Capabilities table to see what's available at your service level
-                            </ListItem>
-                        </List>
-                    </VStack>
+                {/* Quick Start Guide */}
+                <Box p={4} bg={useColorModeValue('blue.50', 'blue.900')} borderRadius="md">
+                    <Text fontWeight="medium" fontSize="md" mb={2}>
+                        🚀 Quick Demo Guide:
+                    </Text>
+                    <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4}>
+                        <Box>
+                            <Text fontWeight="bold" fontSize="sm">1. Select a Customer</Text>
+                            <Text fontSize="sm">Choose different service tiers to demonstrate permission boundaries</Text>
+                        </Box>
+                        <Box>
+                            <Text fontWeight="bold" fontSize="sm">2. Try These Commands</Text>
+                            <Text fontSize="sm">"Turn on my speaker", "Set volume to 80", "Play jazz music"</Text>
+                        </Box>
+                        <Box>
+                            <Text fontWeight="bold" fontSize="sm">3. Observe the Response</Text>
+                            <Text fontSize="sm">Note how responses adapt based on service level permissions</Text>
+                        </Box>
+                    </SimpleGrid>
                 </Box>
 
+                {/* Detailed Information in Accordions */}
                 <Accordion allowMultiple>
                     <AccordionItem>
                         <AccordionButton>
@@ -133,7 +189,7 @@ const InstructionsSection: React.FC = () => {
                     <AccordionItem>
                         <AccordionButton>
                             <Box flex="1" textAlign="left" fontWeight="semibold">
-                                System Architecture
+                                System Architecture Details
                             </Box>
                             <AccordionIcon />
                         </AccordionButton>
@@ -160,27 +216,6 @@ const InstructionsSection: React.FC = () => {
                     │    (LLM)     │
                     └──────────────┘`}
                                     </Code>
-                                </Box>
-
-                                <Box mt={4} mb={4}>
-                                    <Text fontWeight="medium" mb={2}>
-                                        Chat Message Sequence Diagram:
-                                    </Text>
-                                    <Box
-                                        borderWidth="1px"
-                                        borderColor={borderColor}
-                                        borderRadius="md"
-                                        overflow="hidden"
-                                    >
-                                        <img
-                                            src="/images/ui/chat_bot_sequence_diagram.png"
-                                            alt="Chat Bot Sequence Diagram"
-                                            style={{ width: '100%', height: 'auto' }}
-                                        />
-                                    </Box>
-                                    <Text fontSize="sm" color="gray.500" mt={1}>
-                                        Detailed flow of a chat message through the system
-                                    </Text>
                                 </Box>
 
                                 <List spacing={2}>
