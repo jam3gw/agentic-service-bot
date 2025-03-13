@@ -161,6 +161,28 @@ const InstructionsSection: React.FC = () => {
                     └──────────────┘`}
                                     </Code>
                                 </Box>
+
+                                <Box mt={4} mb={4}>
+                                    <Text fontWeight="medium" mb={2}>
+                                        Chat Message Sequence Diagram:
+                                    </Text>
+                                    <Box
+                                        borderWidth="1px"
+                                        borderColor={borderColor}
+                                        borderRadius="md"
+                                        overflow="hidden"
+                                    >
+                                        <img
+                                            src="/images/ui/chat_bot_sequence_diagram.png"
+                                            alt="Chat Bot Sequence Diagram"
+                                            style={{ width: '100%', height: 'auto' }}
+                                        />
+                                    </Box>
+                                    <Text fontSize="sm" color="gray.500" mt={1}>
+                                        Detailed flow of a chat message through the system
+                                    </Text>
+                                </Box>
+
                                 <List spacing={2}>
                                     <ListItem>
                                         <ListIcon as={CheckCircleIcon} color="green.500" />
