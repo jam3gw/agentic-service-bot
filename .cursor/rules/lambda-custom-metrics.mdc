@@ -1,0 +1,835 @@
+# Lambda Custom Metrics Best Practices
+
+This rule enforces best practices for implementing custom metrics in AWS Lambda functions, ensuring that functionality is never sacrificed for metrics and that all metric emissions are validated locally before deployment.
+
+<rule>
+name: lambda_custom_metrics
+description: Enforce best practices for implementing custom metrics in AWS Lambda functions
+filters:
+  - type: file_extension
+    pattern: "\\.py$"
+  - type: content
+    pattern: "(?:lambda|function|handler|metrics|cloudwatch|put_metric_data)"
+
+actions:
+  - type: suggest
+    conditions:
+      # If metrics code is in the main execution path
+      - pattern: "def\\s+handler\\s*\\([^)]*\\).*?put_metric_data\\s*\\("
+        message: "Move metrics code to a separate function or use a try/finally block to ensure it doesn't affect the main execution path"
+      # If metrics code doesn't have error handling
+      - pattern: "put_metric_data\\s*\\([^)]*\\)(?!.*?try)"
+        message: "Wrap metric emissions in try/except blocks to prevent metrics from causing function failures"
+      # If using hardcoded metric names
+      - pattern: "put_metric_data\\s*\\([^)]*['\"][a-zA-Z0-9_]+['\"]"
+        message: "Use constants for metric names to ensure consistency"
+      # If not using a metrics utility
+      - pattern: "boto3\\.client\\(['\"]cloudwatch['\"]\\)\\.put_metric_data"
+        message: "Consider using a metrics utility class to standardize metric emissions"
+      # If metrics code is not in a finally block
+      - pattern: "try\\s*:.*?put_metric_data.*?except"
+        message: "Consider moving metrics code to a finally block to ensure it runs even if an exception occurs"
+      # If metrics are not validated locally
+      - pattern: "def\\s+test_[a-zA-Z0-9_]+.*?put_metric_data"
+        message: "Ensure metrics are validated in local tests"
+      # If importing metrics code from a shared location
+      - pattern: "from\\s+(?:\\.\\.\\.?|shared|common).*?import\\s+.*?(?:metrics|emit_metrics|MetricsClient)"
+        message: "Implement metrics code per Lambda function rather than sharing across functions"
+    message: |
+      ## Lambda Custom Metrics Best Practices
+
+      When implementing custom metrics in Lambda functions, follow these guidelines to ensure functionality is never sacrificed for metrics:
+
+      ### 1. Functionality First, Metrics Second
+
+      - **Never let metrics affect core functionality**
+        - Metrics should be passive observers, not active participants
+        - Core business logic should work even if metrics fail
+        - Use defensive programming to isolate metrics code
+
+      - **Isolate metrics code from business logic**
+        - Keep metrics code separate from core business logic
+        - Use decorators or middleware patterns when possible
+        - Consider aspect-oriented programming approaches
+
+      - **Use try/except/finally blocks for metrics**
+        ```python
+      def handler(event, context):
+          metrics_data = {
+              'start_time': time.time(),
+              'event_type': event.get('type', 'unknown')
+          }
+          
+          try:
+              # Core business logic
+              result = process_event(event)
+              metrics_data['success'] = True
+              return result
+          except Exception as e:
+              metrics_data['success'] = False
+              metrics_data['error_type'] = type(e).__name__
+              raise  # Re-raise the exception after capturing metrics
+          finally:
+              # Emit metrics in finally block to ensure they run
+              try:
+                  emit_metrics(metrics_data)
+              except Exception as metric_error:
+                  # Log metric error but don't let it affect function result
+                  print(f"Metric emission failed: {metric_error}")
+      ```
+
+      ### 2. Robust Metric Implementation
+
+      - **Use a dedicated metrics utility**
+        - Create a reusable metrics utility class/module
+        - Standardize metric names and dimensions
+        - Include built-in error handling
+
+      - **Batch metrics when possible**
+        - Collect metrics during execution and emit in one call
+        - Reduces API calls and potential for failures
+        - Improves performance
+
+      - **Use constants for metric names and dimensions**
+        ```python
+      # Define constants
+      METRIC_NAMESPACE = "ServiceBot"
+      METRICS = {
+          'API_REQUEST': 'ApiRequestCount',
+          'API_LATENCY': 'ApiRequestDuration',
+          'CHAT_COMPLETION': 'ChatCompletionCount',
+          'TOKEN_COUNT': 'TokenCount'
+      }
+      
+      # Use constants in code
+      def emit_metrics(metrics_data):
+          try:
+              cloudwatch.put_metric_data(
+                  Namespace=METRIC_NAMESPACE,
+                  MetricData=[
+                      {
+                          'MetricName': METRICS['API_REQUEST'],
+                          'Value': 1,
+                          'Unit': 'Count',
+                          'Dimensions': [
+                              {'Name': 'Environment', 'Value': os.environ.get('ENVIRONMENT', 'dev')},
+                              {'Name': 'ApiName', 'Value': metrics_data['api_name']}
+                          ]
+                      }
+                  ]
+              )
+          except Exception as e:
+              # Log error but don't propagate
+              print(f"Failed to emit metrics: {e}")
+      ```
+
+      ### 3. Local Validation Before Deployment
+
+      - **Write unit tests specifically for metrics**
+        - Mock CloudWatch client to verify correct calls
+        - Test both success and failure scenarios
+        - Verify metric dimensions and values
+
+      - **Create a local metrics validator**
+        - Tool to validate metric format and values
+        - Run as part of pre-commit or CI/CD pipeline
+        - Catch issues before deployment
+
+      - **Use local CloudWatch emulator for testing**
+        - Tools like LocalStack can emulate CloudWatch
+        - Test actual metric emission without AWS costs
+        - Verify end-to-end metric flow
+
+      - **Example test for metrics**
+        ```python
+      def test_metrics_emission():
+          """Test that metrics are emitted correctly and don't affect function result."""
+          # Mock CloudWatch client
+          mock_cloudwatch = MagicMock()
+          
+          # Patch the CloudWatch client
+          with patch('boto3.client', return_value=mock_cloudwatch):
+              # Call function that should emit metrics
+              result = process_event({'type': 'test_event'})
+              
+              # Verify function result is correct
+              assert result == expected_result
+              
+              # Verify metrics were emitted
+              mock_cloudwatch.put_metric_data.assert_called_once()
+              
+              # Verify metric data is correct
+              call_args = mock_cloudwatch.put_metric_data.call_args[1]
+              assert call_args['Namespace'] == 'ServiceBot'
+              assert len(call_args['MetricData']) > 0
+              assert call_args['MetricData'][0]['MetricName'] == 'ApiRequestCount'
+      ```
+
+      ### 4. Efficient Metric Implementation
+
+      - **Use custom metrics judiciously**
+        - Focus on business-critical metrics
+        - Avoid excessive granularity that won't be used
+        - Consider cost implications of high-volume metrics
+
+      - **Leverage built-in AWS metrics when possible**
+        - Many metrics are already available from AWS
+        - Custom metrics should complement, not duplicate
+        - Example: Use Lambda Duration metric instead of custom timing
+
+      - **Consider metric emission frequency**
+        - Not every invocation needs metrics
+        - Consider sampling for high-volume functions
+        - Use dimension filtering to reduce metric count
+
+      ### 5. Metrics as Decorators
+
+      - **Use decorators to separate metrics from business logic**
+        ```python
+      def with_metrics(func):
+          """Decorator to add metrics to a function."""
+          @functools.wraps(func)
+          def wrapper(event, context):
+              start_time = time.time()
+              metrics = {
+                  'function_name': context.function_name,
+                  'start_time': start_time
+              }
+              
+              try:
+                  # Call the original function
+                  result = func(event, context)
+                  metrics['success'] = True
+                  return result
+              except Exception as e:
+                  metrics['success'] = False
+                  metrics['error_type'] = type(e).__name__
+                  raise  # Re-raise the exception
+              finally:
+                  # Calculate duration
+                  metrics['duration_ms'] = (time.time() - start_time) * 1000
+                  
+                  # Emit metrics in a way that won't affect the function result
+                  try:
+                      emit_metrics(metrics)
+                  except Exception as metric_error:
+                      print(f"Failed to emit metrics: {metric_error}")
+          
+          return wrapper
+      
+      # Usage
+      @with_metrics
+      def handler(event, context):
+          # Business logic here
+          return process_event(event)
+      ```
+
+      ### 6. Monitoring and Alerting
+
+      - **Create dashboards for custom metrics**
+        - Visualize metrics in CloudWatch dashboards
+        - Group related metrics together
+        - Include both custom and built-in metrics
+
+      - **Set up appropriate alarms**
+        - Alarms should focus on business impact
+        - Set thresholds based on business requirements
+        - Include actionable information in alarm notifications
+
+      - **Document metric meanings and thresholds**
+        - Create a metrics catalog
+        - Document what each metric means
+        - Include expected ranges and alert thresholds
+
+      ### 7. Continuous Improvement
+
+      - **Regularly review metric usage**
+        - Remove unused or low-value metrics
+        - Add new metrics for emerging business needs
+        - Refine existing metrics based on feedback
+
+      - **Optimize metric emission**
+        - Look for performance bottlenecks
+        - Consider batching or sampling strategies
+        - Balance detail vs. performance
+
+      - **Share metrics best practices**
+        - Document successful patterns
+        - Create reusable metrics libraries
+        - Train team members on metrics implementation
+
+      ### 8. Per-Lambda Function Implementation
+
+      - **Implement metrics code per Lambda function**
+        - Each Lambda function should have its own metrics implementation
+        - Duplicate metrics code between Lambda functions (e.g., chat and API)
+        - Avoid importing metrics code from shared locations
+
+      - **Benefits of per-function implementation**
+        - Ensures Lambda functions remain independent and self-contained
+        - Prevents cascading failures across functions
+        - Allows for function-specific customization
+        - Simplifies deployment and versioning
+
+      - **Organize metrics code within each Lambda function**
+        ```
+        lambda/
+        ├── chat/
+        │   ├── index.py
+        │   ├── services/
+        │   │   └── ...
+        │   └── utils/
+        │       ├── metrics_constants.py  # Chat-specific metric constants
+        │       └── metrics.py            # Chat-specific metrics implementation
+        └── api/
+            ├── index.py
+            ├── services/
+            │   └── ...
+            └── utils/
+                ├── metrics_constants.py  # API-specific metric constants
+                └── metrics.py            # API-specific metrics implementation
+        ```
+
+      - **Follow consistent patterns across functions**
+        - Use the same metric naming conventions
+        - Implement similar error handling approaches
+        - Maintain consistent dimension structures
+        - This ensures metrics can be aggregated and compared across functions
+
+      - **Example of per-function implementation**
+        ```python
+      # In lambda/chat/utils/metrics.py
+      import boto3
+      import os
+      import time
+      import functools
+      
+      # Chat-specific metric constants
+      METRIC_NAMESPACE = "ServiceBot"
+      
+      class MetricNames:
+          CHAT_COMPLETION = "ChatCompletionCount"
+          CHAT_TOKENS = "ChatCompletionTokens"
+          CHAT_DURATION = "ChatCompletionDuration"
+      
+      class ChatMetricsClient:
+          """Chat-specific metrics client."""
+          
+          def __init__(self):
+              self._client = None
+              self._environment = os.environ.get('ENVIRONMENT', 'dev')
+          
+          @property
+          def client(self):
+              if self._client is None:
+                  self._client = boto3.client('cloudwatch')
+              return self._client
+          
+          def track_chat_completion(self, success, token_count, duration_ms):
+              try:
+                  self.client.put_metric_data(
+                      Namespace=METRIC_NAMESPACE,
+                      MetricData=[
+                          {
+                              'MetricName': MetricNames.CHAT_COMPLETION,
+                              'Value': 1,
+                              'Unit': 'Count',
+                              'Dimensions': [
+                                  {'Name': 'Environment', 'Value': self._environment},
+                                  {'Name': 'Success', 'Value': str(success)}
+                              ]
+                          },
+                          {
+                              'MetricName': MetricNames.CHAT_TOKENS,
+                              'Value': token_count,
+                              'Unit': 'Count',
+                              'Dimensions': [
+                                  {'Name': 'Environment', 'Value': self._environment}
+                              ]
+                          },
+                          {
+                              'MetricName': MetricNames.CHAT_DURATION,
+                              'Value': duration_ms,
+                              'Unit': 'Milliseconds',
+                              'Dimensions': [
+                                  {'Name': 'Environment', 'Value': self._environment}
+                              ]
+                          }
+                      ]
+                  )
+                  return True
+              except Exception as e:
+                  print(f"Failed to emit chat metrics: {e}")
+                  return False
+      
+      # In lambda/api/utils/metrics.py (similar but API-specific)
+      import boto3
+      import os
+      import time
+      import functools
+      
+      # API-specific metric constants
+      METRIC_NAMESPACE = "ServiceBot"
+      
+      class MetricNames:
+          API_REQUEST = "ApiRequestCount"
+          API_DURATION = "ApiRequestDuration"
+      
+      class ApiMetricsClient:
+          """API-specific metrics client."""
+          
+          def __init__(self):
+              self._client = None
+              self._environment = os.environ.get('ENVIRONMENT', 'dev')
+          
+          @property
+          def client(self):
+              if self._client is None:
+                  self._client = boto3.client('cloudwatch')
+              return self._client
+          
+          def track_api_request(self, api_name, method, success, duration_ms):
+              try:
+                  self.client.put_metric_data(
+                      Namespace=METRIC_NAMESPACE,
+                      MetricData=[
+                          {
+                              'MetricName': MetricNames.API_REQUEST,
+                              'Value': 1,
+                              'Unit': 'Count',
+                              'Dimensions': [
+                                  {'Name': 'Environment', 'Value': self._environment},
+                                  {'Name': 'ApiName', 'Value': api_name},
+                                  {'Name': 'Method', 'Value': method},
+                                  {'Name': 'Success', 'Value': str(success)}
+                              ]
+                          },
+                          {
+                              'MetricName': MetricNames.API_DURATION,
+                              'Value': duration_ms,
+                              'Unit': 'Milliseconds',
+                              'Dimensions': [
+                                  {'Name': 'Environment', 'Value': self._environment},
+                                  {'Name': 'ApiName', 'Value': api_name},
+                                  {'Name': 'Method', 'Value': method}
+                              ]
+                          }
+                      ]
+                  )
+                  return True
+              except Exception as e:
+                  print(f"Failed to emit API metrics: {e}")
+                  return False
+        ```
+
+examples:
+  - input: |
+      # Bad: Metrics affecting main execution path
+      def handler(event, context):
+          # Start processing
+          result = process_event(event)
+          
+          # Emit metrics - could fail and affect function
+          cloudwatch = boto3.client('cloudwatch')
+          cloudwatch.put_metric_data(
+              Namespace='ServiceBot',
+              MetricData=[
+                  {
+                      'MetricName': 'ApiRequestCount',
+                      'Value': 1,
+                      'Unit': 'Count'
+                  }
+              ]
+          )
+          
+          return {
+              'statusCode': 200,
+              'body': json.dumps(result)
+          }
+    output: |
+      # Good: Metrics isolated from main execution path
+      def handler(event, context):
+          start_time = time.time()
+          
+          try:
+              # Core business logic
+              result = process_event(event)
+              success = True
+          except Exception as e:
+              success = False
+              # Re-raise after capturing metrics info
+              raise
+          finally:
+              # Emit metrics in finally block with its own error handling
+              try:
+                  duration_ms = (time.time() - start_time) * 1000
+                  emit_metrics(
+                      metric_name='ApiRequestCount',
+                      value=1,
+                      dimensions=[
+                          {'Name': 'Success', 'Value': str(success)},
+                          {'Name': 'ApiName', 'Value': 'ProcessEvent'}
+                      ],
+                      duration_ms=duration_ms
+                  )
+              except Exception as metric_error:
+                  # Just log the metric error, don't let it affect function
+                  print(f"Failed to emit metrics: {metric_error}")
+          
+          return {
+              'statusCode': 200,
+              'body': json.dumps(result)
+          }
+      
+      def emit_metrics(metric_name, value, dimensions=None, duration_ms=None):
+          """Safely emit metrics to CloudWatch."""
+          try:
+              cloudwatch = boto3.client('cloudwatch')
+              
+              # Prepare metric data
+              metric_data = [
+                  {
+                      'MetricName': metric_name,
+                      'Value': value,
+                      'Unit': 'Count',
+                      'Dimensions': dimensions or []
+                  }
+              ]
+              
+              # Add duration metric if provided
+              if duration_ms is not None:
+                  metric_data.append({
+                      'MetricName': f"{metric_name}Duration",
+                      'Value': duration_ms,
+                      'Unit': 'Milliseconds',
+                      'Dimensions': dimensions or []
+                  })
+              
+              # Emit metrics
+              cloudwatch.put_metric_data(
+                  Namespace='ServiceBot',
+                  MetricData=metric_data
+              )
+              return True
+          except Exception as e:
+              print(f"Metric emission failed: {e}")
+              return False
+  
+  - input: |
+      # Bad: No local validation for metrics
+      def emit_custom_metrics(data):
+          cloudwatch = boto3.client('cloudwatch')
+          cloudwatch.put_metric_data(
+              Namespace='ServiceBot',
+              MetricData=[
+                  {
+                      'MetricName': 'ApiRequestCount',
+                      'Value': 1,
+                      'Dimensions': [
+                          {'Name': 'ApiName', 'Value': data['api_name']}
+                      ]
+                  }
+              ]
+          )
+    output: |
+      # Good: With local validation test
+      def emit_custom_metrics(data):
+          """
+          Emit custom metrics to CloudWatch.
+          
+          Args:
+              data: Dictionary containing metric information
+                  - api_name: Name of the API being called
+                  - duration_ms: Duration of the API call in milliseconds
+                  - success: Whether the API call was successful
+          """
+          try:
+              cloudwatch = boto3.client('cloudwatch')
+              cloudwatch.put_metric_data(
+                  Namespace='ServiceBot',
+                  MetricData=[
+                      {
+                          'MetricName': 'ApiRequestCount',
+                          'Value': 1,
+                          'Unit': 'Count',
+                          'Dimensions': [
+                              {'Name': 'ApiName', 'Value': data['api_name']},
+                              {'Name': 'Success', 'Value': str(data.get('success', True))}
+                          ]
+                      }
+                  ]
+              )
+              return True
+          except Exception as e:
+              print(f"Failed to emit metrics: {e}")
+              return False
+      
+      # Test for local validation
+      def test_emit_custom_metrics():
+          """Test that metrics are emitted correctly and handle errors gracefully."""
+          # Test case 1: Valid metrics
+          with patch('boto3.client') as mock_boto3:
+              mock_cloudwatch = MagicMock()
+              mock_boto3.return_value = mock_cloudwatch
+              
+              result = emit_custom_metrics({'api_name': 'test_api', 'success': True})
+              
+              # Verify function succeeded
+              assert result is True
+              
+              # Verify correct call to CloudWatch
+              mock_cloudwatch.put_metric_data.assert_called_once()
+              call_args = mock_cloudwatch.put_metric_data.call_args[1]
+              assert call_args['Namespace'] == 'ServiceBot'
+              assert call_args['MetricData'][0]['MetricName'] == 'ApiRequestCount'
+              assert call_args['MetricData'][0]['Dimensions'][0]['Value'] == 'test_api'
+          
+          # Test case 2: CloudWatch client fails
+          with patch('boto3.client') as mock_boto3:
+              mock_cloudwatch = MagicMock()
+              mock_cloudwatch.put_metric_data.side_effect = Exception("Test exception")
+              mock_boto3.return_value = mock_cloudwatch
+              
+              result = emit_custom_metrics({'api_name': 'test_api'})
+              
+              # Verify function handled the error
+              assert result is False
+  
+  - input: |
+      # Bad: Using hardcoded metric names
+      def track_api_usage(api_name, duration_ms):
+          cloudwatch = boto3.client('cloudwatch')
+          cloudwatch.put_metric_data(
+              Namespace='ServiceBot',
+              MetricData=[
+                  {
+                      'MetricName': 'ApiRequestCount',
+                      'Value': 1
+                  },
+                  {
+                      'MetricName': 'ApiRequestDuration',
+                      'Value': duration_ms
+                  }
+              ]
+          )
+    output: |
+      # Good: Using constants and a metrics utility
+      # metrics_constants.py
+      METRIC_NAMESPACE = "ServiceBot"
+      
+      class MetricNames:
+          API_REQUEST_COUNT = "ApiRequestCount"
+          API_REQUEST_DURATION = "ApiRequestDuration"
+          CHAT_COMPLETION_COUNT = "ChatCompletionCount"
+          CHAT_COMPLETION_TOKENS = "ChatCompletionTokens"
+      
+      # metrics_utility.py
+      from metrics_constants import METRIC_NAMESPACE, MetricNames
+      import boto3
+      import os
+      
+      class MetricsClient:
+          """Utility for emitting metrics to CloudWatch."""
+          
+          def __init__(self):
+              self._client = None
+              self._environment = os.environ.get('ENVIRONMENT', 'dev')
+          
+          @property
+          def client(self):
+              """Lazy initialization of CloudWatch client."""
+              if self._client is None:
+                  self._client = boto3.client('cloudwatch')
+              return self._client
+          
+          def track_api_usage(self, api_name, duration_ms, success=True):
+              """
+              Track API usage metrics.
+              
+              Args:
+                  api_name: Name of the API being called
+                  duration_ms: Duration of the API call in milliseconds
+                  success: Whether the API call was successful
+              """
+              try:
+                  self.client.put_metric_data(
+                      Namespace=METRIC_NAMESPACE,
+                      MetricData=[
+                          {
+                              'MetricName': MetricNames.API_REQUEST_COUNT,
+                              'Value': 1,
+                              'Unit': 'Count',
+                              'Dimensions': [
+                                  {'Name': 'Environment', 'Value': self._environment},
+                                  {'Name': 'ApiName', 'Value': api_name},
+                                  {'Name': 'Success', 'Value': str(success)}
+                              ]
+                          },
+                          {
+                              'MetricName': MetricNames.API_REQUEST_DURATION,
+                              'Value': duration_ms,
+                              'Unit': 'Milliseconds',
+                              'Dimensions': [
+                                  {'Name': 'Environment', 'Value': self._environment},
+                                  {'Name': 'ApiName', 'Value': api_name}
+                              ]
+                          }
+                      ]
+                  )
+                  return True
+              except Exception as e:
+                  print(f"Failed to emit metrics: {e}")
+                  return False
+      
+      # Usage in handler
+      from metrics_utility import MetricsClient
+      
+      def handler(event, context):
+          metrics_client = MetricsClient()
+          start_time = time.time()
+          
+          try:
+              # Business logic
+              result = process_event(event)
+              success = True
+              return result
+          except Exception as e:
+              success = False
+              raise
+          finally:
+              duration_ms = (time.time() - start_time) * 1000
+              metrics_client.track_api_usage(
+                  api_name=event.get('path', '/unknown'),
+                  duration_ms=duration_ms,
+                  success=success
+              )
+  
+  - input: |
+      # Bad: Sharing metrics code across Lambda functions
+      # In lambda/shared/metrics.py
+      import boto3
+      
+      def emit_metrics(metric_name, value, dimensions):
+          cloudwatch = boto3.client('cloudwatch')
+          cloudwatch.put_metric_data(
+              Namespace='ServiceBot',
+              MetricData=[
+                  {
+                      'MetricName': metric_name,
+                      'Value': value,
+                      'Dimensions': dimensions
+                  }
+              ]
+          )
+      
+      # In lambda/chat/index.py
+      from ..shared.metrics import emit_metrics
+      
+      def handler(event, context):
+          # Process event
+          result = process_event(event)
+          
+          # Emit metrics using shared code
+          emit_metrics('ChatCompletionCount', 1, [
+              {'Name': 'Success', 'Value': 'true'}
+          ])
+          
+          return result
+    output: |
+      # Good: Per-Lambda function metrics implementation
+      # In lambda/chat/utils/metrics.py
+      import boto3
+      import os
+      
+      METRIC_NAMESPACE = "ServiceBot"
+      
+      class MetricNames:
+          CHAT_COMPLETION = "ChatCompletionCount"
+          CHAT_TOKENS = "ChatCompletionTokens"
+          CHAT_DURATION = "ChatCompletionDuration"
+      
+      def emit_chat_metrics(metric_name, value, dimensions=None):
+          """
+          Emit chat-specific metrics to CloudWatch.
+          
+          Args:
+              metric_name: Name of the metric to emit
+              value: Value of the metric
+              dimensions: List of dimensions for the metric
+          """
+          try:
+              cloudwatch = boto3.client('cloudwatch')
+              cloudwatch.put_metric_data(
+                  Namespace=METRIC_NAMESPACE,
+                  MetricData=[
+                      {
+                          'MetricName': metric_name,
+                          'Value': value,
+                          'Dimensions': dimensions or []
+                      }
+                  ]
+              )
+              return True
+          except Exception as e:
+              print(f"Failed to emit chat metrics: {e}")
+              return False
+      
+      # In lambda/chat/index.py
+      from utils.metrics import emit_chat_metrics, MetricNames
+      
+      def handler(event, context):
+          # Process event
+          result = process_event(event)
+          
+          # Emit metrics using chat-specific implementation
+          try:
+              emit_chat_metrics(
+                  MetricNames.CHAT_COMPLETION, 
+                  1, 
+                  [{'Name': 'Success', 'Value': 'true'}]
+              )
+          except Exception as e:
+              print(f"Failed to emit metrics: {e}")
+          
+          return result
+      
+      # Similarly in lambda/api/utils/metrics.py (API-specific implementation)
+      import boto3
+      import os
+      
+      METRIC_NAMESPACE = "ServiceBot"
+      
+      class MetricNames:
+          API_REQUEST = "ApiRequestCount"
+          API_DURATION = "ApiRequestDuration"
+      
+      def emit_api_metrics(metric_name, value, dimensions=None):
+          """
+          Emit API-specific metrics to CloudWatch.
+          
+          Args:
+              metric_name: Name of the metric to emit
+              value: Value of the metric
+              dimensions: List of dimensions for the metric
+          """
+          try:
+              cloudwatch = boto3.client('cloudwatch')
+              cloudwatch.put_metric_data(
+                  Namespace=METRIC_NAMESPACE,
+                  MetricData=[
+                      {
+                          'MetricName': metric_name,
+                          'Value': value,
+                          'Dimensions': dimensions or []
+                      }
+                  ]
+              )
+              return True
+          except Exception as e:
+              print(f"Failed to emit API metrics: {e}")
+              return False
+
+metadata:
+  priority: high
+  version: 1.0
+</rule> 
