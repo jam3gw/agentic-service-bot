@@ -114,6 +114,16 @@ export class ApiStack extends BaseStack {
         serviceLevelsTable.grantReadData(apiFunction);
         messagesTable.grantReadData(apiFunction);
 
+        // Grant CloudWatch PutMetricData permissions to Lambda functions
+        const cloudWatchPolicy = new iam.PolicyStatement({
+            effect: iam.Effect.ALLOW,
+            actions: ['cloudwatch:PutMetricData'],
+            resources: ['*'],
+        });
+
+        chatFunction.addToRolePolicy(cloudWatchPolicy);
+        apiFunction.addToRolePolicy(cloudWatchPolicy);
+
         // Create REST API for device, capability, and chat endpoints
         const restApi = new apigateway.RestApi(this, 'ServiceBotApi', {
             restApiName: `${config.environment}-service-bot-api`,
